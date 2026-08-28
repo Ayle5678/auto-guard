@@ -1,0 +1,956 @@
+{
+  "version": 1,
+  "staticAllow": [
+    {
+      "pattern": "ls",
+      "reason": "Read-only directory listing"
+    },
+    {
+      "pattern": "pwd",
+      "reason": "Print working directory"
+    },
+    {
+      "pattern": "git status",
+      "reason": "Read-only git status"
+    },
+    {
+      "pattern": "git diff",
+      "reason": "Read-only git diff"
+    },
+    {
+      "pattern": "git add *",
+      "reason": "Staging a specific file"
+    },
+    {
+      "pattern": "git commit",
+      "reason": "Creating a local commit"
+    },
+    {
+      "pattern": "git status *",
+      "reason": "Read-only git status with arguments"
+    },
+    {
+      "pattern": "git diff *",
+      "reason": "Read-only git diff with arguments"
+    },
+    {
+      "pattern": "git -C * status *",
+      "reason": "Read-only git status in a specific directory"
+    },
+    {
+      "pattern": "git -C * log *",
+      "reason": "Read-only git log in a specific directory"
+    },
+    {
+      "pattern": "ls *",
+      "reason": "Read-only directory listing with arguments"
+    },
+    {
+      "pattern": "echo *",
+      "reason": "Prints text only"
+    },
+    {
+      "pattern": "which *",
+      "reason": "Locates a binary"
+    },
+    {
+      "pattern": "date",
+      "reason": "Prints current time"
+    },
+    {
+      "pattern": "date *",
+      "reason": "Prints/formats current time"
+    },
+    {
+      "pattern": "whoami",
+      "reason": "Prints current user"
+    },
+    {
+      "pattern": "hostname",
+      "reason": "Prints machine name"
+    },
+    {
+      "pattern": "uname *",
+      "reason": "Prints system info"
+    },
+    {
+      "pattern": "git log",
+      "reason": "Read-only git log"
+    },
+    {
+      "pattern": "git log *",
+      "reason": "Read-only git log with arguments"
+    },
+    {
+      "pattern": "git show *",
+      "reason": "Read-only git object viewer"
+    },
+    {
+      "pattern": "git branch",
+      "reason": "Lists branches (bare form only; -D etc. not covered)"
+    },
+    {
+      "pattern": "git remote -v",
+      "reason": "Read-only remote listing"
+    },
+    {
+      "pattern": "node --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "node -v",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "npm --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "pnpm --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "git --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "python --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "python3 --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "pip --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "pip3 --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "go version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "cargo --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "rustc --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "java -version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "dotnet --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "npm -v",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "pnpm -v",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "yarn --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "yarn -v",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "tsc --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "vitest --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "eslint --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "prettier --version",
+      "reason": "Version query"
+    },
+    {
+      "pattern": "df *",
+      "reason": "Read-only disk usage"
+    },
+    {
+      "pattern": "du *",
+      "reason": "Read-only disk usage"
+    },
+    {
+      "pattern": "stat *",
+      "reason": "Read-only file metadata"
+    },
+    {
+      "pattern": "file *",
+      "reason": "Read-only file type inspection"
+    },
+    {
+      "pattern": "ps *",
+      "reason": "Read-only process listing"
+    },
+    {
+      "pattern": "tasklist",
+      "reason": "Read-only process listing"
+    },
+    {
+      "pattern": "systeminfo",
+      "reason": "Read-only system information"
+    },
+    {
+      "pattern": "ver",
+      "reason": "Read-only system version"
+    },
+    {
+      "pattern": "basename *",
+      "reason": "Read-only path utility"
+    },
+    {
+      "pattern": "dirname *",
+      "reason": "Read-only path utility"
+    },
+    {
+      "pattern": "realpath *",
+      "reason": "Read-only path resolution"
+    },
+    {
+      "pattern": "readlink *",
+      "reason": "Read-only symlink resolution"
+    },
+    {
+      "pattern": "command -v *",
+      "reason": "Locates a binary"
+    },
+    {
+      "pattern": "type *",
+      "reason": "Locates a command"
+    },
+    {
+      "pattern": "find *",
+      "reason": "Read-only file search"
+    },
+    {
+      "pattern": "fd *",
+      "reason": "Read-only file search"
+    },
+    {
+      "pattern": "rg --files *",
+      "reason": "Read-only file listing"
+    },
+    {
+      "pattern": "tree *",
+      "reason": "Read-only directory tree"
+    },
+    {
+      "pattern": "md5sum *",
+      "reason": "Read-only file hashing"
+    },
+    {
+      "pattern": "sha1sum *",
+      "reason": "Read-only file hashing"
+    },
+    {
+      "pattern": "sha256sum *",
+      "reason": "Read-only file hashing"
+    },
+    {
+      "pattern": "cksum *",
+      "reason": "Read-only file checksum"
+    },
+    {
+      "pattern": "wc *",
+      "reason": "Read-only line/word/byte counts"
+    },
+    {
+      "pattern": "git branch *",
+      "reason": "Lists branches"
+    },
+    {
+      "pattern": "git tag",
+      "reason": "Lists tags"
+    },
+    {
+      "pattern": "git tag *",
+      "reason": "Lists tags"
+    },
+    {
+      "pattern": "git stash list",
+      "reason": "Read-only git stash listing"
+    },
+    {
+      "pattern": "git remote",
+      "reason": "Read-only remote listing"
+    },
+    {
+      "pattern": "git -C * diff *",
+      "reason": "Read-only git diff in a specific directory"
+    },
+    {
+      "pattern": "git -C * show *",
+      "reason": "Read-only git object viewer in a specific directory"
+    },
+    {
+      "pattern": "git -C * branch *",
+      "reason": "Lists branches in a specific directory"
+    },
+    {
+      "pattern": "head *",
+      "reason": "Read-only text preview"
+    },
+    {
+      "pattern": "tail *",
+      "reason": "Read-only text tail"
+    },
+    {
+      "pattern": "sort *",
+      "reason": "Read-only text sorting"
+    },
+    {
+      "pattern": "cut *",
+      "reason": "Read-only column extraction"
+    },
+    {
+      "pattern": "tr *",
+      "reason": "Read-only character translation"
+    },
+    {
+      "pattern": "uniq *",
+      "reason": "Read-only duplicate line filtering"
+    },
+    {
+      "pattern": "seq *",
+      "reason": "Read-only numeric sequence generation"
+    },
+    {
+      "pattern": "comm *",
+      "reason": "Read-only line comparison"
+    },
+    {
+      "pattern": "column *",
+      "reason": "Read-only column formatting"
+    },
+    {
+      "pattern": "expand *",
+      "reason": "Read-only tab expansion"
+    },
+    {
+      "pattern": "fmt *",
+      "reason": "Read-only text reflow"
+    },
+    {
+      "pattern": "fold *",
+      "reason": "Read-only line wrapping"
+    },
+    {
+      "pattern": "nl *",
+      "reason": "Read-only line numbering"
+    },
+    {
+      "pattern": "paste *",
+      "reason": "Read-only file merging"
+    },
+    {
+      "pattern": "tac *",
+      "reason": "Read-only reverse line output"
+    },
+    {
+      "pattern": "shuf *",
+      "reason": "Read-only random line selection"
+    },
+    {
+      "pattern": "od *",
+      "reason": "Read-only octal/hex dump"
+    },
+    {
+      "pattern": "hexdump *",
+      "reason": "Read-only hex dump"
+    },
+    {
+      "pattern": "xxd *",
+      "reason": "Read-only hex dump"
+    },
+    {
+      "pattern": "head",
+      "reason": "Read-only stdin preview"
+    },
+    {
+      "pattern": "tail",
+      "reason": "Read-only stdin tail"
+    },
+    {
+      "pattern": "sort",
+      "reason": "Read-only stdin sorting"
+    },
+    {
+      "pattern": "cut",
+      "reason": "Read-only stdin column extraction"
+    },
+    {
+      "pattern": "tr",
+      "reason": "Read-only stdin character translation"
+    },
+    {
+      "pattern": "uniq",
+      "reason": "Read-only stdin duplicate filtering"
+    },
+    {
+      "pattern": "seq",
+      "reason": "Read-only numeric sequence generation"
+    },
+    {
+      "pattern": "comm",
+      "reason": "Read-only line comparison"
+    },
+    {
+      "pattern": "column",
+      "reason": "Read-only column formatting"
+    },
+    {
+      "pattern": "expand",
+      "reason": "Read-only stdin tab expansion"
+    },
+    {
+      "pattern": "fmt",
+      "reason": "Read-only text reflow"
+    },
+    {
+      "pattern": "fold",
+      "reason": "Read-only stdin line wrapping"
+    },
+    {
+      "pattern": "nl",
+      "reason": "Read-only stdin line numbering"
+    },
+    {
+      "pattern": "paste",
+      "reason": "Read-only stdin merging"
+    },
+    {
+      "pattern": "tac",
+      "reason": "Read-only stdin reverse line output"
+    },
+    {
+      "pattern": "shuf",
+      "reason": "Read-only stdin random selection"
+    },
+    {
+      "pattern": "od",
+      "reason": "Read-only stdin octal/hex dump"
+    },
+    {
+      "pattern": "hexdump",
+      "reason": "Read-only stdin hex dump"
+    },
+    {
+      "pattern": "xxd",
+      "reason": "Read-only stdin hex dump"
+    }
+  ],
+  "hardDeny": [
+    {
+      "pattern": "rm -rf /",
+      "reason": "Recursive delete of root is always denied"
+    },
+    {
+      "pattern": "rm -rf /*",
+      "reason": "Recursive delete of root is always denied"
+    },
+    {
+      "pattern": "mkfs*",
+      "reason": "Filesystem creation is always denied"
+    },
+    {
+      "pattern": "dd *of=/dev/*",
+      "reason": "Raw device writes are always denied"
+    },
+    {
+      "pattern": "> /etc/passwd",
+      "reason": "Overwriting system files is always denied"
+    },
+    {
+      "pattern": ">> /etc/passwd",
+      "reason": "Appending to system files is always denied"
+    }
+  ],
+  "directoryDelete": [
+    {
+      "pattern": "cmd /c rd *",
+      "reason": "Windows directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "cmd /c rmdir *",
+      "reason": "Windows directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rd *",
+      "reason": "Windows directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rmdir *",
+      "reason": "Windows directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Remove-Item *recurse*",
+      "reason": "PowerShell recursive delete needs agent reason and high review"
+    },
+    {
+      "pattern": "[System.IO.Directory]::Delete*",
+      "reason": ".NET directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Start-Process *Remove-Item*",
+      "reason": "Nested PowerShell delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Start-Process *rmdir*",
+      "reason": "Nested cmd directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Start-Process *rd /s*",
+      "reason": "Nested cmd recursive delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Start-Process *cmd*rd*",
+      "reason": "Nested cmd directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "Start-Process *cmd*rmdir*",
+      "reason": "Nested cmd directory delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rm -rf *",
+      "reason": "Recursive delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rm -fr *",
+      "reason": "Recursive delete needs agent reason and high review"
+    }
+  ],
+  "userConfirmed": [
+    {
+      "pattern": "git push",
+      "reason": "User confirmed this command should always run"
+    }
+  ],
+  "cacheable": [
+    {
+      "pattern": "npm run build",
+      "reason": "Project build is low-risk when approved"
+    },
+    {
+      "pattern": "npm test",
+      "reason": "Project tests are low-risk when approved"
+    },
+    {
+      "pattern": "pnpm run build",
+      "reason": "Project build is low-risk when approved"
+    },
+    {
+      "pattern": "pnpm test",
+      "reason": "Project tests are low-risk when approved"
+    }
+  ],
+  "alwaysReview": [
+    {
+      "pattern": "rm -rf *",
+      "reason": "Recursive delete always needs review"
+    },
+    {
+      "pattern": "curl *|*bash*",
+      "reason": "Remote pipe-to-shell always needs review"
+    },
+    {
+      "pattern": "bash *",
+      "reason": "Executing a script always needs review"
+    },
+    {
+      "pattern": "sh *",
+      "reason": "Executing a script always needs review"
+    },
+    {
+      "pattern": "zsh *",
+      "reason": "Executing a script always needs review"
+    },
+    {
+      "pattern": "git add .",
+      "reason": "Staging everything always needs review"
+    },
+    {
+      "pattern": "git add -A",
+      "reason": "Staging everything always needs review"
+    },
+    {
+      "pattern": "git add --all",
+      "reason": "Staging everything always needs review"
+    },
+    {
+      "pattern": "Invoke-Expression*",
+      "reason": "Dynamic code execution always needs review"
+    },
+    {
+      "pattern": "iex *",
+      "reason": "Dynamic code execution alias always needs review"
+    },
+    {
+      "pattern": "Start-Process*",
+      "reason": "Process start always needs review"
+    },
+    {
+      "pattern": "Start-Job*",
+      "reason": "Background job start always needs review"
+    },
+    {
+      "pattern": "Start-ThreadJob*",
+      "reason": "Background thread job start always needs review"
+    },
+    {
+      "pattern": "[System.Diagnostics.Process]::Start*",
+      "reason": ".NET process start always needs review"
+    },
+    {
+      "pattern": "powershell -Command*",
+      "reason": "Nested PowerShell execution always needs review"
+    },
+    {
+      "pattern": "pwsh -Command*",
+      "reason": "Nested PowerShell execution always needs review"
+    },
+    {
+      "pattern": "Set-ExecutionPolicy*",
+      "reason": "Execution policy changes always need review"
+    },
+    {
+      "pattern": "npm install*",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "npm ci*",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "npm add *",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "pnpm install*",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "pnpm add *",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "pnpm ci*",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "yarn install*",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "yarn add *",
+      "reason": "Dependency install always needs review"
+    },
+    {
+      "pattern": "yarn",
+      "reason": "Yarn install always needs review"
+    },
+    {
+      "pattern": "sudo",
+      "reason": "Privilege elevation always needs review"
+    },
+    {
+      "pattern": "sudo *",
+      "reason": "Privilege elevation always needs review"
+    },
+    {
+      "pattern": "doas",
+      "reason": "Privilege elevation always needs review"
+    },
+    {
+      "pattern": "doas *",
+      "reason": "Privilege elevation always needs review"
+    },
+    {
+      "pattern": "su",
+      "reason": "Privilege switching always needs review"
+    },
+    {
+      "pattern": "su *",
+      "reason": "Privilege switching always needs review"
+    },
+    {
+      "pattern": "python -c *",
+      "reason": "Inline Python execution always needs review"
+    },
+    {
+      "pattern": "python3 -c *",
+      "reason": "Inline Python execution always needs review"
+    },
+    {
+      "pattern": "node -e *",
+      "reason": "Inline Node execution always needs review"
+    },
+    {
+      "pattern": "node --eval *",
+      "reason": "Inline Node execution always needs review"
+    },
+    {
+      "pattern": "ruby -e *",
+      "reason": "Inline Ruby execution always needs review"
+    },
+    {
+      "pattern": "perl -e *",
+      "reason": "Inline Perl execution always needs review"
+    },
+    {
+      "pattern": "bash -c *",
+      "reason": "Nested shell execution always needs review"
+    },
+    {
+      "pattern": "sh -c *",
+      "reason": "Nested shell execution always needs review"
+    },
+    {
+      "pattern": "zsh -c *",
+      "reason": "Nested shell execution always needs review"
+    },
+    {
+      "pattern": "*<<*",
+      "reason": "Here-document input always needs review"
+    },
+    {
+      "pattern": "git push --force*",
+      "reason": "Force pushing always needs review"
+    },
+    {
+      "pattern": "git push -f*",
+      "reason": "Force pushing always needs review"
+    },
+    {
+      "pattern": "git reset --hard*",
+      "reason": "Hard reset always needs review"
+    },
+    {
+      "pattern": "git clean -f*",
+      "reason": "Deleting untracked files always needs review"
+    },
+    {
+      "pattern": "git clean --force*",
+      "reason": "Deleting untracked files always needs review"
+    },
+    {
+      "pattern": "git rebase",
+      "reason": "Rebasing always needs review"
+    },
+    {
+      "pattern": "git rebase *",
+      "reason": "Rebasing always needs review"
+    },
+    {
+      "pattern": "git stash drop*",
+      "reason": "Dropping stashes always needs review"
+    },
+    {
+      "pattern": "git stash clear*",
+      "reason": "Clearing stashes always needs review"
+    },
+    {
+      "pattern": "git checkout .",
+      "reason": "Discarding working tree changes always needs review"
+    },
+    {
+      "pattern": "git checkout . *",
+      "reason": "Discarding working tree changes always needs review"
+    },
+    {
+      "pattern": "git restore .",
+      "reason": "Restoring working tree changes always needs review"
+    },
+    {
+      "pattern": "git restore . *",
+      "reason": "Restoring working tree changes always needs review"
+    },
+    {
+      "pattern": "git restore --staged .*",
+      "reason": "Restoring staged changes always needs review"
+    },
+    {
+      "pattern": "pip install git+*",
+      "reason": "Remote git dependency install always needs review"
+    },
+    {
+      "pattern": "pip install -i http*",
+      "reason": "Remote index dependency install always needs review"
+    },
+    {
+      "pattern": "pip3 install git+*",
+      "reason": "Remote git dependency install always needs review"
+    },
+    {
+      "pattern": "pip3 install -i http*",
+      "reason": "Remote index dependency install always needs review"
+    },
+    {
+      "pattern": "deno run http*",
+      "reason": "Running remote scripts always needs review"
+    },
+    {
+      "pattern": "nohup",
+      "reason": "Background process execution always needs review"
+    },
+    {
+      "pattern": "nohup *",
+      "reason": "Background process execution always needs review"
+    },
+    {
+      "pattern": "kill -9",
+      "reason": "Force killing processes always needs review"
+    },
+    {
+      "pattern": "kill -9 *",
+      "reason": "Force killing processes always needs review"
+    },
+    {
+      "pattern": "pkill",
+      "reason": "Killing processes always needs review"
+    },
+    {
+      "pattern": "pkill *",
+      "reason": "Killing processes always needs review"
+    },
+    {
+      "pattern": "killall",
+      "reason": "Killing processes always needs review"
+    },
+    {
+      "pattern": "killall *",
+      "reason": "Killing processes always needs review"
+    },
+    {
+      "pattern": "printf *>*",
+      "reason": "Writing through printf always needs review"
+    },
+    {
+      "pattern": "*| tee *",
+      "reason": "Writing through tee always needs review"
+    }
+  ],
+  "staticAllowGuards": [
+    {
+      "when": "git branch *",
+      "flags": [
+        "-d",
+        "-D",
+        "--delete"
+      ],
+      "reason": "Deleting a branch is destructive"
+    },
+    {
+      "when": "git -C * branch *",
+      "flags": [
+        "-d",
+        "-D",
+        "--delete"
+      ],
+      "reason": "Deleting a branch in a specific directory is destructive"
+    },
+    {
+      "when": "git tag *",
+      "flags": [
+        "-d",
+        "--delete"
+      ],
+      "reason": "Deleting a tag is destructive"
+    },
+    {
+      "when": "find *",
+      "flags": [
+        "-delete",
+        "-exec",
+        "-execdir"
+      ],
+      "reason": "find can delete or execute files"
+    },
+    {
+      "when": "fd *",
+      "flags": [
+        "-x",
+        "-X",
+        "--exec",
+        "--exec-batch"
+      ],
+      "reason": "fd can execute commands"
+    },
+    {
+      "when": "sort *",
+      "flags": [
+        "-o",
+        "--output"
+      ],
+      "reason": "sort writing to a file is not read-only"
+    },
+    {
+      "when": "shuf *",
+      "flags": [
+        "-o",
+        "--output"
+      ],
+      "reason": "shuf writing to a file is not read-only"
+    },
+    {
+      "when": "git stash *",
+      "flags": [
+        "drop",
+        "clear"
+      ],
+      "reason": "Dropping or clearing stashes is destructive"
+    },
+    {
+      "when": "git reset *",
+      "flags": [
+        "--hard"
+      ],
+      "reason": "Hard reset discards working tree changes"
+    },
+    {
+      "when": "git clean *",
+      "flags": [
+        "-f",
+        "-fd",
+        "-ff",
+        "--force"
+      ],
+      "reason": "Deleting untracked files is destructive"
+    }
+  ],
+  "sensitivePaths": [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "id_rsa",
+    "id_rsa.pub",
+    "credentials",
+    "credentials.json",
+    "*.credentials",
+    ".aws/",
+    ".ssh/",
+    ".gpg/",
+    "/etc/",
+    "/var/lib/private/",
+    "*/auto-guard/config.json"
+  ]
+}
