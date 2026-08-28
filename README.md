@@ -34,7 +34,7 @@ auto-guard init        # detects installed hosts, checkbox multi-select, writes 
 # … or non-interactive: auto-guard init --host pi,zcode --yes
 ```
 
-Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent. Start a new session in each installed host afterwards (ZCode hooks have no hot reload) and check `auto-guard guard status`. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
+Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent. Start a new session in each installed host afterwards (ZCode hooks have no hot reload) and check `auto-guard guard status`. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
 
 Each host's native channel stays fully supported and coexists with the installer — use it when you manage that host's plugins by hand anyway:
 

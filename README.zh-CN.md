@@ -34,7 +34,7 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 # …或非交互：auto-guard init --host pi,zcode --yes
 ```
 
-每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode hooks 无热重载，必须新开 ZCode 会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见 [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode hooks 无热重载，必须新开 ZCode 会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
 
 各宿主原生渠道继续可用、与安装器并存——本来就手工管理某宿主插件时用原生渠道即可：
 
