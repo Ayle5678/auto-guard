@@ -61,7 +61,7 @@ describe('buildInitPlan as a pure function (spec 0002 Testing Decisions)', () =>
   it('command profile renders the native channel argv with the package dir', () => {
     const plan = buildInitPlan(profileById('dsh')!, { home, paths, readFile: () => null })
     expect(plan.steps[0]!.kind).toBe('run-command')
-    expect(plan.steps[0]!.command).toEqual({ executable: 'dsh', args: ['plugin', 'add', paths.dsh.packageDir] })
+    expect(plan.steps[0]!.command).toEqual({ executable: 'dsh', args: ['plugin', '--profile', 'web', 'add', `link:${paths.dsh.packageDir}`] })
   })
 })
 

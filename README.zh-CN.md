@@ -5,7 +5,7 @@
 一个核心裁决引擎 + 三个薄宿主适配层：
 
 - **`@auto-guard/core`** — 零宿主依赖的裁决引擎：裁决管线、规则、缓存、key 水合、审计、历史层、学习规则、管理操作层。仅依赖 Node 内置模块（ADR-0002）。
-- **`@auto-guard/host-dsh`** — DeepSeek Harness 插件。
+- **`auto-guard` (packages/host-dsh)** — DeepSeek Harness 插件。
 - **`@auto-guard/host-pi`** — Pi Coding Agent 扩展。
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook 插件。
 - **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与安装器。
@@ -79,7 +79,7 @@
 
 适配层只做两件事：把宿主事件翻译成 `GuardRequest`，把裁决翻译回宿主决策协议；全部裁决逻辑在 core。每宿主独立配置根——`~/.dsh/auto-guard/`、`~/.pi/auto-guard/`、`~/.zcode/auto-guard/`——宿主之间零共享，升级零迁移。
 
-### `@auto-guard/host-dsh` — DeepSeek Harness 插件
+### `auto-guard` (packages/host-dsh) — DeepSeek Harness 插件
 
 - 挂在 `tools/pre-execute`；黑名单裁决额外注册 `ctx.tools.guard()` 单调否决，LLM 不可覆盖。
 - **启停 = 对话框权限选择器里的 `auto-guard` 预设**（`danger-full-access` + ask）。这是唯一开关，其他任何地方都不持久化 enabled 标志。

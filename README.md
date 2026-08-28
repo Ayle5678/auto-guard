@@ -5,7 +5,7 @@ A **command-review safety net for AI coding agents**. Before the host executes a
 One decision engine, three thin host adapters:
 
 - **`@auto-guard/core`** — zero-host-dependency engine: decision pipeline, rules, caches, key hydration, audit, history, learned rules, management operations. Only Node built-ins (ADR-0002).
-- **`@auto-guard/host-dsh`** — DeepSeek Harness plugin.
+- **`auto-guard` (packages/host-dsh)** — DeepSeek Harness plugin.
 - **`@auto-guard/host-pi`** — Pi Coding Agent extension.
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin.
 - **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
@@ -82,7 +82,7 @@ Each decision carries a source tag you can see in notifications: `[Allowlist]`, 
 
 Each adapter only translates host events into `GuardRequest` and decisions back into the host's decision protocol; all adjudication lives in core. Each host has its own config root — `~/.dsh/auto-guard/`, `~/.pi/auto-guard/`, `~/.zcode/auto-guard/` — with zero sharing between hosts and zero migration on upgrade.
 
-### `@auto-guard/host-dsh` — DeepSeek Harness plugin
+### `auto-guard` (packages/host-dsh) — DeepSeek Harness plugin
 
 - Hooks `tools/pre-execute`; blacklist verdicts additionally register a monotonic `ctx.tools.guard()` veto that the LLM cannot override.
 - **On/off = the `auto-guard` permission preset** (`danger-full-access` + ask) in the dialog's permission selector. That is the only switch; nothing else persists an enabled flag.

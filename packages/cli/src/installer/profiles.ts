@@ -79,10 +79,17 @@ export const PROFILES: readonly HostProfile[] = [
     action: {
       kind: 'command',
       executable: 'dsh',
-      installArgs: ['plugin', 'add', '${AUTO_GUARD_DSH_DIR}'],
-      removeArgs: ['plugin', 'remove', 'dsh-auto-guard'],
-      listArgs: ['plugin', 'list'],
-      pluginId: 'dsh-auto-guard',
+      // `dsh plugin` forwards to pnpm in a profile directory and demands its
+      // own `--profile <name>` (a parent-level one is rejected); `web` is
+      // dsh's default profile. `link:` installs a symlink so the adapter
+      // resolves its `workspace:*` deps from the monorepo — a bare dir would
+      // make pnpm pack it and fail on them. `ls <name>` filters by exact
+      // dependency name, so the legacy standalone `dsh-auto-guard` plugin
+      // can never pass for ours.
+      installArgs: ['plugin', '--profile', 'web', 'add', 'link:${AUTO_GUARD_DSH_DIR}'],
+      removeArgs: ['plugin', '--profile', 'web', 'remove', 'auto-guard'],
+      listArgs: ['plugin', '--profile', 'web', 'ls', '--depth=0', 'auto-guard'],
+      pluginId: 'auto-guard',
     },
   },
   {

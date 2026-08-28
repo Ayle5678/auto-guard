@@ -16,6 +16,6 @@
     "@auto-guard/core": "workspace:*",
     "@auto-guard/host-pi": "workspace:*",
     "@auto-guard/host-zcode": "workspace:*",
-    "@auto-guard/host-dsh": "workspace:*"
+    "auto-guard": "workspace:*"
   }
 }

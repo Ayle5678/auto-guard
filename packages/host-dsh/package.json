@@ -1,10 +1,15 @@
 {
-  "name": "@auto-guard/host-dsh",
+  "name": "auto-guard",
   "version": "0.3.0",
   "description": "DSH (DeepSeek Harness) adapter for auto-guard.",
   "license": "MIT",
   "type": "module",
   "main": "src/index.ts",
+  "dsh": {
+    "bundle": {
+      "patch": "./src/cordis.patch.yml"
+    }
+  },
   "engines": {
     "node": ">=20"
   },

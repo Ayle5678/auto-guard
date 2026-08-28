@@ -78,9 +78,9 @@ describe('host profiles (ADR-0008)', () => {
     const dsh = profileById('dsh')!
     expect(dsh.action.kind).toBe('command')
     if (dsh.action.kind === 'command') {
-      expect(dsh.action.installArgs).toEqual(['plugin', 'add', '${AUTO_GUARD_DSH_DIR}'])
-      expect(dsh.action.removeArgs).toEqual(['plugin', 'remove', 'dsh-auto-guard'])
-      expect(dsh.action.listArgs).toEqual(['plugin', 'list'])
+      expect(dsh.action.installArgs).toEqual(['plugin', '--profile', 'web', 'add', 'link:${AUTO_GUARD_DSH_DIR}'])
+      expect(dsh.action.removeArgs).toEqual(['plugin', '--profile', 'web', 'remove', 'auto-guard'])
+      expect(dsh.action.listArgs).toEqual(['plugin', '--profile', 'web', 'ls', '--depth=0', 'auto-guard'])
     }
   })
 })

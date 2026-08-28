@@ -70,7 +70,7 @@ auto-guard init
 回车确认默认勾选，或输入序号切换（如 1,3）：
 ⏎
 [DeepSeek Harness] 将执行：
-  · 运行 dsh plugin add C:\code\auto-guard\packages\host-dsh
+  · 运行 dsh plugin --profile web add link:C:\code\auto-guard\packages\host-dsh
 [ZCode] 将执行：
   · 备份 ~/.zcode/cli/config.json → C:\Users\me\.zcode\cli\config.json.auto-guard.bak
   · 写入 ~/.zcode/cli/config.json
@@ -149,7 +149,7 @@ auto-guard remove --host pi --yes
 
 - **有备份则还原**：`*.auto-guard.bak` 存在时逐字节还原原文件，备份随之删除（init 前是什么样，卸完就是什么样）。
 - **无备份则结构化移除**：比如早期是手工接入的——只删 marker 匹配的 auto-guard 条目，你自己的配置一条不动。
-- **dsh 走原生通道**：`dsh plugin remove dsh-auto-guard`；dsh CLI 不可用或未注册时报「未接入」，不算失败。
+- **dsh 走原生通道**：`dsh plugin --profile web remove auto-guard`；dsh CLI 不可用或未注册时报「未接入」，不算失败。
 - **用户数据保留**：`~/.dsh|~/.pi|~/.zcode/auto-guard/`（规则、缓存、审计库）原样保留；彻底清除请手动删除对应目录。
 
 ### 2.5 flags 一览
@@ -169,7 +169,7 @@ auto-guard remove --host pi --yes
 
 | | 检测特征 | 写入动作 | 生效条件 |
 |---|---|---|---|
-| **dsh** | `~/.dsh/` 存在 **且** `dsh` 在 PATH | `dsh plugin add <host-dsh 包路径>`（原生插件通道） | 新会话 |
+| **dsh** | `~/.dsh/` 存在 **且** `dsh` 在 PATH | `dsh plugin --profile web add link:<host-dsh 包路径>`（原生插件通道，web 为 dsh 默认 profile） | 新会话 |
 | **pi** | `~/.pi/` 存在 **且** `pi` 在 PATH | `~/.pi/agent/settings.json` 的 `pi.extensions` 数组追加 host-pi 的 `src/index.ts`（jiti 直跑 TS，无需构建） | 新会话 |
 | **zcode** | `~/.zcode/cli/config.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-zcode>/dist/hook-cli.js` / `session-start.js`（需先 `pnpm build` 产出 dist，缺了 init 会拒绝并提示） | 新会话；**hooks 无热重载，必须新开 ZCode 会话** |
 

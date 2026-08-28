@@ -99,13 +99,13 @@ describe('auto-guard remove (ticket 04)', () => {
       ...installerDeps(home),
       runCommand: (exe, args) => {
         calls.push({ exe, args })
-        if (args[0] === 'remove') return { ok: true, stdout: 'removed' }
-        return { ok: true, stdout: 'dsh-auto-guard' }
+        if (args[3] === 'remove') return { ok: true, stdout: 'removed' }
+        return { ok: true, stdout: 'auto-guard' }
       },
     }
     const result = await runCli(['remove', '--host', 'dsh'], { installer: deps })
     expect(result.code).toBe(0)
-    expect(calls.some((c) => c.args.join(' ') === 'plugin remove dsh-auto-guard')).toBe(true)
+    expect(calls.some((c) => c.args.join(' ') === 'plugin --profile web remove auto-guard')).toBe(true)
   })
 
   it('dsh remove failure when still registered exits 2', async () => {
@@ -114,7 +114,7 @@ describe('auto-guard remove (ticket 04)', () => {
     const deps: InstallerDeps = {
       ...installerDeps(home),
       runCommand: (_exe, args) =>
-        args[1] === 'remove' ? { ok: false, stderr: 'permission denied' } : { ok: true, stdout: 'dsh-auto-guard' },
+        args[3] === 'remove' ? { ok: false, stderr: 'permission denied' } : { ok: true, stdout: 'auto-guard' },
     }
     const result = await runCli(['remove', '--host', 'dsh'], { installer: deps })
     expect(result.code).toBe(2)

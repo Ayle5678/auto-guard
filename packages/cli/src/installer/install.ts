@@ -58,7 +58,9 @@ export function resolvePackagePaths(): PackagePaths {
       distHookCli: join(dir('@auto-guard/host-zcode'), 'dist', 'hook-cli.js'),
       distSessionStart: join(dir('@auto-guard/host-zcode'), 'dist', 'session-start.js'),
     },
-    dsh: { packageDir: dir('@auto-guard/host-dsh') },
+    // The dsh adapter's manifest name is `auto-guard` (its dsh-native
+    // identity in profile bundles lists), not its old scoped name.
+    dsh: { packageDir: dir('auto-guard') },
   }
 }
 
