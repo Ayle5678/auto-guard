@@ -42,6 +42,7 @@ import {
 } from '@auto-guard/core'
 import { readRecentDecisions, readStatus } from './status-store.ts'
 import { runInstallerCommand, type InstallerDeps } from './installer/install.ts'
+import { PROFILES } from './installer/profiles.ts'
 
 /** Lightweight connectivity check result (see core DeepSeekReviewer). */
 interface PingResult {
@@ -60,6 +61,8 @@ export interface CliDeps {
   detectRoot?: () => string | undefined
   /** Installer collaborators (SPEC 0002 init/list/remove). */
   installer?: InstallerDeps
+  /** Override the standard per-host roots scanned by aggregate `guard status` (tests). */
+  hostRoots?: () => readonly HostRootRef[]
 }
 
 export interface RunResult {
@@ -71,6 +74,25 @@ interface Ctx {
   out: string[]
   configRoot: string
   configPath: string
+  /** True when the root came from `--config-root`/env — aggregate views stay off. */
+  explicitRoot: boolean
+}
+
+/** One standard host data root: where the host's guard config is seeded. */
+export interface HostRootRef {
+  label: string
+  /** Host home directory (e.g. `~/.pi`) — its existence means the host is installed. */
+  homeDir: string
+  /** Guard data root (e.g. `~/.pi/auto-guard`). */
+  root: string
+}
+
+function defaultHostRoots(): HostRootRef[] {
+  const home = homedir()
+  return PROFILES.map((profile) => {
+    const dir = join(home, profile.detection.dirs[0]!)
+    return { label: profile.label, homeDir: dir, root: join(dir, 'auto-guard') }
+  })
 }
 
 function detectConfigRoot(): string | undefined {
@@ -86,7 +108,7 @@ function resolveConfigRoot(deps: CliDeps): string | undefined {
   return detectConfigRoot()
 }
 
-/** Load, save and audit access, all rooted at the resolved config root. */
+/** Load, save and audit access, all rooted at the given config root. */
 function openRoot(configRoot: string, deps: CliDeps) {
   const configPath = join(configRoot, 'config.json')
   return {
@@ -106,12 +128,15 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
   // dispatches; the installer accepts and ignores the flag (spec 0002: the
   // guard config root is not the installer's business).
   let configRoot = ''
+  let explicitRoot = false
   const rootIndex = args.indexOf('--config-root')
   if (rootIndex >= 0) {
     configRoot = args[rootIndex + 1] ?? ''
     args = [...args.slice(0, rootIndex), ...args.slice(rootIndex + 2)]
+    explicitRoot = configRoot !== ''
   } else if (process.env.AUTO_GUARD_CONFIG_ROOT) {
     configRoot = process.env.AUTO_GUARD_CONFIG_ROOT
+    explicitRoot = true
   }
 
   // Installer commands run before config-root resolution: installing must
@@ -131,7 +156,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
 
   const [group, action = '', ...rest] = args
   const io = openRoot(configRoot, deps)
-  const ctx: Ctx = { out, configRoot, configPath: join(configRoot, 'config.json') }
+  const ctx: Ctx = { out, configRoot, configPath: join(configRoot, 'config.json'), explicitRoot }
 
   switch (group) {
     case 'guard':
@@ -148,6 +173,52 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
   }
 }
 
+/** Tilde-collapse the home prefix for display (`C:\Users\me\.pi` → `~/.pi`). */
+function tildePath(p: string): string {
+  const home = homedir()
+  if (p.startsWith(`${home}\\`) || p.startsWith(`${home}/`)) {
+    return `~${p.slice(home.length).replaceAll('\\', '/')}`
+  }
+  return p
+}
+
+/**
+ * `guard status` across every standard host root (ADR-0003: one root per
+ * host). Seeded roots render the full single-root status; hosts that are
+ * installed but never ran a guarded session show as unseeded; hosts absent
+ * from the machine are skipped entirely.
+ */
+function aggregateStatusLines(roots: readonly HostRootRef[], deps: CliDeps): string[] {
+  const lines: string[] = ['🛡️ auto-guard 多宿主状态']
+  for (const { label, homeDir, root } of roots) {
+    if (!existsSync(homeDir)) continue
+    lines.push('')
+    if (!existsSync(root)) {
+      const hostName = label.replace(/ Coding Agent$/, '')
+      lines.push(`◇ ${label} — ${tildePath(root)}：尚未播种（新开一次 ${hostName} 会话后自动创建）`)
+      continue
+    }
+    lines.push(`🛡️ ${label} — ${tildePath(root)}`)
+    const io = openRoot(root, deps)
+    const config = io.load()
+    let auditCount: number | undefined
+    if (config.examineEnabled) {
+      const audit = io.auditFor(config)
+      try {
+        auditCount = audit.count()
+      } finally {
+        audit.close()
+      }
+    }
+    for (const line of statusLines(config, readStatus(join(root, 'status.json')), join(root, 'config.json'), auditCount)) {
+      lines.push(`  ${line}`)
+    }
+  }
+  lines.push('')
+  lines.push('（管理命令作用于单个宿主：加 --config-root ~/.<host>/auto-guard，或设 AUTO_GUARD_CONFIG_ROOT）')
+  return lines
+}
+
 function guardCommand(
   action: string,
   rest: readonly string[],
@@ -155,6 +226,13 @@ function guardCommand(
   io: ReturnType<typeof openRoot>,
   deps: CliDeps,
 ): RunResult | Promise<RunResult> {
+  // Aggregate view goes first so an unseeded auto-detected root is not
+  // created as a side effect of reading status (io.load() seeds defaults).
+  if (action === 'status' && !ctx.explicitRoot) {
+    const roots = deps.hostRoots?.() ?? defaultHostRoots()
+    ctx.out.push(aggregateStatusLines(roots, deps).join('\n'))
+    return { code: 0, output: ctx.out }
+  }
   // Read-only group: hydrate the encrypted key so status/ping see it.
   const config = hydrateApiKey(io.load(), () => loadApiKey(ctx.configRoot))
   switch (action) {

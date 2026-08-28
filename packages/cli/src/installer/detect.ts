@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
+import { message, type Lang } from './i18n.ts'
 import { PROFILES, type HostProfile } from './profiles.ts'
 
 export type Confidence = 'high' | 'medium' | 'none'
@@ -15,7 +16,7 @@ export interface DetectionResult {
   profile: HostProfile
   detected: boolean
   confidence: Confidence
-  /** Human-readable evidence lines (Chinese, user-facing). */
+  /** Human-readable evidence lines (localized, user-facing). */
   evidence: string[]
 }
 
@@ -25,20 +26,23 @@ export interface DetectOptions {
   /** Override executable probe (tests). */
   hasExecutable?: (exe: string) => boolean
   profiles?: readonly HostProfile[]
+  /** Output language for evidence lines (default zh). */
+  lang?: Lang
 }
 
 export function detectHosts(options: DetectOptions = {}): DetectionResult[] {
   const home = options.home ?? homedir()
   const hasExecutable = options.hasExecutable ?? defaultHasExecutable
   const profiles = options.profiles ?? PROFILES
+  const lang = options.lang ?? 'zh'
   return profiles.map((profile) => {
     const evidence: string[] = []
     const fileHit = profile.detection.files.find((f) => existsSync(join(home, f)))
-    if (fileHit) evidence.push(`存在 ~/${fileHit}`)
+    if (fileHit) evidence.push(message(lang, 'evidenceFound', { path: fileHit }))
     const dirHits = profile.detection.dirs.filter((d) => existsSync(join(home, d)))
-    for (const dir of dirHits) evidence.push(`存在 ~/${dir}`)
+    for (const dir of dirHits) evidence.push(message(lang, 'evidenceFound', { path: dir }))
     const exeHits = profile.detection.executables.filter((exe) => hasExecutable(exe))
-    for (const exe of exeHits) evidence.push(`找到可执行文件 ${exe}`)
+    for (const exe of exeHits) evidence.push(message(lang, 'evidenceExe', { exe }))
 
     // Detection follows the spec's AND semantics: a strong file marker alone,
     // or directory AND executable together. An executable on PATH by itself is

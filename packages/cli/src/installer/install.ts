@@ -7,14 +7,20 @@
  * detect → select (TTY multi-select or --host) → show plan/diff → confirm
  * (unless --yes) → backup → write → verify → summary. Exit codes: 0 success,
  * 2 failure / nothing detected / unknown host (ticket 03).
+ *
+ * Bilingual surface (zh/en): language resolves as `--lang` > `AUTO_GUARD_LANG`
+ * > interactive bilingual prompt (init on a TTY only) > `zh`. The zh fallback
+ * keeps piped/CI output byte-stable for existing consumers.
  */
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import { showBanner, type BannerLang } from './banner.ts'
 import { detectHosts } from './detect.ts'
-import { isConfirmed, promptHostSelection } from './interactive.ts'
+import { envLang, invalidLangMessage, message, normalizeLang, type Lang, type MessageKey } from './i18n.ts'
+import { isConfirmed, promptHostSelection, promptLanguage } from './interactive.ts'
 import { defaultRunCommand, integrationStatus, type RunCommand } from './integration.ts'
 import { applyHostPlan, buildInitPlan } from './plan.ts'
 import { removeHost } from './remove.ts'
@@ -31,6 +37,10 @@ export interface InstallerDeps {
   stdinIsTTY?: boolean
   /** Injected prompt line source (tests); prompt text is passed for realism. */
   readLine?: (prompt: string) => Promise<string>
+  /** Force the init banner on/off (tests); default follows stdout TTY. */
+  banner?: boolean
+  /** Banner sink override (tests); default process.stdout. */
+  writeOut?: (text: string) => void
 }
 
 export interface InstallerResult {
@@ -57,12 +67,30 @@ interface InstallerFlags {
   hosts?: string[]
   yes: boolean
   home?: string
+  /** Force the init banner even without a TTY (`--banner`). */
+  banner?: boolean
+  /** Output language; absent means "not pinned" (env / prompt / zh fallback decide). */
+  lang?: Lang
 }
 
-export function parseInstallerArgs(argv: readonly string[]): { ok: true; flags: InstallerFlags } | { ok: false; message: string } {
+/** Pre-scan argv for `--lang`/`--lang=x` so even parse errors speak the right language. */
+function scanLangFlag(argv: readonly string[]): { lang?: Lang; invalid?: string } {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!
+    const value = arg === '--lang' ? argv[i + 1] : arg.startsWith('--lang=') ? arg.slice('--lang='.length) : undefined
+    if (value === undefined) continue
+    const lang = normalizeLang(value)
+    if (!lang) return { invalid: value }
+    return { lang }
+  }
+  return {}
+}
+
+export function parseInstallerArgs(argv: readonly string[], lang: Lang = 'zh'): { ok: true; flags: InstallerFlags } | { ok: false; message: string } {
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const [command, ...rest] = argv
   if (command !== 'init' && command !== 'list' && command !== 'remove') {
-    return { ok: false, message: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] [--home <path>]' }
+    return { ok: false, message: t('usage') }
   }
   const flags: InstallerFlags = { command, yes: false }
   for (let i = 0; i < rest.length; i++) {
@@ -73,7 +101,7 @@ export function parseInstallerArgs(argv: readonly string[]): { ok: true; flags: 
     const value = (): string => {
       if (inline !== undefined) return inline
       const next = rest[++i]
-      if (next === undefined) throw new Error(`${name} 缺少参数值`)
+      if (next === undefined) throw new Error(t('flagMissingValue', { name }))
       return next
     }
     try {
@@ -81,14 +109,21 @@ export function parseInstallerArgs(argv: readonly string[]): { ok: true; flags: 
         flags.hosts = value().split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
       } else if (name === '--yes' || name === '-y') {
         flags.yes = true
+      } else if (name === '--banner') {
+        flags.banner = true
       } else if (name === '--home') {
         flags.home = value()
+      } else if (name === '--lang') {
+        const raw = value()
+        const parsed = normalizeLang(raw)
+        if (!parsed) return { ok: false, message: invalidLangMessage(raw) }
+        flags.lang = parsed
       } else if (name === '--config-root') {
         // Shared parser flag of the management commands; the installer never
         // touches the guard config root (spec 0002: 配置根不归安装器管).
         value()
       } else {
-        return { ok: false, message: `未知参数：${name}（可用：--host --yes --home）` }
+        return { ok: false, message: t('unknownFlag', { name }) }
       }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
@@ -99,7 +134,9 @@ export function parseInstallerArgs(argv: readonly string[]): { ok: true; flags: 
 
 /** Entry point used by the CLI shell; argv starts at the subcommand. */
 export async function runInstallerCommand(argv: readonly string[], deps: InstallerDeps = {}): Promise<InstallerResult> {
-  const parsed = parseInstallerArgs(argv)
+  const scanned = scanLangFlag(argv)
+  if (scanned.invalid !== undefined) return { code: 2, output: [invalidLangMessage(scanned.invalid)] }
+  const parsed = parseInstallerArgs(argv, scanned.lang ?? envLang() ?? 'zh')
   if (!parsed.ok) return { code: 2, output: [parsed.message] }
   const flags = parsed.flags
   if (flags.command === 'init') return runInit(flags, deps)
@@ -116,9 +153,10 @@ function resolvePaths(deps: InstallerDeps): PackagePaths {
   return resolvePackagePaths()
 }
 
-function validateHostNames(hosts: readonly string[]): string | null {
+function validateHostNames(hosts: readonly string[], lang: Lang): string | null {
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const unknown = hosts.filter((h) => !HOST_IDS.includes(h as HostId))
-  if (unknown.length) return `未知宿主：${unknown.join(', ')}（可用值：${HOST_IDS.join(', ')}）`
+  if (unknown.length) return t('unknownHosts', { hosts: unknown.join(', '), valid: HOST_IDS.join(', ') })
   return null
 }
 
@@ -133,13 +171,23 @@ async function runInit(flags: InstallerFlags, deps: InstallerDeps): Promise<Inst
   const fileExists = deps.fileExists ?? existsSync
   const runCommand = deps.runCommand
   const tty = deps.stdinIsTTY ?? Boolean(process.stdin.isTTY)
-  const detections = detectHosts({ home, hasExecutable: deps.hasExecutable })
   const injectedReadLine = deps.readLine
   const ownReadLine = !injectedReadLine && tty ? makeDefaultReadLine() : undefined
   const readLine = injectedReadLine ?? ownReadLine?.ask
+  const interactiveAsk = Boolean(tty && readLine) && !flags.lang && !envLang()
+
+  // The banner leads: it is the first thing any run shows. Before the
+  // language prompt resolves, its tagline is bilingual; once pinned or
+  // resolved, it renders in that language.
+  const pinned = flags.lang ?? envLang()
+  const bannerLang: BannerLang = pinned ?? (interactiveAsk ? 'bilingual' : 'zh')
+  showBanner({ enabled: flags.banner ?? deps.banner, lang: bannerLang, write: deps.writeOut })
+
+  const lang: Lang = pinned ?? (interactiveAsk ? await promptLanguage(readLine!) : 'zh')
+  const detections = detectHosts({ home, hasExecutable: deps.hasExecutable, lang })
 
   try {
-    return await runInitBody(flags, deps, { out, home, paths, fileExists, runCommand, tty, detections, readLine })
+    return await runInitBody(flags, deps, { out, home, paths, fileExists, runCommand, tty, detections, readLine, lang })
   } finally {
     ownReadLine?.close()
   }
@@ -154,35 +202,39 @@ interface InitContext {
   tty: boolean
   detections: ReturnType<typeof detectHosts>
   readLine?: (prompt: string) => Promise<string>
+  lang: Lang
 }
 
 async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: InitContext): Promise<InstallerResult> {
-  const { out, home, paths, fileExists, runCommand, tty, detections, readLine } = ctx
+  const { out, home, paths, fileExists, runCommand, tty, detections, readLine, lang } = ctx
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
+  const joiner = lang === 'zh' ? '、' : ', '
   const targetOf = (profile: HostProfile): string => {
     if (profile.action.kind === 'json-merge') return profile.action.file
     return `${profile.action.executable} ${profile.action.installArgs.join(' ')}`
   }
   let selected: HostId[]
   if (flags.hosts?.length) {
-    const invalid = validateHostNames(flags.hosts)
+    const invalid = validateHostNames(flags.hosts, lang)
     if (invalid) return { code: 2, output: [invalid] }
     for (const id of orderedHosts(flags.hosts)) {
       const detection = detections.find((d) => d.profile.id === id)!
       if (!detection.detected) {
-        return { code: 2, output: [`未检测到 ${detection.profile.label}（${home} 下无宿主特征）：请先安装宿主，或在交互终端中运行 init 以手动确认`] }
+        return { code: 2, output: [t('hostNotDetected', { label: detection.profile.label, home })] }
       }
     }
     selected = orderedHosts(flags.hosts)
   } else {
     if (!tty) {
-      return { code: 2, output: ['当前环境非交互终端：请使用 --host <dsh|pi|zcode> 指定宿主并加 --yes，例如 auto-guard init --host pi,zcode --yes'] }
+      return { code: 2, output: [t('nonInteractiveHint')] }
     }
     const { selected: chosen, notes } = await promptHostSelection(
       detections.map((d) => ({ id: d.profile.id, label: d.profile.label, detected: d.detected, evidence: d.evidence, target: targetOf(d.profile) })),
       readLine!,
+      lang,
     )
     for (const note of notes) out.push(note)
-    if (!chosen.length) return { code: 2, output: [...out, '未选择任何宿主，退出'] }
+    if (!chosen.length) return { code: 2, output: [...out, t('nothingSelected')] }
     selected = orderedHosts(chosen)
   }
 
@@ -193,20 +245,20 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
     const profile = profileById(id)!
     const status = integrationStatus(id, { home, paths, fileExists, runCommand })
     if (status === 'integrated') {
-      out.push(`[${profile.label}] 已接入，跳过（幂等：文件与备份未改动）`)
+      out.push(t('alreadyIntegrated', { label: profile.label }))
       continue
     }
     // Profile-declared artifacts (e.g. built entry points) must exist first.
     if (profile.action.kind === 'json-merge') {
       const missing = (profile.action.requiredTokens ?? []).map((token) => resolveToken(token, paths)).filter((p) => !fileExists(p))
       if (missing.length) {
-        out.push(`[${profile.label}] 缺少构建产物 ${missing.map((p) => basename(p)).join('、')}：请先在仓库运行 pnpm build`)
+        out.push(t('missingArtifacts', { label: profile.label, files: missing.map((p) => basename(p)).join(joiner) }))
         failures.push(id)
         continue
       }
     }
 
-    const plan = buildInitPlan(profile, { home, paths })
+    const plan = buildInitPlan(profile, { home, paths, lang })
     if (plan.blocked) {
       out.push(`[${plan.label}] ${plan.blocked}`)
       failures.push(id)
@@ -217,86 +269,92 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
       continue
     }
 
-    out.push(`[${plan.label}] 将执行：`)
+    out.push(t('willDo', { label: plan.label }))
     for (const step of plan.steps) out.push(`  · ${step.description}`)
     for (const line of plan.diff) out.push(`    ${line}`)
     if (!flags.yes) {
       if (!readLine) {
-        out.push(`[${plan.label}] 需要确认但环境非交互：请加 --yes`)
+        out.push(t('confirmNeedsNonInteractive', { label: plan.label }))
         failures.push(id)
         continue
       }
-      const answer = await readLine(`确认写入 ${plan.label}？(y/N)：`)
+      const answer = await readLine(t('confirmWrite', { label: plan.label }))
       if (!isConfirmed(answer)) {
-        out.push(`[${plan.label}] 已跳过（未确认）`)
+        out.push(t('declined', { label: plan.label }))
         continue
       }
     }
 
-    const outcome = applyHostPlan(plan, { fileExists, runCommand })
+    const outcome = applyHostPlan(plan, { fileExists, runCommand, lang })
     if (outcome.ok) {
-      out.push(`[${plan.label}] 完成`)
+      out.push(t('hostDone', { label: plan.label }))
       installed.push(id)
     } else {
-      out.push(`[${plan.label}] 失败（步骤 ${outcome.failedStep}）：${outcome.error}`)
+      out.push(t('hostFailed', { label: plan.label, step: outcome.failedStep ?? '?', error: outcome.error ?? '' }))
       failures.push(id)
     }
   }
 
   if (installed.length) {
     out.push('')
-    out.push('安装完成：')
+    out.push(t('installDone'))
     for (const id of installed) {
-      out.push(`  · ${profileById(id)!.label}（${profileById(id)!.sessionNote}）`)
+      out.push(t('summaryEntry', { label: profileById(id)!.label, note: message(lang, profileById(id)!.sessionNote) }))
     }
-    out.push('验证：新开会话后运行 auto-guard guard status，或在宿主中执行一条命令观察审查提示')
-    out.push('卸载：auto-guard remove [--host dsh,pi,zcode]')
-    out.push('说明：守卫配置与数据在首次运行时播种到 ~/.<host>/auto-guard/，init 不创建这些文件')
+    out.push(t('verifyHint'))
+    out.push(t('configHint'))
+    out.push(t('uninstallHint'))
+    out.push(t('seedingNote'))
   }
-  if (failures.length) out.push(`有 ${failures.length} 个宿主未完成：${failures.join(', ')}`)
+  if (failures.length) out.push(t('failuresSummary', { count: failures.length, hosts: failures.join(', ') }))
   return { code: failures.length ? 2 : 0, output: out }
 }
 
 function runList(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {
+  const lang = flags.lang ?? envLang() ?? 'zh'
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
+  const joiner = lang === 'zh' ? '；' : '; '
   const out: string[] = []
   const home = resolveHome(flags, deps)
   const paths = resolvePaths(deps)
   const fileExists = deps.fileExists ?? existsSync
-  const detections = detectHosts({ home, hasExecutable: deps.hasExecutable })
+  const detections = detectHosts({ home, hasExecutable: deps.hasExecutable, lang })
   for (const { profile, detected, evidence } of detections) {
     out.push(`[${profile.label}]`)
-    out.push(`  检测: ${detected ? `是（${evidence.join('；')}）` : '否'}`)
+    out.push(t('listDetectLine', { value: detected ? t('detectedYes', { evidence: evidence.join(joiner) }) : t('detectedNo') }))
     // An undetected host is by definition not integrated — don't confuse a
     // failing status probe (e.g. no dsh CLI) with "unknown, check manually".
     const status = detected ? integrationStatus(profile.id, { home, paths, fileExists, runCommand: deps.runCommand }) : 'not-integrated'
-    out.push(`  接入: ${status === 'integrated' ? '已接入' : status === 'not-integrated' ? '未接入' : '未知（无法读取宿主配置）'}`)
+    out.push(t('listIntegratedLine', { value: status === 'integrated' ? t('integratedYes') : status === 'not-integrated' ? t('integratedNo') : t('integratedUnknown') }))
     if (status === 'not-integrated') {
-      out.push(`  下一步: ${detected ? `auto-guard init --host ${profile.id} --yes` : `先安装 ${profile.label}，再运行 auto-guard init --host ${profile.id} --yes`}`)
+      out.push(t('listNextLine', { value: detected ? t('nextRunInit', { id: profile.id }) : t('nextInstallFirst', { label: profile.label, id: profile.id }) }))
     } else if (status === 'integrated') {
-      out.push('  验证: auto-guard guard status')
+      out.push(t('listVerifyLine'))
     } else {
-      out.push('  请手工检查宿主配置文件后再操作')
+      out.push(t('listManualCheck'))
     }
   }
   return { code: 0, output: out }
 }
 
 function runRemove(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {
+  const lang = flags.lang ?? envLang() ?? 'zh'
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const out: string[] = []
   const home = resolveHome(flags, deps)
   const fileExists = deps.fileExists ?? existsSync
   const hosts = flags.hosts?.length ? flags.hosts : [...HOST_IDS]
-  const invalid = validateHostNames(hosts)
+  const invalid = validateHostNames(hosts, lang)
   if (invalid) return { code: 2, output: [invalid] }
 
   let failed = 0
   for (const id of orderedHosts(hosts)) {
     const profile = profileById(id)!
-    const outcome = removeHost(profile, { home, fileExists, runCommand: deps.runCommand ?? defaultRunCommand })
+    const outcome = removeHost(profile, { home, fileExists, runCommand: deps.runCommand ?? defaultRunCommand, lang })
     if (outcome.status === 'failed') failed++
-    out.push(`[${profile.label}] ${outcome.message ?? (outcome.status === 'removed' || outcome.status === 'restored' ? '已卸载' : '未改动')}`)
+    out.push(`[${profile.label}] ${outcome.message ?? (outcome.status === 'removed' || outcome.status === 'restored' ? t('removeOutcomeDone') : t('removeOutcomeUntouched'))}`)
   }
-  out.push('说明：守卫用户数据 ~/.<host>/auto-guard/ 保留；如需彻底清除请手动删除对应目录')
+  out.push(t('removeDataNote'))
   return { code: failed ? 2 : 0, output: out }
 }
 

@@ -8,6 +8,8 @@
  * against the discovered @auto-guard/host-* package locations; the installer
  * only ever touches files a profile declares.
  */
+import { isMessageKey, type MessageKey } from './i18n.ts'
+
 export type HostId = 'dsh' | 'pi' | 'zcode'
 
 export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode']
@@ -60,8 +62,8 @@ export interface HostProfile {
   id: HostId
   label: string
   detection: DetectionSpec
-  /** Session-note shown in the init summary (hosts without hot reload say so here). */
-  sessionNote: string
+  /** Init-summary note as an i18n key (hosts without hot reload say so here). */
+  sessionNote: MessageKey
   action: JsonMergeAction | CommandAction
 }
 
@@ -73,7 +75,7 @@ export const PROFILES: readonly HostProfile[] = [
     id: 'dsh',
     label: 'DeepSeek Harness',
     detection: { dirs: ['.dsh'], files: [], executables: ['dsh'] },
-    sessionNote: '生效需新开会话',
+    sessionNote: 'sessionNoteReload',
     action: {
       kind: 'command',
       executable: 'dsh',
@@ -87,7 +89,7 @@ export const PROFILES: readonly HostProfile[] = [
     id: 'pi',
     label: 'Pi Coding Agent',
     detection: { dirs: ['.pi'], files: [], executables: ['pi'] },
-    sessionNote: '生效需新开会话',
+    sessionNote: 'sessionNoteReload',
     action: {
       kind: 'json-merge',
       file: '~/.pi/agent/settings.json',
@@ -104,7 +106,7 @@ export const PROFILES: readonly HostProfile[] = [
     id: 'zcode',
     label: 'ZCode',
     detection: { dirs: ['.zcode'], files: ['.zcode/cli/config.json'], executables: [] },
-    sessionNote: 'hooks 无热重载，必须新开 ZCode 会话',
+    sessionNote: 'sessionNoteHooksNoHotReload',
     action: {
       kind: 'json-merge',
       file: '~/.zcode/cli/config.json',
@@ -129,6 +131,7 @@ export function validateProfile(profile: HostProfile): string[] {
   const d = profile.detection
   if (!d || (!d.dirs?.length && !d.files?.length && !d.executables?.length)) errors.push('detection 需要至少一项证据（dirs/files/executables）')
   if (!profile.sessionNote) errors.push('sessionNote 不能为空')
+  else if (!isMessageKey(profile.sessionNote)) errors.push(`sessionNote 必须是消息目录中的键：${profile.sessionNote}`)
   if (!profile.action) {
     errors.push('action 不能为空')
     return errors

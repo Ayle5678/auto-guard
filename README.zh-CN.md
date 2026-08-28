@@ -1,29 +1,112 @@
 # auto-guard（统一命令审查守卫）
 
-面向 AI 编码 agent 的命令审查守卫：在宿主执行命令或读写文件之前，用分层静态规则、缓存、学习规则、审计历史与可选 LLM 审查给出 **allow / deny / ask** 裁决。一个核心裁决引擎 + 三个薄宿主适配层。
+面向 AI 编码 agent 的**命令审查安全网**。在宿主执行命令或读写文件之前，auto-guard 用分层静态规则、多级缓存、学习规则、审计历史与一次性 LLM 审查（默认 DeepSeek）给出 **allow / deny / ask** 裁决。它设计为叠在 full-access 模式之上：危险命令直接拦，常规命令毫秒级放行，只有真正拿不准的才交给 LLM 或人工。
 
-- **`@auto-guard/core`** — 零宿主依赖的裁决引擎（裁决管线、规则、缓存、key 水合、审计、历史层、学习规则、管理操作层）。
-- **`@auto-guard/host-pi`** — Pi Coding Agent 扩展（`tool_call` / `user_bash`，四态 ask）。
-- **`@auto-guard/host-zcode`** — ZCode PreToolUse hook 插件（一次一进程、磁盘会话态、决策历史）。
-- **`@auto-guard/host-dsh`** — DeepSeek Harness 插件（`tools/pre-execute`、权限预设开关、SQLCipher 审计、设置页 + Typert remote）。
-- **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与（SPEC 0002）安装器。
+一个核心裁决引擎 + 三个薄宿主适配层：
 
-本 monorepo 合并三个复制移植前代：`dsh-auto-guard` 0.2.0 → `pi-auto-guard` 0.1.3 → `zcode-auto-guard` 0.1.0。跨宿主修复一次提交同步全部宿主；各宿主保留原生打包与分发渠道（差异见 [differences](docs/differences.md)）。
+- **`@auto-guard/core`** — 零宿主依赖的裁决引擎：裁决管线、规则、缓存、key 水合、审计、历史层、学习规则、管理操作层。仅依赖 Node 内置模块（ADR-0002）。
+- **`@auto-guard/host-dsh`** — DeepSeek Harness 插件。
+- **`@auto-guard/host-pi`** — Pi Coding Agent 扩展。
+- **`@auto-guard/host-zcode`** — ZCode PreToolUse hook 插件。
+- **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与安装器。
 
-## 宿主对照表
+三个宿主跑同一条管线、同一套默认值、同一套规则文件；不同的只是集成外壳（见[宿主适配层](#宿主适配层)）。
 
-| 维度 | host-dsh | host-pi | host-zcode |
+## 开发缘由
+
+- full-access 模式用着爽但心里没底。现有的 LLM 审批机制（Claude Code 的 auto mode、Codex 的 auto-review）每条命令都过一遍模型，又慢又费 token。
+- 实际观察下来，agent 的 shell 命令大多是安全、简单且高度重复的。所以审查提示词刻意精简（不带上下文内容），凡是裁决过的命令都由多级缓存直接命中。短期日常使用实测，**审查费用控制在整体费用的 1%–4%**，且随历史积累持续下降。
+- 延迟由层级而非 LLM 主导：白名单与缓存命中完全不经过模型，守卫在体感上几乎不存在。
+
+## 设计定位
+
+- **安全网，不是沙箱。** 守卫不限制文件系统，而是在 full access 之上做裁决、尽量不打断正常开发。它不是绝对安全边界——LLM 裁决可能被提示词注入，所以高风险命令永不缓存、敏感文件内容永不送审。
+- **处处 fail-closed。** 审查超时、缺 API key、没有确认 UI——所有异常路径都落到拒绝或人工确认，绝不静默放行。（唯一例外：用户显式关闸必须永远有效。）
+- **密钥不落仓库。** API key 解析顺序：环境变量 → 加密存储（AES-256-GCM 机器绑定）→ 遗留明文字段（只读，永不回写）。
+
+## 裁决管线（所有宿主共用）
+
+每条 shell 命令依次过这些层，先命中先赢：
+
+```text
+命令（bash / pwsh）
+  → 写后执行追踪        刚写入的脚本被立即执行时物化脚本内容送审（内容疑似敏感则不送 LLM）
+  → 绝对黑名单          hard-deny，缓存/学习规则/LLM 均不可推翻
+  → 目录删除复核        先拒一次；agent 带 [删除理由] 重试；低推理 LLM 复核恰好一次；
+                        非 allow 一律转人工
+  → 敏感路径守卫        命令引用 .env / .ssh / *.pem … 时整条降级 LLM（不静默放行、不写缓存）
+  → 复合命令            按 ; && || 拆分，取最严子裁决；状态改变命令（export、cd、trap、
+                        git config …）强制整条送 LLM
+  → 纯管道              整条判定：所有叶子都确定性安全才放行；任一叶子拿不准则整条一次送 LLM
+  → 静态白名单          默认白名单 + 用户预授权；放行前做 token 级危险 flag 扫描
+    （+ 预授权）        （git branch -D、find -exec …）；命令替换/重定向不走静态路径
+  → 会话缓存            LRU，key 为 会话×工作区×命令形态
+  → 持久缓存            跨会话、按工作区隔离、按风险 TTL（low 30 天 / medium 7 天 / high 永不）；
+                        LLM deny 永不入内
+  → 模板缓存            学习放行按骨架匹配，参数变体可命中（--days 7 ≈ --days 8）
+  → 历史判断层          同一骨架近期多次低风险放行且零拒绝 → 免审放行
+  → LLM 兜底            未分类命令；任何故障 fail-closed
+```
+
+文件操作（`write` / `edit` / `read`）只过敏感路径门禁：命中即 ask 且内容永不出本机，其余直接放行。守卫范围之外的工具调用原样透传。
+
+管线之上还有两个记忆行为：
+
+- **Guard Memory** — LLM deny 永不写缓存；同命令重现时转人工 ask，而不是静默重判。
+- **ask 四态**（ask UI 支持的宿主）——仅本次同意 / 本会话都同意 / 拒绝（可输原因）/ 本会话都拒绝。
+
+每条裁决带决策来源标签，通知里可见：`[白名单]`、`[LLM]`、`[黑名单]`、`[会话缓存]`、`[持久缓存]`、`[学习规则]`、`[历史]`、`[删除复核]`、`[写后执行]`、`[敏感路径]`、`[预授权]`。
+
+### 命令分类
+
+| 类别 | 行为 | 示例 | 缓存 |
 |---|---|---|---|
-| 集成事件 | `tools/pre-execute` + 单调守卫 | `tool_call` + `user_bash` | PreToolUse hook（一次一进程）+ SessionStart |
-| 决策协议 | PreToolDecision deny/ask + `next()` | `{block, reason}` / input 改写 | stdout JSON `permissionDecision`；allow=静默 |
-| ask 风格 | 宿主一次性审批 | 四态确认框 | 委托原生权限确认框 |
-| 启停 | 权限预设（`auto-guard`）——唯一开关 | `/guard on\|off` + `config.enabled` | `config.enabled`（`/guard off` 永远有效） |
-| 会话态 | 内存 | 内存 | 磁盘（`sessions/<sid>/`） |
-| 通知 | page 事件 / context 注入 | `ctx.ui.notify` / `sendMessage` | 拉式决策历史（`guard recent`） |
-| 配置根 | `~/.dsh/auto-guard/` | `~/.pi/auto-guard/` | `~/.zcode/auto-guard/` |
-| 命令面 | 设置 UI + Typert remote（无 slash 命令） | `/guard` `/guard-set` `/guard-examine` `/guard-optimize` | `commands/*.md` 教模型调 CLI |
-| 打包 | dsh 插件（client.js + typert + cordis.patch.yml） | pi extensions（jiti 直跑 TS） | 插件清单 + hooks.json + 预构建 dist |
-| 审计实现 | SQLCipher（全库加密） | SQLCipher（不可用时降级 Light） | Light（node:sqlite + 字段级 AES-GCM） |
+| 静态白名单 | 直接放行 | `ls`、`git status`、`git diff`、`git commit` | 否 |
+| 绝对黑名单 | 直接拒绝 | `rm -rf /`、`mkfs`、`dd of=/dev/...` | 否 |
+| 目录删除复核 | agent 理由 + 低推理 LLM 复核一次 | `rm -rf ./dist`、`Remove-Item -Recurse` | 否 |
+| 用户预授权 | 用户主动声明"永远放行" | `git push` | 否 |
+| 可缓存类 | LLM 放行后按 TTL 缓存 | `npm run build`、`npm test` | 是 |
+| 必审类 | 每次都过 LLM；allow 只进短时会话缓存 | `npm install`、`Invoke-Expression`、`curl \| bash` | 仅会话 30 分钟 |
+| 未分类 | LLM 裁决；low/medium 放行可入缓存 | 其余命令 | low/medium 可缓存 |
+
+### 缓存、学习与审计
+
+- **学习规则** — 对审计库做离线确定性分析，把反复安全出现的命令沉淀为 cacheable 模板（`learned-rules.json`，优先级最低，绝不学出 static-allow；每次写盘前备份、可回滚）。手动触发或每 15 天自动分析，默认关闭。
+- **守卫统计** — 会话内按层计数（LLM 调用、缓存/规则/历史命中）。纯内存，会话结束清零。
+- **审计库** — 可选（默认关闭）的本地加密 SQLite，只记录 shell 命令裁决：落库前脱敏，不记录文件工具、不记录执行输出。它是历史层与规则学习的数据源。
+
+## 宿主适配层
+
+适配层只做两件事：把宿主事件翻译成 `GuardRequest`，把裁决翻译回宿主决策协议；全部裁决逻辑在 core。每宿主独立配置根——`~/.dsh/auto-guard/`、`~/.pi/auto-guard/`、`~/.zcode/auto-guard/`——宿主之间零共享，升级零迁移。
+
+### `@auto-guard/host-dsh` — DeepSeek Harness 插件
+
+- 挂在 `tools/pre-execute`；黑名单裁决额外注册 `ctx.tools.guard()` 单调否决，LLM 不可覆盖。
+- **启停 = 对话框权限选择器里的 `auto-guard` 预设**（`danger-full-access` + ask）。这是唯一开关，其他任何地方都不持久化 enabled 标志。
+- 配置存于 `~/.dsh/settings.yaml` 的 `auto-guard:` 命名空间，经专属设置页编辑（分组字段、key 只显打码值），并带维护按钮——立即分析 / 查看规则 / 回滚学习规则 / 状态 / 清理审计 / 导出明文审计库 / 新建审计库 / 统计——本地与 **Typert remote** 均可操作。无 slash 命令。
+- `apiBase` 留空时审查请求走 DSH 内置 provider 体系（`provider`、`reasoningEffort`、`fallbackProvider`）；填值则直连 OpenAI 兼容端点。
+- 审计：**SQLCipher 整库加密**（开启前需设审计密码；支持迁移 / rekey / 导出 / 新建库）。
+- 打包：dsh 插件（`client.js` 设置 UI + `typert/` + `cordis.patch.yml`）。
+
+### `@auto-guard/host-pi` — Pi Coding Agent 扩展
+
+- 拦截所有 `tool_call`（bash / pwsh / write / edit / read）**和用户手敲的每条 `user_bash` 命令**（operations 可改写输入）。
+- **四态 ask 确认框**（仅本次同意 / 本会话都同意 / 拒绝可输原因 / 本会话都拒绝），用 Pi 原生 UI；目录删除确认走 `ctx.ui.input`，headless 时 fail-closed。
+- slash 命令面最全：`/guard`（on/off/status/stats）、`/guard-set`（reload / set-key / show-key / clear-key / set-api 向导）、`/guard-examine`（审计）、`/guard-optimize`（学习 + 历史层）。
+- 底部状态栏实时显示守卫态：`🛡️ on` · `⚠ no-key`（缺 key，fail-closed）· `审查✗`（上次审查失败）· `off`。
+- 通知路由：allow 仅 UI（`ctx.ui.notify`）；deny/ask 另经 `sendMessage` 注入模型上下文，让 agent 知道自己被拦。规则放行即使配置成 context 也强制只走页面。
+- 审计：SQLCipher，不可用时降级 Light（字段级 AES-GCM）。
+- 打包：pi extension，jiti 直跑 TypeScript 入口。
+
+### `@auto-guard/host-zcode` — ZCode PreToolUse hook 插件
+
+- 一次调用一个进程：全部会话态（会话缓存、写后执行追踪、待决删除复核、待决 deny）落盘在 `~/.zcode/auto-guard/sessions/<sid>/`，一次性进程模型不丢任何状态。
+- 裁决经 stdout JSON `permissionDecision` 返回；allow = 静默。ask **委托 ZCode 原生权限确认框**，守卫不自建 UI。缺 API key 时 fail-closed：非白名单命令拒绝，其余照常工作。
+- 定位：客户端在权限模式检查之前运行 PreToolUse hook，且 hook deny 无条件拦截——权限下拉仍管原生提示，auto-guard 在它之前独立裁决。
+- 无推送通知通道，反馈是**拉式决策历史**：环形 JSONL 记录最近裁决及命中详情，用 `guard recent` 查看。
+- slash 命令（`/guard`、`/guard-examine` 等）是 `commands/*.md`，教模型调用自带 CLI；API key 只接受真实终端里回显禁用的 `set-key` 输入，AES-256-GCM 存 `api-key.json`——绝不作为 CLI 参数或聊天输入出现。
+- 审计：Light（node:sqlite + 字段级 AES-GCM）。
+- 打包：插件 manifest + `hooks/hooks.json` + 预构建 `dist/`；SessionStart hook 重读配置。
 
 ## 安装
 
@@ -34,19 +117,31 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 # …或非交互：auto-guard init --host pi,zcode --yes
 ```
 
-每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode hooks 无热重载，必须新开 ZCode 会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+交互 `init` 先展示块状大字头图（tagline 双语），随后弹双语提问（请选择语言 / Select language——`1` 中文默认、`2` English）；脚本 / CI 用 `--lang en` 或环境变量 `AUTO_GUARD_LANG=en` 指定（非交互未指定时保持中文输出）。
 
-各宿主原生渠道继续可用、与安装器并存——本来就手工管理某宿主插件时用原生渠道即可：
+每次写入前展示 diff、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等（交互终端下带块状大字头图，青→蓝→紫逐行渐变 + ANSI Shadow 式双线立体钩边，`NO_COLOR` 退化为无色版）。装完在**新会话**中验证（ZCode hooks 无热重载）：`auto-guard guard status` 会总览全部宿主的状态；`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+
+各宿主原生渠道继续可用、与安装器并存：
 
 - **ZCode**：安装插件（`packages/host-zcode`，manifest + hooks；`dist/` 预构建）。
-- **Pi**：注册扩展（`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`；jiti 直跑 TS）。
-- **DSH**：安装插件（`packages/host-dsh`）；在聊天栏选择 `auto-guard` 权限预设即开启。
+- **Pi**：注册扩展（`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`）。
+- **DSH**：安装插件（`packages/host-dsh`）；选 `auto-guard` 权限预设即开启。
 
 新增第四个宿主 = 一条 profile + 一个适配层包，不改安装器逻辑（[接入指南](docs/new-host.md)）。
 
 ## 配置
 
-单一超集 schema；各宿主把同一套键播种到各自配置根（路径与前代一致——升级零迁移）。关键默认值（`timeoutMs` 8000；通知路由 allow=page、deny=ask=context；TTL low 30 天 / medium 7 天 / high 永不）：
+全部配置走命令行或直接编辑配置根里的 JSON；**每个宿主一个配置根，互不共享**（Key、审计、学习规则独立）。管理命令的宿主选择：`--config-root <path>` → 环境变量 `AUTO_GUARD_CONFIG_ROOT` → 自动探测（`~/.zcode → ~/.pi → ~/.dsh`，取第一个存在的）——装了多个宿主时自动探测只命中一个，给其它宿主做配置要显式指定：
+
+```bash
+auto-guard set set-key --config-root ~/.pi/auto-guard   # 给 Pi 配 Key
+auto-guard examine on  --config-root ~/.dsh/auto-guard  # 给 dsh 开审计
+auto-guard guard status                                # 不带 flag = 多宿主状态总览
+```
+
+完整命令面见[使用手册 §3](docs/usage.md#3-管理命令)。
+
+单一超集 schema；各宿主把同一套键播种到各自配置根（路径与前代一致——升级零迁移）：
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -62,20 +157,29 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 | `sessionCacheSize` | `256` | 会话 LRU 容量 |
 | `alwaysReviewCacheTtlMinutes` | `30` | 必审命令会话内放行的短 TTL |
 | `fileTrackerDefault` / `fileTrackerWindowSec` | `ask` / `5` | 写后执行追踪器 |
-| `examineEnabled` | `false` | 实验性审计日志（默认关闭） |
+| `examineEnabled` | `false` | 审计库（默认关闭） |
 | `historyEnabled` / `historyDays` | `false` / `60` | 基于审计库的运行时历史层 |
 | `autoAnalyzeEnabled` / 各阈值 | `false` / 保守 | 学习 cacheable 规则生成 |
 | dsh 特有 | — | `provider`、`reasoningEffort`、`fallbackProvider`、`apiKeyMasked`、`auditPassword`（secret role） |
 
-路径型键（`rulesPath`、`defaultRulesPath`、`cachePath`、`auditDbPath`、`learnedRulesPath`、`learnedBackupPath`、`analyzeStatePath`、`templateCachePath`）默认均落在宿主配置根内。
+路径型键（`rulesPath`、`defaultRulesPath`、`cachePath`、`auditDbPath` 等）默认均落在宿主配置根内。
 
-API key 解析顺序：**环境变量 → 加密存储（`api-key.json`，AES-256-GCM 机器绑定）→ 遗留明文字段（只读，永不回写）**。
+### 规则文件
+
+规则是八类大小写不敏感的 glob 模式列表：`staticAllow`、`hardDeny`、`directoryDelete`、`userConfirmed`、`cacheable`、`alwaysReview`、`staticAllowGuards`、`sensitivePaths`。首次运行时引擎把出厂规则复制为可编辑的 `defaults.json` 播种到配置根；你的 `rules.json` 只写增量——缺失字段自动合并补齐。示例：
+
+```json
+{
+  "version": 1,
+  "staticAllow": [
+    { "pattern": "git log", "reason": "Read-only git log" }
+  ]
+}
+```
 
 ## 从 dsh-auto-guard / pi-auto-guard / zcode-auto-guard 迁移
 
-1. 在宿主中卸载旧插件/扩展。
-2. 用同一宿主渠道安装统一包（或安装器）。
-3. 完事。配置根、文件名、schema 键全部不变：规则、缓存、学习规则、审计数据原地续用。行为差异逐项见 [differences](docs/differences.md)。
+auto-guard 是三个复制移植世代（`dsh-auto-guard` 0.2.0 → `pi-auto-guard` 0.1.3 → `zcode-auto-guard` 0.1.0）的延续，现在合并为一个仓库，跨宿主修复一次提交同步全部宿主。迁移：卸载旧插件，用同一宿主渠道安装统一包（或安装器）——配置根、文件名、schema 键全部不变，规则、缓存、学习规则、审计数据原地续用。行为差异逐项见 [differences](docs/differences.md)。
 
 ## 开发
 

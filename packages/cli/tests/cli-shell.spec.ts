@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runCli, type CliDeps } from '../src/shell.ts'
@@ -52,6 +52,54 @@ describe('cli: config root resolution', () => {
     const on = await runCli(['--config-root', dir, 'guard', 'on'], deps)
     expect(on.code).toBe(0)
     expect(existsSync(join(dir, 'config.json'))).toBe(true)
+  })
+})
+
+describe('cli: aggregate guard status (auto-detected root)', () => {
+  it('renders every installed host: seeded root in full, unseeded as a hint, absent host skipped', async () => {
+    const absent = root()
+    const piHome = root()
+    const piRoot = join(piHome, 'auto-guard') // deliberately never created
+    const zc = root()
+    const zcHome = join(zc, '.zcode')
+    const zcRoot = join(zcHome, 'auto-guard')
+    mkdirSync(zcRoot, { recursive: true })
+    writeFileSync(join(zcRoot, 'config.json'), JSON.stringify({ enabled: true, examineEnabled: false }), 'utf8')
+    writeFileSync(
+      join(zcRoot, 'status.json'),
+      JSON.stringify({ lastRunAt: new Date(2026, 7, 28, 10, 0, 0).toISOString(), lastTool: 'Bash', lastDecisionKind: 'allow', lastDecisionSource: 'static-allow' }),
+      'utf8',
+    )
+
+    const result = await runCli(['guard', 'status'], {
+      ...deps,
+      detectRoot: () => piHome, // any auto-detected root; aggregate ignores it
+      hostRoots: () => [
+        { label: 'DeepSeek Harness', homeDir: join(absent, 'dsh'), root: join(absent, 'dsh', 'auto-guard') },
+        { label: 'Pi Coding Agent', homeDir: piHome, root: piRoot },
+        { label: 'ZCode', homeDir: zcHome, root: zcRoot },
+      ],
+    })
+
+    const text = result.output.join('\n')
+    expect(result.code).toBe(0)
+    expect(text).toContain('多宿主状态')
+    expect(text).toContain('尚未播种')
+    expect(text).not.toContain('DeepSeek Harness —') // absent host row is skipped entirely
+    expect(text).toContain('ZCode')
+    expect(text).toContain('enabled : true')
+    expect(text).toContain('last    : Bash → allow [static-allow]')
+    expect(text).toContain('--config-root')
+    expect(existsSync(piRoot)).toBe(false) // aggregate status must not seed anything
+  })
+
+  it('explicit --config-root keeps the single-root view', async () => {
+    const dir = root()
+    const result = await runCli(['--config-root', dir, 'guard', 'status'], deps)
+    expect(result.code).toBe(0)
+    const text = result.output.join('\n')
+    expect(text).toContain('enabled : true')
+    expect(text).not.toContain('多宿主状态')
   })
 })
 

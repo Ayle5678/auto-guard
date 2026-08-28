@@ -175,7 +175,8 @@ describe('auto-guard init (tickets 02/03)', () => {
     const home = fakeHome()
     const deps = installerDeps(home)
     mkdirSync(join(home, '.pi'), { recursive: true })
-    const answers = ['', 'y']
+    // First answer picks the language (bilingual prompt), then host select + confirm.
+    const answers = ['1', '', 'y']
     const testDeps: InstallerDeps = { ...deps, stdinIsTTY: true, readLine: async () => answers.shift() ?? '' }
 
     const result = await runCli(['init'], { installer: testDeps })
@@ -187,7 +188,7 @@ describe('auto-guard init (tickets 02/03)', () => {
     const home = fakeHome()
     const deps = installerDeps(home)
     mkdirSync(join(home, '.pi'), { recursive: true })
-    const answers = ['', 'n']
+    const answers = ['1', '', 'n']
     const testDeps: InstallerDeps = { ...deps, stdinIsTTY: true, readLine: async () => answers.shift() ?? '' }
 
     const result = await runCli(['init'], { installer: testDeps })
@@ -200,7 +201,7 @@ describe('auto-guard init (tickets 02/03)', () => {
     const home = fakeHome()
     const deps = installerDeps(home)
     // pi is index 2 in [dsh, pi, zcode]; nothing detected.
-    const answers = ['2', 'y', 'y']
+    const answers = ['1', '2', 'y', 'y']
     const testDeps: InstallerDeps = { ...deps, stdinIsTTY: true, readLine: async () => answers.shift() ?? '' }
 
     const result = await runCli(['init'], { installer: testDeps })

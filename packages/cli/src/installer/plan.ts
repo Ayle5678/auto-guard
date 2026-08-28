@@ -8,6 +8,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { arrayAt, defaultRunCommand, hasMarker, homePath, type RunCommand } from './integration.ts'
+import { message, type Lang, type MessageKey } from './i18n.ts'
 import { renderTemplate, type HostProfile, type PackagePaths } from './profiles.ts'
 
 export interface PlanStep {  kind: 'backup' | 'write' | 'run-command'
@@ -37,6 +38,8 @@ export interface PlanOptions {
   paths: PackagePaths
   /** Content snapshot: return the file text or null when absent (tests inject this). */
   readFile?: (p: string) => string | null
+  /** Output language for step descriptions and blocked reasons (default zh). */
+  lang?: Lang
 }
 
 function defaultReadFile(p: string): string | null {
@@ -44,12 +47,15 @@ function defaultReadFile(p: string): string | null {
 }
 
 export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostPlan {
+  const lang = options.lang ?? 'zh'
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const plan: HostPlan = { profileId: profile.id, label: profile.label, steps: [], diff: [], targetFiles: [] }
   const action = profile.action
   if (action.kind !== 'json-merge') {
+    const args = renderTemplate(action.installArgs.join(' '), options.paths)
     plan.steps.push({
       kind: 'run-command',
-      description: `运行 ${action.executable} ${renderTemplate(action.installArgs.join(' '), options.paths)}`,
+      description: t('runCommandDesc', { command: `${action.executable} ${args}` }),
       command: { executable: action.executable, args: action.installArgs.map((arg) => renderTemplate(arg, options.paths)) },
     })
     return plan
@@ -66,12 +72,12 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
     try {
       const parsed = JSON.parse(raw)
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        plan.blocked = `${action.file} 不是 JSON 对象，拒绝写入（请手工检查）`
+        plan.blocked = t('blockedNotJsonObject', { file: action.file })
         return plan
       }
       doc = parsed as Record<string, unknown>
     } catch {
-      plan.blocked = `${action.file} 无法解析为 JSON，拒绝写入（请手工检查）`
+      plan.blocked = t('blockedUnparseableJson', { file: action.file })
       return plan
     }
   }
@@ -80,7 +86,7 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
   for (const op of action.ops) {
     const arr = arrayAt(doc, op.arrayPath, true)
     if (!arr) {
-      plan.blocked = `${action.file} 中 ${op.arrayPath.join('.')} 不是数组，拒绝写入`
+      plan.blocked = t('blockedNotArray', { file: action.file, path: op.arrayPath.join('.') })
       return plan
     }
     if (arr.some((el) => hasMarker(el, op.markerSuffix))) continue
@@ -88,7 +94,7 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
     try {
       element = JSON.parse(renderTemplate(op.template, options.paths))
     } catch (error) {
-      plan.blocked = `模板渲染失败：${error instanceof Error ? error.message : String(error)}`
+      plan.blocked = t('templateRenderFailed', { error: error instanceof Error ? error.message : String(error) })
       return plan
     }
     arr.push(element)
@@ -96,17 +102,17 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
     changed = true
   }
   if (!changed) {
-    plan.skipped = '已接入，跳过'
+    plan.skipped = t('planSkipped')
     return plan
   }
 
   if (raw !== null) {
     const backupFile = `${targetFile}.auto-guard.bak`
-    plan.steps.push({ kind: 'backup', description: `备份 ${action.file} → ${backupFile}`, targetFile, backupFile })
+    plan.steps.push({ kind: 'backup', description: t('backupStepDesc', { file: action.file, backup: backupFile }), targetFile, backupFile })
   }
   plan.steps.push({
     kind: 'write',
-    description: `写入 ${action.file}${raw !== null ? '' : '（新建）'}`,
+    description: t('writeStepDesc', { file: action.file, suffix: raw !== null ? '' : t('newFileSuffix') }),
     targetFile,
     content: `${JSON.stringify(doc, null, 2)}\n`,
   })
@@ -123,11 +129,14 @@ export interface ApplyOutcome {
 export interface ApplyOptions {
   fileExists?: (p: string) => boolean
   runCommand?: RunCommand
+  /** Output language for failure errors it produces itself (default zh). */
+  lang?: Lang
 }
 
 /** Execute one host's plan sequentially; on failure stop and name the step. */
 export function applyHostPlan(plan: HostPlan, options: ApplyOptions = {}): ApplyOutcome {
   const fileExists = options.fileExists ?? existsSync
+  const lang = options.lang ?? 'zh'
   for (const step of plan.steps) {
     try {
       if (step.kind === 'backup') {
@@ -137,13 +146,13 @@ export function applyHostPlan(plan: HostPlan, options: ApplyOptions = {}): Apply
         mkdirSync(dirname(step.targetFile!), { recursive: true })
         writeFileSync(step.targetFile!, step.content!, 'utf8')
         if (readFileSync(step.targetFile!, 'utf8') !== step.content) {
-          return { ok: false, failedStep: 'verify', error: '写后校验不一致' }
+          return { ok: false, failedStep: 'verify', error: message(lang, 'verifyMismatch') }
         }
       } else if (step.kind === 'run-command') {
         const runner = options.runCommand ?? defaultRunCommand
         const result = runner(step.command!.executable, step.command!.args)
         if (!result.ok) {
-          return { ok: false, failedStep: 'run-command', error: result.stderr || `${step.command!.executable} 退出码非 0` }
+          return { ok: false, failedStep: 'run-command', error: result.stderr || message(lang, 'nonzeroExit', { exe: step.command!.executable }) }
         }
       }
     } catch (error) {

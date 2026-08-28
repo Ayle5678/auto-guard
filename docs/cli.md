@@ -5,8 +5,8 @@
 The management CLI is a thin terminal shell over the shared core operations layer. All subcommands work identically against any host's config root. The installer (SPEC 0002, `init` / `list` / `remove`) runs before config-root resolution so it works on machines where no auto-guard config exists yet.
 
 ```
-auto-guard [--config-root <path>] <group> <action> [args]   # management
-auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] # installer
+auto-guard [--config-root <path>] <group> <action> [args]                 # management
+auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] [--lang zh|en] # installer
 ```
 
 ## Installer (SPEC 0002)
@@ -18,11 +18,23 @@ auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] # installer
 | `auto-guard list` | Show detection evidence + integration status per host and the next step. |
 | `auto-guard remove [--host …]` | Uninstall: restore from `*.auto-guard.bak` when present, otherwise remove auto-guard entries structurally. Guard data roots are kept. |
 
-Common flags: `--host <dsh,pi,zcode>` (repeatable values in one list), `--yes`, `--home <path>` (override HOME, mainly for tests). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
+Common flags: `--host <dsh,pi,zcode>` (repeatable values in one list), `--yes`, `--banner` (force the init banner outside a TTY), `--home <path>` (override HOME, mainly for tests), `--lang <zh|en>` (installer output language). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
+
+Installer language: the installer speaks Chinese and English. Interactive `init` leads with the banner (its tagline is bilingual until the language is known) and then opens a bilingual "请选择语言 / Select language" prompt; scripts and CI pin the language with `--lang en` or the `AUTO_GUARD_LANG` env var. Resolution order: `--lang` → `AUTO_GUARD_LANG` → interactive prompt (init on a TTY) → `zh` (keeps piped/CI output stable).
 
 Idempotent: re-running `init` detects already-integrated entries and skips them; existing backups are never overwritten. ZCode hooks have no hot reload — start a new ZCode session after installing.
 
 `--config-root` resolution order (management commands): flag → `AUTO_GUARD_CONFIG_ROOT` env → auto-detect (`~/.zcode` / `~/.pi` / `~/.dsh`, first existing).
+
+Each host keeps its own config root (`~/.dsh|~/.pi|~/.zcode/auto-guard/`) — keys, audit and learned rules are per host. When several hosts are installed, auto-detect always lands on one of them, so configure the others explicitly:
+
+```bash
+auto-guard set set-key --config-root ~/.pi/auto-guard   # key for Pi
+auto-guard examine on  --config-root ~/.dsh/auto-guard  # audit for dsh
+export AUTO_GUARD_CONFIG_ROOT=~/.pi/auto-guard          # or pin the whole session
+```
+
+`guard status` has two views: with an explicitly selected root it renders that root only; when the root is auto-detected it aggregates every installed host — seeded roots in full, installed-but-never-run hosts as an "unseeded" hint, absent hosts skipped. It is read-only and never creates config. All other management commands act on the single resolved root.
 
 | Group | Actions |
 |---|---|

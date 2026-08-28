@@ -9,6 +9,7 @@
  */
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { arrayAt, hasMarker, homePath, readJsonObject, type RunCommand } from './integration.ts'
+import { message, type Lang, type MessageKey } from './i18n.ts'
 import type { HostProfile } from './profiles.ts'
 
 export type RemoveStatus = 'restored' | 'removed' | 'not-integrated' | 'unknown' | 'failed'
@@ -23,24 +24,30 @@ export interface RemoveOptions {
   home: string
   fileExists?: (p: string) => boolean
   runCommand?: RunCommand
+  /** Output language for outcome messages (default zh). */
+  lang?: Lang
 }
 
 const BACKUP_SUFFIX = '.auto-guard.bak'
 
 export function removeHost(profile: HostProfile, options: RemoveOptions): RemoveOutcome {
   const fileExists = options.fileExists ?? existsSync
+  const lang = options.lang ?? 'zh'
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const action = profile.action
   if (action.kind === 'command') {
     const runner = options.runCommand
-    if (!runner) return { status: 'failed', message: '无法运行宿主命令（内部错误）' }
+    if (!runner) return { status: 'failed', message: t('runnerUnavailable') }
     // Confirm registration before uninstalling: an uninstalled dsh CLI or an
-    // unregistered plugin is "未接入", never a failure.
+    // unregistered plugin is "not integrated", never a failure.
     const list = runner(action.executable, action.listArgs)
     const registered = list.ok && (list.stdout ?? '').includes(action.pluginId)
-    if (!registered) return { status: 'not-integrated', message: `${profile.label} 未接入（${action.executable} 不可用或插件未注册）` }
+    if (!registered) {
+      return { status: 'not-integrated', message: t('notIntegratedWithReason', { label: profile.label, reason: t('reasonExeOrPlugin', { exe: action.executable }) }) }
+    }
     const result = runner(action.executable, action.removeArgs)
-    if (result.ok) return { status: 'removed', message: `已撤销 ${action.pluginId} 注册` }
-    return { status: 'failed', message: `卸载命令失败：${result.stderr || '退出码非 0'}` }
+    if (result.ok) return { status: 'removed', message: t('unregisteredOk', { plugin: action.pluginId }) }
+    return { status: 'failed', message: t('uninstallCommandFailed', { error: result.stderr || t('nonzeroExit', { exe: action.executable }) }) }
   }
 
   const targetFile = homePath(options.home, action.file)
@@ -49,16 +56,16 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
     try {
       copyFileSync(backupFile, targetFile)
       rmSync(backupFile)
-      return { status: 'restored', message: `已从备份还原 ${action.file}`, files: [targetFile] }
+      return { status: 'restored', message: t('restoredFromBackup', { file: action.file }), files: [targetFile] }
     } catch (error) {
-      return { status: 'failed', message: `还原备份失败：${error instanceof Error ? error.message : String(error)}` }
+      return { status: 'failed', message: t('restoreBackupFailed', { error: error instanceof Error ? error.message : String(error) }) }
     }
   }
   const read = readJsonObject(targetFile, fileExists)
   if (!read.ok) {
     return read.missing
-      ? { status: 'not-integrated', message: `${profile.label} 未接入（${action.file} 不存在）` }
-      : { status: 'unknown', message: `${action.file} 无法解析为 JSON，拒绝修改（请手工检查）` }
+      ? { status: 'not-integrated', message: t('notIntegratedWithReason', { label: profile.label, reason: t('reasonFileMissing', { file: action.file }) }) }
+      : { status: 'unknown', message: t('unparseableRefuseModify', { file: action.file }) }
   }
   const record = read.doc
   let removed = 0
@@ -70,12 +77,12 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
     if (kept.length !== arr.length) arr.splice(0, arr.length, ...kept)
   }
   if (removed === 0) {
-    return { status: 'not-integrated', message: `${profile.label} 未接入，文件未改动` }
+    return { status: 'not-integrated', message: t('notIntegratedUntouched', { label: profile.label }) }
   }
   try {
     writeFileSync(targetFile, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
   } catch (error) {
-    return { status: 'failed', message: `写回失败：${error instanceof Error ? error.message : String(error)}` }
+    return { status: 'failed', message: t('writeBackFailed', { error: error instanceof Error ? error.message : String(error) }) }
   }
-  return { status: 'removed', message: `已从 ${action.file} 移除 ${removed} 个 auto-guard 条目`, files: [targetFile] }
+  return { status: 'removed', message: t('removedEntries', { file: action.file, count: removed }), files: [targetFile] }
 }
