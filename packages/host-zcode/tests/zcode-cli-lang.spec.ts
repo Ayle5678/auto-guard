@@ -137,3 +137,36 @@ describe('zcode cli: English golden paths', () => {
     expect(out).toContain('zh, en')
   })
 })
+
+describe('zcode bootstrap: runtime carries the effective language (review find)', () => {
+  it('hook path engine reasons follow config.lang without any machine-default/env layer', async () => {
+    process.env.DEEPSEEK_API_KEY = 'sk-test'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ choices: [{ message: { content: '{"decision":"deny","risk":"medium","reason":"nope"}' } }] }),
+      })),
+    )
+    try {
+      const { bootstrap } = await import('../src/bootstrap.ts')
+      const runtime = bootstrap()
+      expect(runtime.lang).toBe('en')
+      expect(runtime.reviewer).toBeDefined()
+
+      // The engine-authored pending-deny ask reason must be English: bootstrap
+      // wires the resolved language into the GuardService, not just rendering.
+      const request = { tool: 'bash' as const, command: 'npm install left-pad', session: 's1', workspace: dir }
+      await runtime.service.decide(request)
+      const ask = await runtime.service.decide(request)
+      expect(ask.source).toBe('llm')
+      expect(ask.reason).toContain('The LLM already denied this command')
+      runtime.audit.close()
+    } finally {
+      delete process.env.DEEPSEEK_API_KEY
+      vi.unstubAllGlobals()
+    }
+  })
+})

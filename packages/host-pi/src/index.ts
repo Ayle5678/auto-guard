@@ -16,7 +16,6 @@
  * Output language resolves once per runtime build (four-layer resolution,
  * ADR-0011): env > config.lang > machine default > zh.
  */
-import { homedir } from 'node:os'
 import { createLocalBashOperations, isToolCallEventType, type BashOperations, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import {
   analyzeLearnedRules,
@@ -39,8 +38,7 @@ import {
   restoreLearnedRules,
   applyHistoryToggle,
   DeepSeekReviewer,
-  effectiveLang,
-  envLang,
+  resolveProcessLang,
   FileTracker,
   SessionLruCache,
   PersistentCache,
@@ -51,8 +49,6 @@ import {
   saveApiKey,
   loadAuditPassword,
   saveAuditPassword,
-  machineConfigPath,
-  readMachineLang,
   classifyCommand,
   loadRules,
   maskKey,
@@ -68,7 +64,7 @@ import type { Decision, GuardConfig, GuardRequest, Lang, RulesFile } from '@auto
 import { AUTO_GUARD_DIR, defaultConfig, loadConfig, saveConfig } from './config.ts'
 import { PI_CAPABILITIES } from './pi-capabilities.ts'
 import { toGuardRequest } from './adapter.ts'
-import { piMessage } from './messages.ts'
+import { piMessage, type PiMessageKey } from './messages.ts'
 
 interface GuardState {
   config: GuardConfig
@@ -88,13 +84,9 @@ function hasUsableApiKey(config: GuardConfig): boolean {
   return Boolean(process.env[config.apiKeyEnv] || config.apiKey)
 }
 
-/** Four-layer language resolution (env > config.lang > machine default > zh). */
+/** Four-layer language resolution (env > config.lang > machine default > zh), once per runtime build. */
 function resolveLang(config: GuardConfig): Lang {
-  return effectiveLang({
-    env: envLang(),
-    configLang: config.lang,
-    machineLang: readMachineLang(machineConfigPath(homedir())),
-  })
+  return resolveProcessLang(config.lang)
 }
 
 interface EvaluateOutcome {
@@ -398,7 +390,7 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand('guard', {
     description: piMessage(guard.lang, 'guardCmdDesc'),
     handler: async (args, ctx) => {
-      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
+      const t = (key: PiMessageKey, params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim()
       const sub = raw.toLowerCase()
       if (sub === 'on' || sub === 'off') {
@@ -457,7 +449,7 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand('guard-examine', {
     description: piMessage(guard.lang, 'examineCmdDesc'),
     handler: async (args, ctx) => {
-      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
+      const t = (key: PiMessageKey, params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim().toLowerCase()
       if (raw === 'on') {
         if (!loadAuditPassword(AUTO_GUARD_DIR)) {
@@ -505,7 +497,7 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand('guard-optimize', {
     description: piMessage(guard.lang, 'optimizeCmdDesc'),
     handler: async (args, ctx) => {
-      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
+      const t = (key: PiMessageKey, params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim().toLowerCase()
       if (raw === 'analyze') {
         await runLearnedAnalysis(ctx)
@@ -550,7 +542,7 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand('guard-set', {
     description: piMessage(guard.lang, 'setCmdDesc'),
     handler: async (args, ctx) => {
-      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
+      const t = (key: PiMessageKey, params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim()
       const sub = raw.toLowerCase()
       if (sub === 'reload') {

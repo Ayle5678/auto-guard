@@ -14,15 +14,12 @@
  * Usage: node dist/cli.js <group> <action> [args]
  */
 import { createInterface } from 'node:readline'
-import { homedir } from 'node:os'
 import {
   analysisIntervalMs,
   clearApiKey,
   coreMessage,
   createAuditStore,
   DeepSeekReviewer,
-  effectiveLang,
-  envLang,
   formatLocalTime,
   hasStoredApiKey,
   hydrateApiKey,
@@ -31,14 +28,13 @@ import {
   loadApiKey,
   loadLearnedRules,
   loadRules,
-  machineConfigPath,
   maskKey,
-  normalizeLang,
-  readMachineLang,
+  resolveProcessLang,
   saveApiKey,
   analyzeLearnedRules,
   applyHistoryToggle,
   applySetApi,
+  applySetLang,
   examineStatusLines,
   optimizeListLines,
   optimizeStatusLines,
@@ -57,13 +53,9 @@ function print(message: string): void {
   process.stdout.write(`${message}\n`)
 }
 
-/** Four-layer language resolution (env > config.lang > machine default > zh). */
+/** Four-layer language resolution (env > config.lang > machine default > zh), once per command. */
 function resolveLang(configLang?: Lang): Lang {
-  return effectiveLang({
-    env: envLang(),
-    configLang,
-    machineLang: readMachineLang(machineConfigPath(homedir())),
-  })
+  return resolveProcessLang(configLang)
 }
 
 /** CLI entry (exported for tests; argv excludes the binary name). */
@@ -166,14 +158,14 @@ function setCommand(action: string, rest: readonly string[]): number | Promise<n
       return result.ok ? 0 : 1
     }
     case 'lang': {
-      const parsed = normalizeLang(rest[0])
-      if (!parsed) {
+      const result = applySetLang(config, rest[0])
+      if (!result.ok || !result.lang) {
         print(zcMessage(lang, 'setLangInvalid', { value: rest[0] ?? '' }))
         return 1
       }
-      config.lang = parsed
       saveConfig(config, DEFAULT_CONFIG_PATH)
-      print(zcMessage(parsed, 'setLangDone', { lang: parsed }))
+      // Receipt in the newly selected language: immediate proof the setting took effect.
+      print(zcMessage(result.lang, 'setLangDone', { lang: result.lang }))
       return 0
     }
     case 'history': {

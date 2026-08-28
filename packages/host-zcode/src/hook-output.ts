@@ -56,9 +56,9 @@ export function hitDetail(decision: Decision, matchedPattern: string | undefined
   if (matchedPattern) return zcMessage(lang, 'hitRule', { pattern: matchedPattern, reason: decision.reason ?? zcMessage(lang, 'hitRuleDefault') })
   switch (decision.source) {
     case 'session-cache':
-      return zcMessage(lang, 'hitSessionCache', { reason: decision.reason ?? zcMessage(lang, 'hitSessionCacheDefault') })
+      return zcMessage(lang, 'hitSessionCache', { reason: decision.reason ?? zcMessage(lang, 'hitCacheDefault') })
     case 'persistent-cache':
-      return zcMessage(lang, 'hitPersistentCache', { reason: decision.reason ?? zcMessage(lang, 'hitSessionCacheDefault') })
+      return zcMessage(lang, 'hitPersistentCache', { reason: decision.reason ?? zcMessage(lang, 'hitCacheDefault') })
     case 'history':
       return zcMessage(lang, 'hitHistory', { reason: decision.reason ?? zcMessage(lang, 'hitHistoryDefault') })
     case 'learned':

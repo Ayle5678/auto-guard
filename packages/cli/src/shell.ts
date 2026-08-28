@@ -18,6 +18,7 @@ import {
   analyzeLearnedRules,
   applyHistoryToggle,
   applySetApi,
+  applySetLang,
   clearApiKey,
   coreMessage,
   createAuditStore,
@@ -36,7 +37,6 @@ import {
   loadRules,
   machineConfigPath,
   maskKey,
-  normalizeLang,
   optimizeListLines,
   optimizeStatusLines,
   readMachineLang,
@@ -347,15 +347,14 @@ function setCommand(action: string, rest: readonly string[], ctx: Ctx, io: Retur
       return { code: result.ok ? 0 : 1, output: ctx.out }
     }
     case 'lang': {
-      const parsed = normalizeLang(rest[0])
-      if (!parsed) {
+      const result = applySetLang(config, rest[0])
+      if (!result.ok || !result.lang) {
         ctx.out.push(shellMessage(lang, 'setLangInvalid', { value: rest[0] ?? '' }))
         return { code: 1, output: ctx.out }
       }
-      config.lang = parsed
       io.save(config)
       // Receipt in the newly selected language: immediate proof the setting took effect.
-      ctx.out.push(shellMessage(parsed, 'setLangDone', { lang: parsed }))
+      ctx.out.push(shellMessage(result.lang, 'setLangDone', { lang: result.lang }))
       return { code: 0, output: ctx.out }
     }
     case 'history': {

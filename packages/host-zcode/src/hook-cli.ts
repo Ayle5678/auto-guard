@@ -12,9 +12,8 @@
  * surface as an `ask` so the human decides, and `/guard off` (enabled:false
  * in config.json) still bypasses everything even when the guard itself is sick.
  */
-import { prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, effectiveLang, envLang, machineConfigPath, readMachineLang } from '@auto-guard/core'
+import { prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang } from '@auto-guard/core'
 import type { Decision, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
-import { homedir } from 'node:os'
 import { appendDecisionHistory, bootstrap, isDisabledByConfig, recordAudit, writeStatus, type GuardRuntime } from './bootstrap.ts'
 import { AUTO_GUARD_DIR } from './config.ts'
 import { decisionReasonText, hitDetail, serializeHookOutput, withDeletionHint, type HookAction } from './hook-output.ts'
@@ -56,16 +55,12 @@ type FinalOutcome = HookAction & {
 }
 
 /**
- * Language for one hook process: env > config.lang > machine default > zh
- * (ADR-0011), resolved once. Before the runtime exists only the env and
- * machine layers are knowable.
+ * Language for the fail-closed paths that run before the runtime exists:
+ * env > config.lang (unreadable yet) > machine default > zh (ADR-0011). Once
+ * the runtime is up, its own once-per-process `runtime.lang` takes over.
  */
-function hookLang(configLang?: Lang): Lang {
-  return effectiveLang({
-    env: envLang(),
-    configLang,
-    machineLang: readMachineLang(machineConfigPath(homedir())),
-  })
+function hookLang(): Lang {
+  return resolveProcessLang(undefined)
 }
 
 /**
@@ -172,7 +167,7 @@ async function main(): Promise<void> {
     return
   }
 
-  const lang = hookLang(runtime.config.lang)
+  const lang = runtime.lang
   const extraction = toGuardRequest(input, workspaceFromEnv(), lang)
 
   let outcome: FinalOutcome

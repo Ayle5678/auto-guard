@@ -8,8 +8,9 @@
  * ignored on read and preserved on write; only `lang` is ever touched.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { normalizeLang, type Lang } from './lang.ts'
+import { envLang, normalizeLang, type Lang } from './lang.ts'
 
 /** Path of the machine default config under a home directory. */
 export function machineConfigPath(home: string): string {
@@ -51,4 +52,14 @@ export function writeMachineLang(path: string, lang: Lang): void {
  */
 export function effectiveLang(input: { env?: Lang | undefined; configLang?: Lang | undefined; machineLang?: Lang | undefined }): Lang {
   return input.env ?? input.configLang ?? input.machineLang ?? 'zh'
+}
+
+/**
+ * Resolve the effective language for one process (ADR-0011): env >
+ * config.lang > machine default > zh, reading the machine file under `home`.
+ * Hosts call this once per process/runtime build; callers needing injection
+ * (tests, the unified CLI) compose {@link effectiveLang} themselves.
+ */
+export function resolveProcessLang(configLang: Lang | undefined, home: string = homedir()): Lang {
+  return effectiveLang({ env: envLang(), configLang, machineLang: readMachineLang(machineConfigPath(home)) })
 }

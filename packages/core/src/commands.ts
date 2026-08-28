@@ -16,8 +16,7 @@ import { generateLearnedRules, loadLearnedRules, restoreLearnedRules, writeLearn
 import { coreMessage } from './messages.ts'
 import { sourceTag } from './notify.ts'
 import type { AuditStore } from './audit.ts'
-import type { Lang } from './lang.ts'
-import { langOf } from './lang.ts'
+import { langOf, normalizeLang, type Lang } from './lang.ts'
 import type { GuardConfig, RulesFile } from './types.ts'
 
 /** Enable or disable the guard; returns the user-facing confirmation. */
@@ -64,6 +63,18 @@ export function recentLines(entries: readonly RuntimeStatus[], count = 10, lang:
 /** Mask a key for display: keep head and tail, never the middle. */
 export function maskKey(key: string): string {
   return key.length <= 8 ? '***' : `${key.slice(0, 4)}***${key.slice(-4)}`
+}
+
+/**
+ * Apply `set lang <zh|en>`; mutates `config.lang` when valid. Receipt and
+ * error wording live in each surface's catalog (the receipt must speak the
+ * NEW language), so this returns the resolved value, not text.
+ */
+export function applySetLang(config: GuardConfig, value: string | undefined): { ok: boolean; lang?: Lang } {
+  const parsed = normalizeLang(value)
+  if (!parsed) return { ok: false }
+  config.lang = parsed
+  return { ok: true, lang: parsed }
 }
 
 /** Apply `set set-api base|model|reset`; mutates `config` when valid. */

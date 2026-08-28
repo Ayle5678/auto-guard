@@ -18,6 +18,8 @@ import {
   type RuntimeStatus,
   createAuditStore,
   DeepSeekReviewer,
+  effectiveLang,
+  envLang,
   FileTracker,
   GuardService,
   type GuardDeps,
@@ -28,6 +30,8 @@ import {
   loadAuditPassword,
   loadLearnedRules,
   loadAnalyzeState,
+  machineConfigPath,
+  readMachineLang,
   shouldRunAutoAnalysis,
   analysisIntervalMs,
   loadRules,
@@ -43,8 +47,10 @@ import {
   type Decision,
   type GuardConfig,
   type GuardRequest,
+  type Lang,
   type RulesFile,
 } from '@auto-guard/core'
+import { homedir } from 'node:os'
 import { AUTO_GUARD_DIR, loadConfig } from './config.ts'
 
 /** Session/workspace identity injected by ZCode (Claude-compatible aliases). */
@@ -75,15 +81,22 @@ export interface GuardRuntime {
   audit: LightAuditStore
   history?: HistoryStore
   sessionId?: string
+  /** Effective output language, resolved once per process (ADR-0011). */
+  lang: Lang
 }
 
 export function bootstrap(): GuardRuntime {
   const config = hydrateApiKey(loadConfig(), () => loadApiKey(AUTO_GUARD_DIR))
+  const lang = effectiveLang({
+    env: envLang(),
+    configLang: config.lang,
+    machineLang: readMachineLang(machineConfigPath(homedir())),
+  })
   const rules = loadRules(config.rulesPath, config.defaultRulesPath)
   const sessionId = sessionIdFromEnv()
   const state = loadDiskSessionState(sessionsDir(), config.sessionCacheSize, sessionId)
   const persistentCache = new PersistentCache(config.cachePath)
-  const llmReviewer = new DeepSeekReviewer(config)
+  const llmReviewer = new DeepSeekReviewer(config, lang)
   const trackerStore = createTrackerStore(state.dir, config.fileTrackerWindowSec * 1000)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000, trackerStore)
   const auditPassword = loadAuditPassword(AUTO_GUARD_DIR)
@@ -106,8 +119,9 @@ export function bootstrap(): GuardRuntime {
     historyStore: history,
     templateCache,
     pendingPersistence: { directoryDeletes: state.sinks.directoryDeletes, denies: state.sinks.denies },
+    lang,
   }
-  return { config, rules, service: new GuardService(deps), reviewer: llmReviewer, audit, history, sessionId: state.sessionId }
+  return { config, rules, service: new GuardService(deps), reviewer: llmReviewer, audit, history, sessionId: state.sessionId, lang }
 }
 
 function sessionsDir(): string {

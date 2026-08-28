@@ -17,21 +17,17 @@
  * translation, notification channels and settings mounting.
  */
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   classifyCommand,
-  effectiveLang,
-  envLang,
   expandHome,
   generateLearnedRules,
   GuardService,
   HistoryStore,
   loadAnalyzeState,
   loadLearnedRules,
-  machineConfigPath,
   prepareDeletionMarker,
-  readMachineLang,
+  resolveProcessLang,
   restoreLearnedRules,
   SessionLruCache,
   PersistentCache,
@@ -57,7 +53,7 @@ import type { PreToolDecision, ToolExecution, ToolGuard } from '@deepseek-ai/dsh
 import { toGuardRequest, type ExecutionLike } from './adapter.ts'
 import { DSH_CAPABILITIES } from './dsh-capabilities.ts'
 import { createContextNotice, createPageNoticeEvents, notifyRoute } from './notify-policy.ts'
-import { dshMessage } from './messages.ts'
+import { dshMessage, type DshMessageKey } from './messages.ts'
 import { DshLlmReviewer } from './dsh-reviewer.ts'
 import { FileTracker } from '@auto-guard/core'
 import { AUTO_GUARD_DIR, installGuardSettings, loadConfig } from './config.ts'
@@ -87,11 +83,7 @@ function createState(
   settings: ReturnType<typeof installGuardSettings>,
 ): GuardState {
   settings.syncFromSettings()
-  const lang = effectiveLang({
-    env: envLang(),
-    configLang: config.lang,
-    machineLang: readMachineLang(machineConfigPath(homedir())),
-  })
+  const lang = resolveProcessLang(config.lang)
   const rules = loadRules(expandHome(config.rulesPath), expandHome(config.defaultRulesPath))
   const sessionCache = new SessionLruCache(config.sessionCacheSize)
   const persistentCache = new PersistentCache(expandHome(config.cachePath))
@@ -152,7 +144,7 @@ function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string }
 
 /** Remote service exposed to the settings page via Typert Remote. */
 function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
-  const t = (key: Parameters<typeof dshMessage>[1], params: Record<string, string | number> = {}) => dshMessage(state.lang, key, params)
+  const t = (key: DshMessageKey, params: Record<string, string | number> = {}) => dshMessage(state.lang, key, params)
   const service = {
     analyzeNow(): { ok: boolean; message: string } {
       return runLearnedAnalysis(state)
