@@ -8,9 +8,13 @@ What to build:
 - `guard recent` 渲染沿用 zcode 表格式（时间/工具/结果/层级/命中详情）。
 
 Blocked by: 06
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] zcode cli/decision-history 相关 spec 迁入并通过
-- [ ] 全部子命令在 fake deps 集成测试中走通，无需真实网络/SQLite
-- [ ] PowerShell alias 设置文档（docs/cli.md 前身）更新为统一包路径
+- [x] zcode cli/decision-history 相关 spec 迁入并通过
+- [x] 全部子命令在 fake deps 集成测试中走通，无需真实网络/SQLite
+- [x] PowerShell alias 设置文档（docs/cli.md 前身）更新为统一包路径
+
+## Comments
+
+- 2026-08-28: done — packages/cli shell over core ops; --config-root flag + AUTO_GUARD_CONFIG_ROOT env + host-dir detection (injectable for tests); fake-deps integration spec covers all groups, no network/real SQLite; Windows discipline (natural exit, TTY-gated set-key, codes 0/2)
