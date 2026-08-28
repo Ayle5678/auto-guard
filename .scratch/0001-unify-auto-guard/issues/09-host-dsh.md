@@ -8,9 +8,13 @@ What to build:
 - 无 slash 命令（维持 dsh ADR-0014）；配置根 `~/.dsh/auto-guard/`；审计走 SqlcipherAuditStore。
 
 Blocked by: 06
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] dsh 版 19 个 spec 中宿主侧部分全绿
-- [ ] pre-execute 决策映射（deny/ask/next+命令回写）与 headless 原生 ask→deny 语义有测试
-- [ ] client.js 经 Typert 调用 status/analyzeNow/listRules/rollback/clear/export/stats 全部走通（mock remote）
+- [x] dsh 版 19 个 spec 中宿主侧部分全绿
+- [x] pre-execute 决策映射（deny/ask/next+命令回写）与 headless 原生 ask→deny 语义有测试
+- [x] client.js 经 Typert 调用 status/analyzeNow/listRules/rollback/clear/export/stats 全部走通（mock remote）
+
+## Comments
+
+- 2026-08-28: done — pre-execute entry + monotonic guard + preset gating + notify channels + SqlcipherAuditStore; settings namespace via SDK-free schema shim (register consumes shape); DshLlmReviewer on core reviewer primitives; typert/client.js ported (zod public dep); SDK typed via ambient declarations; 26 tests green

@@ -1,0 +1,22 @@
+- insert:
+    - id: dsh-auto-guard
+      name: dsh-auto-guard
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      auto-guard:
+        name: Auto Guard
+        description: Full access with an LLM safety net (rules + reviewer + caches)
+        sandbox: danger-full-access
+        approval: ask
+    defaultPreset: workspace-write

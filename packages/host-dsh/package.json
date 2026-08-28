@@ -9,7 +9,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@auto-guard/core": "workspace:*"
+    "@auto-guard/core": "workspace:*",
+    "zod": "^4.4.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
