@@ -9,9 +9,13 @@ What to build:
 - jiti 直跑 TS，package.json pi manifest `{"pi":{"extensions":["./src/index.ts"]}}`。
 
 Blocked by: 06
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] pi 版现有 spec（除已上移 core 的）在 host-pi 全绿
-- [ ] 四态 ask、deny 重复确认、目录删除流程行为与 pi 0.1.3 一致
-- [ ] user_bash 拦截（operations 替换）仍有测试覆盖
+- [x] pi 版现有 spec（除已上移 core 的）在 host-pi 全绿
+- [x] 四态 ask、deny 重复确认、目录删除流程行为与 pi 0.1.3 一致
+- [x] user_bash 拦截（operations 替换）仍有测试覆盖
+
+## Comments
+
+- 2026-08-28: done — entry + adapter + config root ~/.pi/auto-guard; four-state ask via capabilities; keys upgraded to encrypted store + hydration chain (legacy plaintext read-only); audit via createAuditStore (SQLCipher when optional dep available); slash commands call core ops; SDK typed via ambient shim (jiti resolves the real package at runtime)
