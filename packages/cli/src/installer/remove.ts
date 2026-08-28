@@ -63,6 +63,9 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
   const record = read.doc
   let removed = 0
   for (const op of action.ops) {
+    // permission-ask-rules ops are never reverted: the inserted "*": "ask"
+    // cannot be attributed to us once mixed with user rules (ADR-0011 docs).
+    if (op.kind === 'permission-ask-rules') continue
     const arr = arrayAt(record, op.arrayPath, false)
     if (!arr) continue
     const kept = arr.filter((el) => !hasMarker(el, op.markerSuffix))
@@ -77,5 +80,7 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
   } catch (error) {
     return { status: 'failed', message: `写回失败：${error instanceof Error ? error.message : String(error)}` }
   }
-  return { status: 'removed', message: `已从 ${action.file} 移除 ${removed} 个 auto-guard 条目`, files: [targetFile] }
+  const keepsPermissionRules = action.ops.some((op) => op.kind === 'permission-ask-rules')
+  const suffix = keepsPermissionRules ? '；permission 中插入的 "*" 规则保留（无法区分归属，如需清除请手工删除）' : ''
+  return { status: 'removed', message: `已从 ${action.file} 移除 ${removed} 个 auto-guard 条目${suffix}`, files: [targetFile] }
 }

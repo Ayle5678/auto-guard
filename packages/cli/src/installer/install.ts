@@ -49,6 +49,13 @@ export function resolvePackagePaths(): PackagePaths {
       distSessionStart: join(dir('@auto-guard/host-zcode'), 'dist', 'session-start.js'),
     },
     dsh: { packageDir: dir('@auto-guard/host-dsh') },
+    claude: {
+      distHookCli: join(dir('@auto-guard/host-claude'), 'dist', 'hook-cli.js'),
+      distSessionStart: join(dir('@auto-guard/host-claude'), 'dist', 'session-start.js'),
+    },
+    // opencode loads the plugin from the dist directory (index.js entry);
+    // the directory also carries hook-cli.js spawned per decision (ADR-0011).
+    opencode: { distPluginDir: join(dir('@auto-guard/host-opencode'), 'dist') },
   }
 }
 
@@ -62,7 +69,7 @@ interface InstallerFlags {
 export function parseInstallerArgs(argv: readonly string[]): { ok: true; flags: InstallerFlags } | { ok: false; message: string } {
   const [command, ...rest] = argv
   if (command !== 'init' && command !== 'list' && command !== 'remove') {
-    return { ok: false, message: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] [--home <path>]' }
+    return { ok: false, message: `用法：auto-guard <init|list|remove> [--host ${HOST_IDS.join(',')}] [--yes] [--home <path>]` }
   }
   const flags: InstallerFlags = { command, yes: false }
   for (let i = 0; i < rest.length; i++) {
@@ -175,7 +182,7 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
     selected = orderedHosts(flags.hosts)
   } else {
     if (!tty) {
-      return { code: 2, output: ['当前环境非交互终端：请使用 --host <dsh|pi|zcode> 指定宿主并加 --yes，例如 auto-guard init --host pi,zcode --yes'] }
+      return { code: 2, output: [`当前环境非交互终端：请使用 --host <${HOST_IDS.join('|')}> 指定宿主并加 --yes，例如 auto-guard init --host pi,zcode --yes`] }
     }
     const { selected: chosen, notes } = await promptHostSelection(
       detections.map((d) => ({ id: d.profile.id, label: d.profile.label, detected: d.detected, evidence: d.evidence, target: targetOf(d.profile) })),
@@ -247,10 +254,12 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
     out.push('')
     out.push('安装完成：')
     for (const id of installed) {
-      out.push(`  · ${profileById(id)!.label}（${profileById(id)!.sessionNote}）`)
+      const profile = profileById(id)!
+      out.push(`  · ${profile.label}（${profile.sessionNote}）`)
+      for (const note of profile.postInstallNotes ?? []) out.push(`    ${note}`)
     }
     out.push('验证：新开会话后运行 auto-guard guard status，或在宿主中执行一条命令观察审查提示')
-    out.push('卸载：auto-guard remove [--host dsh,pi,zcode]')
+    out.push(`卸载：auto-guard remove [--host ${HOST_IDS.join(',')}]`)
     out.push('说明：守卫配置与数据在首次运行时播种到 ~/.<host>/auto-guard/，init 不创建这些文件')
   }
   if (failures.length) out.push(`有 ${failures.length} 个宿主未完成：${failures.join(', ')}`)

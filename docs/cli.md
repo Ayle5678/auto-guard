@@ -6,7 +6,7 @@ The management CLI is a thin terminal shell over the shared core operations laye
 
 ```
 auto-guard [--config-root <path>] <group> <action> [args]   # management
-auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] # installer
+auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode] [--yes] # installer
 ```
 
 ## Installer (SPEC 0002)
@@ -18,7 +18,7 @@ auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] # installer
 | `auto-guard list` | Show detection evidence + integration status per host and the next step. |
 | `auto-guard remove [--host …]` | Uninstall: restore from `*.auto-guard.bak` when present, otherwise remove auto-guard entries structurally. Guard data roots are kept. |
 
-Common flags: `--host <dsh,pi,zcode>` (repeatable values in one list), `--yes`, `--home <path>` (override HOME, mainly for tests). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
+Common flags: `--host <dsh,pi,zcode,claude,opencode>` (repeatable values in one list), `--yes`, `--home <path>` (override HOME, mainly for tests). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
 
 Idempotent: re-running `init` detects already-integrated entries and skips them; existing backups are never overwritten. ZCode hooks have no hot reload — start a new ZCode session after installing.
 

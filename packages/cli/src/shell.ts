@@ -75,7 +75,7 @@ interface Ctx {
 
 function detectConfigRoot(): string | undefined {
   const home = homedir()
-  for (const dir of ['.zcode', '.pi', '.dsh']) {
+  for (const dir of ['.zcode', '.claude', join('.config', 'opencode'), '.pi', '.dsh']) {
     if (existsSync(join(home, dir))) return join(home, dir, 'auto-guard')
   }
   return undefined

@@ -17,9 +17,24 @@ afterEach(() => {
 describe('host detector (ticket 01)', () => {
   it('reports nothing detected on an empty HOME', () => {
     const results = detectHosts({ home: fakeHome(), hasExecutable: () => false })
-    expect(results.map((r) => r.detected)).toEqual([false, false, false])
+    expect(results.map((r) => r.detected)).toEqual([false, false, false, false, false])
     const any = results.every((r) => r.confidence === 'none')
     expect(any).toBe(true)
+  })
+
+  it('detects claude via ~/.claude/settings.json alone and opencode via opencode.json', () => {
+    const home = fakeHome()
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(join(home, '.claude', 'settings.json'), '{}', 'utf8')
+    mkdirSync(join(home, '.config', 'opencode'), { recursive: true })
+    writeFileSync(join(home, '.config', 'opencode', 'opencode.json'), '{}', 'utf8')
+    const results = detectHosts({ home, hasExecutable: () => false })
+    const claude = results.find((r) => r.profile.id === 'claude')!
+    expect(claude.detected).toBe(true)
+    expect(claude.confidence).toBe('high')
+    const opencode = results.find((r) => r.profile.id === 'opencode')!
+    expect(opencode.detected).toBe(true)
+    expect(opencode.confidence).toBe('high')
   })
 
   it('detects dsh via ~/.dsh + executable with high confidence and evidence', () => {

@@ -68,7 +68,7 @@ auto-guard init
   · DeepSeek Harness（生效需新开会话）
   · ZCode（hooks 无热重载，必须新开 ZCode 会话）
 验证：新开会话后运行 auto-guard guard status，或在宿主中执行一条命令观察审查提示
-卸载：auto-guard remove [--host dsh,pi,zcode]
+卸载：auto-guard remove [--host dsh,pi,zcode,claude,opencode]
 说明：守卫配置与数据在首次运行时播种到 ~/.<host>/auto-guard/，init 不创建这些文件
 ```
 
@@ -80,7 +80,7 @@ CI / 脚本用，无 TTY 也可跑：
 auto-guard init --host pi,zcode --yes
 ```
 
-- `--host` 逗号分隔，可用值 `dsh` `pi` `zcode`；写了未知值会报错并列出可用值。
+- `--host` 逗号分隔，可用值 `dsh` `pi` `zcode` `claude` `opencode`；写了未知值会报错并列出可用值。
 - `--yes` 跳过 diff 确认；**备份仍然强制执行**，不会被跳过。
 - 指定的宿主必须被检测到，否则退出码 2 并提示先安装宿主（安装器**从不代装宿主**）。检测是启发式，确认无误要强制接入时，用交互模式手动勾选并确认路径。
 - 典型输出：
@@ -127,13 +127,13 @@ auto-guard remove --host pi --yes
 - **有备份则还原**：`*.auto-guard.bak` 存在时逐字节还原原文件，备份随之删除（init 前是什么样，卸完就是什么样）。
 - **无备份则结构化移除**：比如早期是手工接入的——只删 marker 匹配的 auto-guard 条目，你自己的配置一条不动。
 - **dsh 走原生通道**：`dsh plugin remove dsh-auto-guard`；dsh CLI 不可用或未注册时报「未接入」，不算失败。
-- **用户数据保留**：`~/.dsh|~/.pi|~/.zcode/auto-guard/`（规则、缓存、审计库）原样保留；彻底清除请手动删除对应目录。
+- **用户数据保留**：`~/.dsh、~/.pi、~/.zcode、~/.claude、~/.config/opencode 下的 auto-guard/`（规则、缓存、审计库）原样保留；彻底清除请手动删除对应目录。
 
 ### 2.5 flags 一览
 
 | flag | 适用命令 | 作用 |
 |---|---|---|
-| `--host <dsh,pi,zcode>` | `init` `remove` | 指定宿主，逗号分隔；`remove` 省略时 = 全部 |
+| `--host <dsh,pi,zcode,claude,opencode>` | `init` `remove` | 指定宿主，逗号分隔；`remove` 省略时 = 全部 |
 | `--yes` / `-y` | `init` `remove` | 跳过确认（init 的备份/校验不受影响） |
 | `--home <path>` | 全部安装器命令 | 覆盖 HOME（多用户/测试场景） |
 | `--config-root <path>` | 全部命令 | 管理命令用；**安装器接受但忽略**——配置根归守卫管，init 不创建、不修改 `~/.<host>/auto-guard/` |
@@ -147,8 +147,26 @@ auto-guard remove --host pi --yes
 | **dsh** | `~/.dsh/` 存在 **且** `dsh` 在 PATH | `dsh plugin add <host-dsh 包路径>`（原生插件通道） | 新会话 |
 | **pi** | `~/.pi/` 存在 **且** `pi` 在 PATH | `~/.pi/agent/settings.json` 的 `pi.extensions` 数组追加 host-pi 的 `src/index.ts`（jiti 直跑 TS，无需构建） | 新会话 |
 | **zcode** | `~/.zcode/cli/config.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-zcode>/dist/hook-cli.js` / `session-start.js`（需先 `pnpm build` 产出 dist，缺了 init 会拒绝并提示） | 新会话；**hooks 无热重载，必须新开 ZCode 会话** |
+| **claude** | `~/.claude/settings.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-claude>/dist/hook-cli.js` / `session-start.js`（Claude Code 方言：`type: "command"` + 单字符串命令 + 秒级 `timeout`；matcher 含 NotebookEdit 覆盖 .ipynb 写路径） | 新会话；**hooks 无热重载，必须新开 Claude Code 会话** |
+| **opencode** | `~/.config/opencode/opencode.json` 存在 | ① `plugin` 数组追加 `<host-opencode>/dist` 目录条目；② `permission` 对象的 `bash`/`edit`/`read` 三键首位插入 `"*": "ask"`（opencode 后匹配者优先，用户既有规则在前故优先；已有 `"*"` 则不动；该键是全局字符串动作时跳过不覆盖） | 新会话（插件随 opencode 启动加载） |
 
 检测按「与」语义：标志文件单独命中即可，否则需要目录 + 可执行同时命中——只装了同名可执行文件不算，避免写进不存在的宿主。
+
+#### claude 宿主专属警示
+
+**cc-switch / clawd 等切换器会整体覆写 `~/.claude/settings.json`，把 hooks 一并抹掉**（本机曾有三份清理备份为证）。症状：守卫突然全静默（任何命令都不弹确认）。自检与恢复：
+
+```bash
+node <host-claude>/dist/cli.js guard ping     # hook 是否活着（用 claude 配置根）
+auto-guard list                                # claude 行显示「未接入」= hooks 已丢
+auto-guard init --host claude --yes            # 重新写入即恢复
+```
+
+#### opencode 宿主专属说明
+
+- **启动器修复**：npm 安装 opencode-ai 时若 postinstall 未执行，`opencode --version` 会报 "postinstall script was not run"。一行修复：`node <npm 全局目录>/node_modules/opencode-ai/postinstall.mjs`。检测以文件证据为主，启动器损坏不影响安装器。
+- **ask 体验**：守卫 ask 落 opencode 原生 TUI 三态——**一次 / 本会话总是 / 拒绝**。选「本会话总是」后，同模式调用经宿主放行、**不再进守卫**（ADR-0011 接受的宿主委托语义）；用户既有 permission allow 规则放行的调用同样不进守卫。
+- **remove 保留项**：`auto-guard remove` 只撤 `plugin` 数组条目；permission 里插入的 `"*": "ask"` **保留**（无法区分归属）。彻底清理请手工删除各工具对象首位的该键。
 
 ### 2.7 安全保证
 
@@ -161,10 +179,10 @@ auto-guard remove --host pi --yes
 
 ## 3. 管理命令
 
-管理命令作用在某个宿主的**配置根**（`~/.dsh|~/.pi|~/.zcode/auto-guard/`）。解析顺序：
+管理命令作用在某个宿主的**配置根**（`~/.dsh|~/.pi|~/.zcode|~/.claude|~/.config/opencode/auto-guard/`）。解析顺序：
 
 ```
---config-root <path>  →  环境变量 AUTO_GUARD_CONFIG_ROOT  →  自动探测（~/.zcode → ~/.pi → ~/.dsh，取第一个存在的）
+--config-root <path>  →  环境变量 AUTO_GUARD_CONFIG_ROOT  →  自动探测（~/.zcode → ~/.claude → ~/.config/opencode → ~/.pi → ~/.dsh，取第一个存在的）
 ```
 
 三个都失败时报错并要求显式指定。退出码：`0` 成功、`2` 拒绝/失败、`1` 用法错误。
@@ -243,7 +261,8 @@ auto-guard remove --host zcode
 
 ## 5. 相关文档
 
-- [故障排查](troubleshooting.md)：检测不到宿主 / hooks 未生效 / 权限被宿主默认禁用
+- [故障排查](troubleshooting.md)：检测不到宿主 / hooks 未生效 / 权限被宿主默认禁用 / claude hooks 被切换器抹掉 / opencode 启动器修复
 - [新宿主接入指南](new-host.md)：一条 profile + 一个适配层包（ADR-0008）
 - [CLI 指南](cli.md)：管理命令速查表（英文）
 - [ADR-0008](adr/0008-installer-profiles-explicit-and-reversible.md)：安装器设计决策
+- [ADR-0011](adr/0011-opencode-permission-ask-delegation.md)：opencode 权限系统委托（含 1.18.x 事件通道实现期修订）

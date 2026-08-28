@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@auto-guard/core": "workspace:*",
+    "@auto-guard/host-claude": "workspace:*",
     "@auto-guard/host-dsh": "workspace:*",
+    "@auto-guard/host-opencode": "workspace:*",
     "@auto-guard/host-pi": "workspace:*",
     "@auto-guard/host-zcode": "workspace:*"
   },

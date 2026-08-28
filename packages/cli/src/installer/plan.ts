@@ -78,6 +78,38 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
 
   let changed = false
   for (const op of action.ops) {
+    if (op.kind === 'permission-ask-rules') {
+      // ADR-0011: "*" must land FIRST in each tool object (last matching
+      // rule wins, user rules after it keep priority). A non-object value
+      // (global "allow"/"deny" string) is the user's own choice — never
+      // overwritten, surfaced as a note instead.
+      const permission = (doc.permission ?? {}) as Record<string, unknown>
+      if (typeof permission !== 'object' || Array.isArray(permission)) {
+        plan.blocked = `${action.file} 中 permission 不是对象，拒绝写入`
+        return plan
+      }
+      let permissionTouched = false
+      for (const tool of op.tools) {
+        const current = permission[tool]
+        if (current === undefined) {
+          permission[tool] = { '*': op.action }
+          plan.diff.push(`+ permission.${tool} = {"*": "${op.action}"}`)
+          changed = true
+          permissionTouched = true
+        } else if (current !== null && typeof current === 'object' && !Array.isArray(current)) {
+          const rules = current as Record<string, unknown>
+          if (rules['*'] !== undefined) continue // idempotent no-op
+          permission[tool] = { '*': op.action, ...rules }
+          plan.diff.push(`+ permission.${tool}.* = "${op.action}"（插入首位，既有规则保持优先）`)
+          changed = true
+          permissionTouched = true
+        } else {
+          plan.diff.push(`~ permission.${tool} 已是全局动作 ${JSON.stringify(current)}，跳过（该工具不经守卫）`)
+        }
+      }
+      if (permissionTouched) doc.permission = permission
+      continue
+    }
     const arr = arrayAt(doc, op.arrayPath, true)
     if (!arr) {
       plan.blocked = `${action.file} 中 ${op.arrayPath.join('.')} 不是数组，拒绝写入`

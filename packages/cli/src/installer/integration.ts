@@ -69,6 +69,18 @@ export function jsonMergeStatus(targetFile: string, action: JsonMergeAction, fil
   const read = readJsonObject(targetFile, fileExists)
   if (!read.ok) return read.missing ? 'not-integrated' : 'unknown'
   for (const op of action.ops) {
+    if (op.kind === 'permission-ask-rules') {
+      const permission = read.doc.permission
+      if (typeof permission !== 'object' || permission === null || Array.isArray(permission)) return 'not-integrated'
+      const tools = permission as Record<string, unknown>
+      for (const tool of op.tools) {
+        const rules = tools[tool]
+        if (rules === null || typeof rules !== 'object' || Array.isArray(rules) || (rules as Record<string, unknown>)['*'] === undefined) {
+          return 'not-integrated'
+        }
+      }
+      continue
+    }
     const arr = arrayAt(read.doc, op.arrayPath, false)
     if (!arr || !arr.some((el) => hasMarker(el, op.markerSuffix))) return 'not-integrated'
   }

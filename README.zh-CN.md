@@ -1,10 +1,12 @@
 # auto-guard（统一命令审查守卫）
 
-面向 AI 编码 agent 的命令审查守卫：在宿主执行命令或读写文件之前，用分层静态规则、缓存、学习规则、审计历史与可选 LLM 审查给出 **allow / deny / ask** 裁决。一个核心裁决引擎 + 三个薄宿主适配层。
+面向 AI 编码 agent 的命令审查守卫：在宿主执行命令或读写文件之前，用分层静态规则、缓存、学习规则、审计历史与可选 LLM 审查给出 **allow / deny / ask** 裁决。一个核心裁决引擎 + 五个薄宿主适配层。
 
 - **`@auto-guard/core`** — 零宿主依赖的裁决引擎（裁决管线、规则、缓存、key 水合、审计、历史层、学习规则、管理操作层）。
 - **`@auto-guard/host-pi`** — Pi Coding Agent 扩展（`tool_call` / `user_bash`，四态 ask）。
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook 插件（一次一进程、磁盘会话态、决策历史）。
+- **`@auto-guard/host-claude`** — Claude Code PreToolUse hook 适配层（settings.json hooks、NotebookEdit 覆盖、原生确认框）。
+- **`@auto-guard/host-opencode`** — OpenCode 权限系统适配层（插件监听 `permission.asked` 事件、每次裁决 spawn `node`、原生 TUI ask）——见 [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md)。
 - **`@auto-guard/host-dsh`** — DeepSeek Harness 插件（`tools/pre-execute`、权限预设开关、SQLCipher 审计、设置页 + Typert remote）。
 - **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与（SPEC 0002）安装器。
 
@@ -12,18 +14,20 @@
 
 ## 宿主对照表
 
-| 维度 | host-dsh | host-pi | host-zcode |
-|---|---|---|---|
-| 集成事件 | `tools/pre-execute` + 单调守卫 | `tool_call` + `user_bash` | PreToolUse hook（一次一进程）+ SessionStart |
-| 决策协议 | PreToolDecision deny/ask + `next()` | `{block, reason}` / input 改写 | stdout JSON `permissionDecision`；allow=静默 |
-| ask 风格 | 宿主一次性审批 | 四态确认框 | 委托原生权限确认框 |
-| 启停 | 权限预设（`auto-guard`）——唯一开关 | `/guard on\|off` + `config.enabled` | `config.enabled`（`/guard off` 永远有效） |
-| 会话态 | 内存 | 内存 | 磁盘（`sessions/<sid>/`） |
-| 通知 | page 事件 / context 注入 | `ctx.ui.notify` / `sendMessage` | 拉式决策历史（`guard recent`） |
-| 配置根 | `~/.dsh/auto-guard/` | `~/.pi/auto-guard/` | `~/.zcode/auto-guard/` |
-| 命令面 | 设置 UI + Typert remote（无 slash 命令） | `/guard` `/guard-set` `/guard-examine` `/guard-optimize` | `commands/*.md` 教模型调 CLI |
-| 打包 | dsh 插件（client.js + typert + cordis.patch.yml） | pi extensions（jiti 直跑 TS） | 插件清单 + hooks.json + 预构建 dist |
-| 审计实现 | SQLCipher（全库加密） | SQLCipher（不可用时降级 Light） | Light（node:sqlite + 字段级 AES-GCM） |
+| 维度 | host-dsh | host-pi | host-zcode | host-claude | host-opencode |
+|---|---|---|---|---|---|
+| 集成事件 | `tools/pre-execute` + 单调守卫 | `tool_call` + `user_bash` | PreToolUse hook（一次一进程）+ SessionStart | PreToolUse hook + SessionStart（settings.json，`type: "command"`） | 宿主权限系统：安装器写 `bash/edit/read → "*": "ask"` 规则；插件应答 `permission.asked` 事件 |
+| 决策协议 | PreToolDecision deny/ask + `next()` | `{block, reason}` / input 改写 | stdout JSON `permissionDecision`；allow=静默 | stdout JSON `permissionDecision`；allow=静默 | spawn CLI 输出 `{status}` → `client.permission.reply`（allow→once、deny→reject、ask→不答复） |
+| ask 风格 | 宿主一次性审批 | 四态确认框 | 委托原生权限确认框 | 委托原生确认框 | 委托原生 TUI（一次 / 本会话总是 / 拒绝） |
+| 启停 | 权限预设（`auto-guard`）——唯一开关 | `/guard on\|off` + `config.enabled` | `config.enabled`（`/guard off` 永远有效） | `config.enabled`（`guard off` 永远有效） | `config.enabled`（`guard off` 永远有效） |
+| 会话态 | 内存 | 内存 | 磁盘（`sessions/<sid>/`） | 磁盘（`sessions/<sid>/`） | 磁盘（`sessions/<sid>/`） |
+| 通知 | page 事件 / context 注入 | `ctx.ui.notify` / `sendMessage` | 拉式决策历史（`guard recent`） | 拉式决策历史（`guard recent`） | 拉式决策历史（`guard recent`） |
+| 配置根 | `~/.dsh/auto-guard/` | `~/.pi/auto-guard/` | `~/.zcode/auto-guard/` | `~/.claude/auto-guard/` | `~/.config/opencode/auto-guard/` |
+| 命令面 | 设置 UI + Typert remote（无 slash 命令） | `/guard` `/guard-set` `/guard-examine` `/guard-optimize` | `commands/*.md` 教模型调 CLI | 无（安装器 + `node …/dist/cli.js guard …`） | 无（安装器 + `node …/dist/cli.js guard …`） |
+| 打包 | dsh 插件（client.js + typert + cordis.patch.yml） | pi extensions（jiti 直跑 TS） | 插件清单 + hooks.json + 预构建 dist | 安装器写 `~/.claude/settings.json` hooks（不另发插件） | 安装器追加 `plugin` 条目（dist 目录）+ permission 规则 |
+| 审计实现 | SQLCipher（全库加密） | SQLCipher（不可用时降级 Light） | Light（node:sqlite + 字段级 AES-GCM） | Light（node:sqlite + 字段级 AES-GCM） | Light（node:sqlite + 字段级 AES-GCM） |
+
+已知覆盖面说明（opencode，ADR-0011）：用户自己的 permission allow 规则放行的调用完全绕过守卫；在 TUI 选「本会话总是」也会写入此类规则——守卫的覆盖面等于宿主的 ask 面。
 
 ## 安装
 
@@ -34,15 +38,20 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 # …或非交互：auto-guard init --host pi,zcode --yes
 ```
 
-每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode hooks 无热重载，必须新开 ZCode 会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode / Claude Code hooks 无热重载，必须新开宿主会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+
+> **⚠ Claude Code 用户**：cc-switch / clawd 等切换器会**整体覆写** `~/.claude/settings.json`，可能把 hooks 一并抹掉。守卫失效时先检查该文件，再重跑 `auto-guard init --host claude` 恢复；可用 `node <host-claude>/dist/cli.js guard ping` 自检 hook 是否存活。
+
+> **⚠ OpenCode 用户**：(1) `opencode --version` 报 "postinstall script was not run" 时，运行 `node <npm 全局目录>/node_modules/opencode-ai/postinstall.mjs` 一行修复；(2) `auto-guard remove` 保留插入的 `"*": "ask"` permission 规则（无法区分归属）——需要彻底清理时手工删除各工具对象首位的该键。
 
 各宿主原生渠道继续可用、与安装器并存——本来就手工管理某宿主插件时用原生渠道即可：
 
 - **ZCode**：安装插件（`packages/host-zcode`，manifest + hooks；`dist/` 预构建）。
 - **Pi**：注册扩展（`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`；jiti 直跑 TS）。
 - **DSH**：安装插件（`packages/host-dsh`）；在聊天栏选择 `auto-guard` 权限预设即开启。
+- **Claude Code / OpenCode**：设计上只走安装器（settings.json 合并 / `plugin` 条目 + permission 规则）。Hermes 与 Qoder 已调研暂缓——见 `.scratch/0004-host-claude-opencode/research/`。
 
-新增第四个宿主 = 一条 profile + 一个适配层包，不改安装器逻辑（[接入指南](docs/new-host.md)）。
+新增宿主 = 一条 profile + 一个适配层包，不改安装器逻辑（[接入指南](docs/new-host.md)）。
 
 ## 配置
 
@@ -85,6 +94,6 @@ pnpm -r typecheck && pnpm -r test   # 各包 vitest 套件
 pnpm smoke                          # 各宿主冒烟脚本
 ```
 
-`GuardService.decide(GuardRequest)` 是唯一测试 seam；`packages/conformance` 固定三种 bootstrap 风格下裁决语义完全一致。
+`GuardService.decide(GuardRequest)` 是唯一测试 seam；`packages/conformance` 固定五种 bootstrap 风格下裁决语义完全一致。
 
 License: MIT。

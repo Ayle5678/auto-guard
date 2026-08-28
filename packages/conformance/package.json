@@ -2,7 +2,7 @@
   "name": "@auto-guard/conformance",
   "version": "0.3.0",
   "private": true,
-  "description": "Cross-host conformance suite: identical guard scenarios must produce equivalent decisions on all three host adapters.",
+  "description": "Cross-host conformance suite: identical guard scenarios must produce equivalent decisions on all five host adapters.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -16,6 +16,8 @@
     "@auto-guard/core": "workspace:*",
     "@auto-guard/host-pi": "workspace:*",
     "@auto-guard/host-zcode": "workspace:*",
-    "@auto-guard/host-dsh": "workspace:*"
+    "@auto-guard/host-dsh": "workspace:*",
+    "@auto-guard/host-claude": "workspace:*",
+    "@auto-guard/host-opencode": "workspace:*"
   }
 }

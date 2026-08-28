@@ -2,20 +2,33 @@
 
 ## 检测不到宿主
 
-- 检测是纯启发式：`~/.dsh`、`~/.pi` 目录（加可执行文件探测）与 `~/.zcode/cli/config.json`。确认对应目录存在；`dsh`/`pi` 需在 `PATH` 上。
+- 检测是纯启发式：`~/.dsh`、`~/.pi` 目录（加可执行文件探测）、`~/.zcode/cli/config.json`、`~/.claude/settings.json`、`~/.config/opencode/opencode.json`。确认对应目录/文件存在；`dsh` 在 `PATH` 上（claude/opencode 的可执行探测只是加分项，文件证据单独即可命中）。
 - 目录确实存在但 `auto-guard list` 显示"否"：检查 `HOME` 是否指向预期位置（可用 `--home <path>` 显式指定再试）。
 - 宿主装了但目录特征不同：不要硬猜，先跑 `auto-guard list` 看证据行；确认无误后仍可在交互模式手动勾选并确认路径。
 - 安装器**不安装宿主本身**：宿主未安装时 `init --host …` 会直接拒绝（退出码 2），先装宿主。
 
-## hooks 未生效（ZCode）
+## hooks 未生效（ZCode / Claude Code）
 
-- ZCode hooks **没有热重载**：写入成功后必须**新开 ZCode 会话**才加载。init 的完成摘要会提示这一点。
-- 新会话仍未生效：`auto-guard list` 看 ZCode 是否"已接入"；再确认写入的 `dist/hook-cli.js` 路径存在（缺失时 init 会拒绝并提示先构建（仓库内 `pnpm build`））。
-- 验证守卫是否在工作：新会话里跑一条会被守卫看到的命令，或 `auto-guard guard status`（需 `--config-root` 指到 `~/.zcode/auto-guard` 或让 CLI 自动探测）。
+- ZCode 与 Claude Code hooks **没有热重载**：写入成功后必须**新开宿主会话**才加载。init 的完成摘要会提示这一点。
+- 新会话仍未生效：`auto-guard list` 看对应宿主是否"已接入"；再确认写入的 `dist/hook-cli.js` 路径存在（缺失时 init 会拒绝并提示先构建（仓库内 `pnpm build`））。
+- 验证守卫是否在工作：新会话里跑一条会被守卫看到的命令，或 `auto-guard guard status`（需 `--config-root` 指到对应配置根或让 CLI 自动探测）。
+
+## Claude Code：hooks 被 cc-switch / clawd 抹掉
+
+- 症状：守卫此前正常，切换模型/工具后突然**全静默**（任何命令都不弹确认）。
+- 原因：cc-switch / clawd 等切换器会整体覆写 `~/.claude/settings.json`，hooks 块随之丢失（历史上有 `settings.json.orig/.bak` 清理备份为证）。
+- 自检：`auto-guard list`（claude 行变"未接入"）或 `node <host-claude>/dist/cli.js guard ping`。
+- 恢复：`auto-guard init --host claude --yes` 重新写入（幂等，用户其余配置不动）。
+
+## OpenCode：启动器损坏 / 插件未加载
+
+- `opencode --version` 报 "postinstall script was not run"：npm 安装时 postinstall 未执行。修复：`node <npm 全局目录>/node_modules/opencode-ai/postinstall.mjs`（机器运维项，一次即可）。
+- 插件未加载：确认 `~/.config/opencode/opencode.json` 的 `plugin` 数组含 `<…>/host-opencode/dist` 条目且该目录存在（缺失时先 `pnpm build`）；`opencode` 须**重启**才加载插件。
+- 守卫 ask 全部落 TUI、allow 无感、deny 被拒即工作正常。若连 TUI ask 都没有：检查 permission 的 `bash`/`edit`/`read` 是否含首位 `"*": "ask"`（`auto-guard list` 的 opencode 行可查接入状态）。
 
 ## 权限被宿主配置默认禁用
 
-- 守卫要写宿主配置文件（pi 的 `settings.json`、zcode 的 `config.json`）。若宿主处于"只读/安全模式"或配置文件被锁定（宿主正在运行且缓存了配置），写入会失败或被宿主下次启动覆盖。
+- 守卫要写宿主配置文件（pi 的 `settings.json`、zcode 的 `config.json`、claude 的 `settings.json`、opencode 的 `opencode.json`）。若宿主处于"只读/安全模式"或配置文件被锁定（宿主正在运行且缓存了配置），写入会失败或被宿主下次启动覆盖。
 - 做法：关闭宿主后再 init；写入前安装器会展示 diff 并强制备份（`*.auto-guard.bak`），失败时 `remove` 可还原。
 - DSH 的接入走原生渠道 `dsh plugin add/remove`：若命令报权限错误，检查 dsh 自身的插件策略；`auto-guard list` 中 DSH 接入状态显示"未知"即说明查询命令失败。
 
