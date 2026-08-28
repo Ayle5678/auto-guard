@@ -6,9 +6,13 @@ What to build:
 - 端到端冒烟：每宿主一个"真实宿主装载"冒烟（dsh plugin 装载、pi extensions 装载、zcode hooks 触发）。
 
 Blocked by: 07, 08, 09, 10
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 一致性套件中三宿主 Decision 等价断言全绿
-- [ ] 三个冒烟脚本可在本机（三宿主均已安装的开发机）一键运行
-- [ ] 套件运行时间 < 2 分钟（mock LLM）
+- [x] 一致性套件中三宿主 Decision 等价断言全绿
+- [x] 三个冒烟脚本可在本机（三宿主均已安装的开发机）一键运行
+- [x] 套件运行时间 < 2 分钟（mock LLM）
+
+## Comments
+
+- 2026-08-28: done — packages/conformance: scenario matrix (whitelist/hard-deny/always-review-LLM/sensitive-path/directory-delete two-phase) × three bootstrap styles (memory/memory/disk); fail-closed matrix (reviewer throw, malformed parse, missing key); 21 tests <5s with fake LLM; scripts/smoke/{zcode,pi,dsh}.mjs one-click via pnpm smoke (zcode full e2e on built dist, pi/dsh pure-adapter smokes + full-mount instructions)

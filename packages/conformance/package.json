@@ -1,0 +1,21 @@
+{
+  "name": "@auto-guard/conformance",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Cross-host conformance suite: identical guard scenarios must produce equivalent decisions on all three host adapters.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.typecheck.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0",
+    "@auto-guard/core": "workspace:*",
+    "@auto-guard/host-pi": "workspace:*",
+    "@auto-guard/host-zcode": "workspace:*",
+    "@auto-guard/host-dsh": "workspace:*"
+  }
+}

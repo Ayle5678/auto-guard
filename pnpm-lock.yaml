@@ -24,6 +24,30 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.13.3)
 
+  packages/conformance:
+    devDependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+      '@auto-guard/host-dsh':
+        specifier: workspace:*
+        version: link:../host-dsh
+      '@auto-guard/host-pi':
+        specifier: workspace:*
+        version: link:../host-pi
+      '@auto-guard/host-zcode':
+        specifier: workspace:*
+        version: link:../host-zcode
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
   packages/core:
     devDependencies:
       '@types/node':
