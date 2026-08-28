@@ -6,9 +6,9 @@ What to build:
 - 退出码：0 成功、2 有宿主失败或检测为空。
 
 Blocked by: 02
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 连续两次 `--yes` init 的文件内容与备份 mtime 稳定（幂等测试）
-- [ ] `--host` 含未知宿主名时报错并列出可用值
-- [ ] CI 友好：无 TTY 环境全 flags 运行通过
+- [x] 连续两次 `--yes` init 的文件内容与备份 mtime 稳定（幂等测试）
+- [x] `--host` 含未知宿主名时报错并列出可用值
+- [x] CI 友好：无 TTY 环境全 flags 运行通过

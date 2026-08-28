@@ -5,9 +5,9 @@ What to build:
 - 写入动作按 profile 模板渲染；只触碰 profile 声明的文件。
 
 Blocked by: 01, SPEC 0001 #07, #08, #09
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 临时 HOME 集成测试：init 后 pi settings / zcode config 内容正确、备份存在
-- [ ] 中断安全：任一宿主写入失败时其余宿主不受损，错误信息指明哪步失败
-- [ ] 交互流在非 TTY 下拒绝并提示用 flags
+- [x] 临时 HOME 集成测试：init 后 pi settings / zcode config 内容正确、备份存在
+- [x] 中断安全：任一宿主写入失败时其余宿主不受损，错误信息指明哪步失败
+- [x] 交互流在非 TTY 下拒绝并提示用 flags

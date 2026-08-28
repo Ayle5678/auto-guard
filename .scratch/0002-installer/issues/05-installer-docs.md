@@ -6,9 +6,9 @@ What to build:
 - 故障排查：检测不到宿主、hooks 未生效（zcode 需新会话）、权限被宿主配置默认禁用等。
 
 Blocked by: 03, 04
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] README 安装器章节与实际 flags/行为一致（对照测试清单人工核对）
-- [ ] 新宿主指南含一个最小 profile 示例
-- [ ] 故障排查覆盖 SPEC 中列出的三种已知坑
+- [x] README 安装器章节与实际 flags/行为一致（对照测试清单人工核对）
+- [x] 新宿主指南含一个最小 profile 示例
+- [x] 故障排查覆盖 SPEC 中列出的三种已知坑

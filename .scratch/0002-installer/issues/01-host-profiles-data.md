@@ -6,9 +6,9 @@ What to build:
 - `auto-guard list`：渲染检测结果与当前接入状态（读宿主配置文件判断是否已接入）。
 
 Blocked by: SPEC 0001 #01（monorepo 骨架）
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 三条 profile 有 schema 校验测试
-- [ ] 检测器在临时目录集成测试中正确识别 dsh/pi/zcode 特征与"全部未装"
-- [ ] `list` 在未接入时输出明确的下一步指引
+- [x] 三条 profile 有 schema 校验测试
+- [x] 检测器在临时目录集成测试中正确识别 dsh/pi/zcode 特征与"全部未装"
+- [x] `list` 在未接入时输出明确的下一步指引

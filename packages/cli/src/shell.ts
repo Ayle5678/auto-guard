@@ -41,6 +41,7 @@ import {
   type LlmReviewer,
 } from '@auto-guard/core'
 import { readRecentDecisions, readStatus } from './status-store.ts'
+import { runInstallerCommand, type InstallerDeps } from './installer/install.ts'
 
 /** Lightweight connectivity check result (see core DeepSeekReviewer). */
 interface PingResult {
@@ -57,6 +58,8 @@ export interface CliDeps {
   makeAudit?: (config: GuardConfig, password?: string) => AuditStore
   /** Override host-root auto-detection (tests). */
   detectRoot?: () => string | undefined
+  /** Installer collaborators (SPEC 0002 init/list/remove). */
+  installer?: InstallerDeps
 }
 
 export interface RunResult {
@@ -98,6 +101,10 @@ function openRoot(configRoot: string, deps: CliDeps) {
 export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promise<RunResult> {
   const out: string[] = []
   let args = [...argv]
+
+  // Strip the shared config-root flag first so `--config-root X init` still
+  // dispatches; the installer accepts and ignores the flag (spec 0002: the
+  // guard config root is not the installer's business).
   let configRoot = ''
   const rootIndex = args.indexOf('--config-root')
   if (rootIndex >= 0) {
@@ -105,7 +112,15 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     args = [...args.slice(0, rootIndex), ...args.slice(rootIndex + 2)]
   } else if (process.env.AUTO_GUARD_CONFIG_ROOT) {
     configRoot = process.env.AUTO_GUARD_CONFIG_ROOT
-  } else {
+  }
+
+  // Installer commands run before config-root resolution: installing must
+  // work on machines where no auto-guard config root exists yet (SPEC 0002).
+  if (args.length && (args[0] === 'init' || args[0] === 'list' || args[0] === 'remove')) {
+    return runInstallerCommand(args, deps.installer ?? {})
+  }
+
+  if (!configRoot) {
     const detected = resolveConfigRoot(deps)
     if (!detected) {
       out.push('未找到宿主配置根；请用 --config-root <path> 指定（例如 ~/.zcode/auto-guard）')
@@ -128,7 +143,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     case 'optimize':
       return optimizeCommand(action, ctx, io)
     default:
-      out.push('用法：auto-guard <guard|set|examine|optimize> <action>（可选 --config-root <path>）')
+      out.push('用法：auto-guard <init|list|remove|guard|set|examine|optimize> …（init/list/remove 为安装器；可选 --config-root <path>）')
       return { code: 1, output: out }
   }
 }

@@ -27,13 +27,22 @@
 
 ## 安装
 
-继续使用各宿主原生渠道（全部支持）：
+统一安装器三分钟上手（Node ≥ 20、零外部依赖）：
+
+```bash
+auto-guard init        # 检测本机宿主、复选框勾选、写入集成
+# …或非交互：auto-guard init --host pi,zcode --yes
+```
+
+每次写入前展示 diff 摘要、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等。装完在**新会话**中验证（ZCode hooks 无热重载，必须新开 ZCode 会话）：`auto-guard guard status`。`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见 [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
+
+各宿主原生渠道继续可用、与安装器并存——本来就手工管理某宿主插件时用原生渠道即可：
 
 - **ZCode**：安装插件（`packages/host-zcode`，manifest + hooks；`dist/` 预构建）。
 - **Pi**：注册扩展（`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`；jiti 直跑 TS）。
 - **DSH**：安装插件（`packages/host-dsh`）；在聊天栏选择 `auto-guard` 权限预设即开启。
 
-或使用 SPEC 0002 统一安装器：`npx @auto-guard/cli init`（检测本机宿主、幂等写入集成；`auto-guard remove` 完整卸载）。
+新增第四个宿主 = 一条 profile + 一个适配层包，不改安装器逻辑（[接入指南](docs/new-host.md)）。
 
 ## 配置
 

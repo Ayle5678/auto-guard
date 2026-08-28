@@ -1,7 +1,7 @@
 # SPEC 0002 — installer：`auto-guard init`，安装时选择适配宿主
 
 > Effort: 0002-installer
-> Status: ready-for-agent
+Status: done
 > 前置: SPEC 0001（依赖 core 操作层与三适配层包）
 > 参考: headroom 的 `wrap <agent>` 安装选择体验 · caveman 的 agents/profiles 数据驱动多工具分发
 

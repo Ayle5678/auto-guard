@@ -27,13 +27,22 @@ This monorepo merges three copy-port predecessors: `dsh-auto-guard` 0.2.0 → `p
 
 ## Install
 
-Use each host's native channel (all still fully supported):
+Three-minute quickstart with the unified installer (Node ≥ 20, zero external deps):
+
+```bash
+auto-guard init        # detects installed hosts, checkbox multi-select, writes integrations
+# … or non-interactive: auto-guard init --host pi,zcode --yes
+```
+
+Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent. Start a new session in each installed host afterwards (ZCode hooks have no hot reload) and check `auto-guard guard status`. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
+
+Each host's native channel stays fully supported and coexists with the installer — use it when you manage that host's plugins by hand anyway:
 
 - **ZCode**: install the plugin (manifest + hooks live in `packages/host-zcode`); `dist/` is prebuilt.
 - **Pi**: register the extension (`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`); Pi's jiti runs the TypeScript directly.
 - **DSH**: install the plugin (`packages/host-dsh`); the `auto-guard` permission preset turns the guard on.
 
-Or run the unified installer from SPEC 0002: `npx @auto-guard/cli init` (detects installed hosts, writes integrations idempotently, `auto-guard remove` uninstalls).
+Adding a fourth host means one profile plus one adapter package — no installer changes ([guide](docs/new-host.md)).
 
 ## Configuration
 
