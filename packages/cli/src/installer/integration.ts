@@ -18,7 +18,10 @@ export function homePath(home: string, profilePath: string): string {
 }
 
 function normalizePath(value: string): string {
-  return value.replaceAll('\\', '/').toLowerCase()
+  // JSON.stringify doubles backslashes inside embedded paths (object entries
+  // such as the zcode hooks), so collapse any backslash run to one slash —
+  // otherwise markers never match on Windows and re-init loses idempotence.
+  return value.replace(/\\+/g, '/').toLowerCase()
 }
 
 /** True when a raw array element (string or object) carries our marker. */

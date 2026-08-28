@@ -8,11 +8,18 @@
  * against the discovered @auto-guard/host-* package locations; the installer
  * only ever touches files a profile declares.
  */
-import { isMessageKey, type MessageKey } from './i18n.ts'
+import { isMessageKey, message, type Lang, type MessageKey } from './i18n.ts'
 
 export type HostId = 'dsh' | 'pi' | 'zcode'
 
 export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode']
+
+/**
+ * Entry templates: a fixed JSON string, or a per-language renderer (the
+ * ZCode hook entries carry a localized `statusMessage`, so the template is
+ * built in the language chosen at install time; ADR-0011).
+ */
+export type EntryTemplate = string | ((lang: Lang) => string)
 
 /** Resolved locations of the adapter packages the profiles integrate. */
 export interface PackagePaths {
@@ -37,8 +44,8 @@ export interface JsonMergeAction {
   /** Elements appended to the array at `arrayPath` (created when missing). */
   ops: Array<{
     arrayPath: string[]
-    /** JSON template with ${TOKEN} placeholders. */
-    template: string
+    /** Fixed JSON template with ${TOKEN} placeholders, or a per-language renderer. */
+    template: EntryTemplate
     /** Normalized (`/`-separated) suffix identifying "this entry is ours". */
     markerSuffix: string
   }>
@@ -67,8 +74,18 @@ export interface HostProfile {
   action: JsonMergeAction | CommandAction
 }
 
-const ZCODE_PRETOOLUSE_TEMPLATE = `{"matcher":"^(Bash|Read|Write|Edit|ApplyPatch)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_HOOK_CLI}"],"timeoutMs":90000,"statusMessage":"🛡️ auto-guard 安全审查中…"}]}`
-const ZCODE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_SESSION_START}"],"timeoutMs":10000,"statusMessage":"🛡️ auto-guard 会话初始化"}]}`
+/** JSON-string-escape one value so it survives embedding in a JSON template. */
+function jsonEscape(value: string): string {
+  return JSON.stringify(value).slice(1, -1)
+}
+
+/** ZCode PreToolUse entry; the spinner statusMessage follows the install language. */
+const zcodePreToolUseTemplate = (statusMessage: string): string =>
+  `{"matcher":"^(Bash|Read|Write|Edit|ApplyPatch)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_HOOK_CLI}"],"timeoutMs":90000,"statusMessage":"${jsonEscape(statusMessage)}"}]}`
+
+/** ZCode SessionStart entry; the spinner statusMessage follows the install language. */
+const zcodeSessionStartTemplate = (statusMessage: string): string =>
+  `{"matcher":"^(startup|resume)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_SESSION_START}"],"timeoutMs":10000,"statusMessage":"${jsonEscape(statusMessage)}"}]}`
 
 export const PROFILES: readonly HostProfile[] = [
   {
@@ -119,8 +136,8 @@ export const PROFILES: readonly HostProfile[] = [
       file: '~/.zcode/cli/config.json',
       requiredTokens: ['${AUTO_GUARD_ZCODE_HOOK_CLI}', '${AUTO_GUARD_ZCODE_SESSION_START}'],
       ops: [
-        { arrayPath: ['hooks', 'PreToolUse'], template: ZCODE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-zcode/dist/hook-cli.js' },
-        { arrayPath: ['hooks', 'SessionStart'], template: ZCODE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-zcode/dist/session-start.js' },
+        { arrayPath: ['hooks', 'PreToolUse'], template: (lang) => zcodePreToolUseTemplate(message(lang, 'statusMessageReviewing')), markerSuffix: '/host-zcode/dist/hook-cli.js' },
+        { arrayPath: ['hooks', 'SessionStart'], template: (lang) => zcodeSessionStartTemplate(message(lang, 'statusMessageSessionInit')), markerSuffix: '/host-zcode/dist/session-start.js' },
       ],
     },
   },

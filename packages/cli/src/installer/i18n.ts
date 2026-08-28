@@ -89,6 +89,8 @@ const ZH = {
   sessionNoteReload: '生效需新开会话',
   sessionNoteHooksNoHotReload: 'hooks 无热重载，必须新开 ZCode 会话',
   bannerGuardName: '多宿主命令审查守卫',
+  statusMessageReviewing: '🛡️ auto-guard 安全审查中…',
+  statusMessageSessionInit: '🛡️ auto-guard 会话初始化',
 } as const
 
 export type MessageKey = keyof typeof ZH
@@ -166,6 +168,8 @@ const EN: Record<MessageKey, string> = {
   sessionNoteReload: 'takes effect in a new session',
   sessionNoteHooksNoHotReload: 'hooks have no hot reload — you must start a new ZCode session',
   bannerGuardName: 'multi-host command review guard',
+  statusMessageReviewing: '🛡️ auto-guard reviewing…',
+  statusMessageSessionInit: '🛡️ auto-guard session init',
 }
 
 const catalog = defineCatalog(ZH, EN)

@@ -17,6 +17,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import { machineConfigPath, readMachineLang, writeMachineLang } from '@auto-guard/core'
 import { showBanner, type BannerLang } from './banner.ts'
 import { detectHosts } from './detect.ts'
 import { envLang, invalidLangMessage, message, normalizeLang, type Lang, type MessageKey } from './i18n.ts'
@@ -138,7 +139,8 @@ export function parseInstallerArgs(argv: readonly string[], lang: Lang = 'zh'): 
 export async function runInstallerCommand(argv: readonly string[], deps: InstallerDeps = {}): Promise<InstallerResult> {
   const scanned = scanLangFlag(argv)
   if (scanned.invalid !== undefined) return { code: 2, output: [invalidLangMessage(scanned.invalid)] }
-  const parsed = parseInstallerArgs(argv, scanned.lang ?? envLang() ?? 'zh')
+  const machineLang = () => readMachineLang(machineConfigPath(deps.home ?? homedir()))
+  const parsed = parseInstallerArgs(argv, scanned.lang ?? envLang() ?? machineLang() ?? 'zh')
   if (!parsed.ok) return { code: 2, output: [parsed.message] }
   const flags = parsed.flags
   if (flags.command === 'init') return runInit(flags, deps)
@@ -176,16 +178,34 @@ async function runInit(flags: InstallerFlags, deps: InstallerDeps): Promise<Inst
   const injectedReadLine = deps.readLine
   const ownReadLine = !injectedReadLine && tty ? makeDefaultReadLine() : undefined
   const readLine = injectedReadLine ?? ownReadLine?.ask
-  const interactiveAsk = Boolean(tty && readLine) && !flags.lang && !envLang()
+  // Machine default layer (ADR-0011): a remembered choice means the language
+  // prompt never re-appears on later inits.
+  const machineLang = readMachineLang(machineConfigPath(home))
+  const interactiveAsk = Boolean(tty && readLine) && !flags.lang && !envLang() && !machineLang
 
   // The banner leads: it is the first thing any run shows. Before the
   // language prompt resolves, its tagline is bilingual; once pinned or
   // resolved, it renders in that language.
   const pinned = flags.lang ?? envLang()
-  const bannerLang: BannerLang = pinned ?? (interactiveAsk ? 'bilingual' : 'zh')
+  const bannerLang: BannerLang = pinned ?? machineLang ?? (interactiveAsk ? 'bilingual' : 'zh')
   showBanner({ enabled: flags.banner ?? deps.banner, lang: bannerLang, write: deps.writeOut })
 
-  const lang: Lang = pinned ?? (interactiveAsk ? await promptLanguage(readLine!) : 'zh')
+  let lang: Lang
+  if (pinned) {
+    lang = pinned
+    // `--lang` updates the machine default immediately (ADR-0011): the choice
+    // outlives the install and later inits skip the prompt.
+    if (flags.lang) writeMachineLang(machineConfigPath(home), lang)
+  } else if (machineLang) {
+    lang = machineLang
+  } else if (interactiveAsk) {
+    lang = await promptLanguage(readLine!)
+    // Persist right after the prompt, not after the install result: the
+    // preference stands even when the user declines every write.
+    writeMachineLang(machineConfigPath(home), lang)
+  } else {
+    lang = 'zh'
+  }
   const detections = detectHosts({ home, hasExecutable: deps.hasExecutable, lang })
 
   try {
@@ -313,11 +333,11 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
 }
 
 function runList(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {
-  const lang = flags.lang ?? envLang() ?? 'zh'
+  const home = resolveHome(flags, deps)
+  const lang = flags.lang ?? envLang() ?? readMachineLang(machineConfigPath(home)) ?? 'zh'
   const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const joiner = lang === 'zh' ? '；' : '; '
   const out: string[] = []
-  const home = resolveHome(flags, deps)
   const paths = resolvePaths(deps)
   const fileExists = deps.fileExists ?? existsSync
   const detections = detectHosts({ home, hasExecutable: deps.hasExecutable, lang })
@@ -340,10 +360,12 @@ function runList(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {
 }
 
 function runRemove(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {
-  const lang = flags.lang ?? envLang() ?? 'zh'
+  const home = resolveHome(flags, deps)
+  // remove never touches the machine default: the language preference is
+  // kept, mirroring "data roots are kept" (ADR-0011).
+  const lang = flags.lang ?? envLang() ?? readMachineLang(machineConfigPath(home)) ?? 'zh'
   const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
   const out: string[] = []
-  const home = resolveHome(flags, deps)
   const fileExists = deps.fileExists ?? existsSync
   const hosts = flags.hosts?.length ? flags.hosts : [...HOST_IDS]
   const invalid = validateHostNames(hosts, lang)

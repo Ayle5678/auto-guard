@@ -54,9 +54,13 @@ describe('host profiles (ADR-0008)', () => {
     for (const profile of PROFILES) {
       if (profile.action.kind === 'json-merge') {
         for (const op of profile.action.ops) {
-          const rendered = renderTemplate(op.template, paths)
-          expect(rendered).not.toMatch(/\$\{[A-Z_]+\}/)
-          expect(() => JSON.parse(rendered)).not.toThrow()
+          // Function templates must render valid, token-free JSON in every language.
+          for (const lang of ['zh', 'en'] as const) {
+            const template = typeof op.template === 'function' ? op.template(lang) : op.template
+            const rendered = renderTemplate(template, paths)
+            expect(rendered).not.toMatch(/\$\{[A-Z_]+\}/)
+            expect(() => JSON.parse(rendered)).not.toThrow()
+          }
         }
       }
     }
@@ -65,7 +69,9 @@ describe('host profiles (ADR-0008)', () => {
   it('zcode PreToolUse template mirrors the shipped hooks.json shape', () => {
     const zcode = profileById('zcode')!
     if (zcode.action.kind !== 'json-merge') throw new Error('expected json-merge')
-    const rendered = JSON.parse(renderTemplate(zcode.action.ops[0]!.template, {
+    const op0 = zcode.action.ops[0]!
+    const template = typeof op0.template === 'function' ? op0.template('zh') : op0.template
+    const rendered = JSON.parse(renderTemplate(template, {
       pi: { srcIndex: '' },
       zcode: { distHookCli: '/opt/ag/host-zcode/dist/hook-cli.js', distSessionStart: '' },
       dsh: { packageDir: '' },
