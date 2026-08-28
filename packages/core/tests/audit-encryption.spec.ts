@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { AuditStore } from '../src/audit.ts'
+import { LightAuditStore as AuditStore } from '../src/audit.ts'
 import { loadAuditPassword, saveAuditPassword } from '../src/secret.ts'
 import type { Decision } from '../src/types.ts'
 

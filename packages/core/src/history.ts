@@ -5,7 +5,7 @@
  * skeleton. A command whose skeleton has enough repeated low-risk allow history
  * and no real deny history can be allowed without another LLM call.
  */
-import { AuditStore } from './audit.ts'
+import { createAuditStore, type AuditStore } from './audit.ts'
 import { skeletonOf } from './skeleton.ts'
 import type { Decision } from './types.ts'
 
@@ -19,6 +19,8 @@ export interface HistoryStoreOptions {
   dbPath: string
   password?: string
   days?: number
+  /** Pre-built store; when omitted one is created via createAuditStore. */
+  store?: AuditStore
 }
 
 export class HistoryStore {
@@ -28,7 +30,7 @@ export class HistoryStore {
   private lastRefresh = 0
 
   constructor(options: HistoryStoreOptions) {
-    this.audit = new AuditStore(options.dbPath, options.password)
+    this.audit = options.store ?? createAuditStore(options.dbPath, options.password)
     this.days = options.days ?? 60
     this.refresh()
   }

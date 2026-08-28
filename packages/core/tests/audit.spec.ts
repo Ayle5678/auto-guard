@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AuditStore, redactCommand } from '../src/audit.ts'
+import { LightAuditStore as AuditStore, redactCommand } from '../src/audit.ts'
 import type { Decision } from '../src/types.ts'
 
 const dirs: string[] = []

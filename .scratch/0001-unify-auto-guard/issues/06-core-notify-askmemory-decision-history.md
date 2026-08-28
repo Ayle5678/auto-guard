@@ -8,9 +8,13 @@ What to build:
 - HostCapabilities 类型定义 + core 内所有能力分支消费点。
 
 Blocked by: 04, 05
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 路由/文案为纯函数，零 IO，快照测试三宿主默认配置下的输出
-- [ ] 操作层函数被 fake deps 驱动时无需任何宿主 SDK
-- [ ] core 全包 grep 无 `@deepseek-ai|@earendil-works|zcode` 引用
+- [x] 路由/文案为纯函数，零 IO，快照测试三宿主默认配置下的输出
+- [x] 操作层函数被 fake deps 驱动时无需任何宿主 SDK
+- [x] core 全包 grep 无 `@deepseek-ai|@earendil-works|zcode` 引用
+
+## Comments
+
+- 2026-08-28: done — notify superset (+pageNoticeText), ask-memory four-state pure, decision-history ring JSONL, commands.ts ops layer driven by fake deps; HostCapabilities types + route clamping; core grep clean of host packages

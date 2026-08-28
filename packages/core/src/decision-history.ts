@@ -1,7 +1,7 @@
 /**
  * Decision history: a per-host ring of recent decisions in a JSONL file.
  *
- * Gives hosts without a push channel (e.g. zcode's one-process-per-call hook)
+ * Gives hosts without a push channel (one-process-per-call hook models)
  * a pull-based way to inspect what the guard decided (`guard recent`).
  * Purely cosmetic — failures never break a decision.
  */

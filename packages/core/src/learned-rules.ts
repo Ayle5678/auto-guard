@@ -24,6 +24,7 @@ export function emptyLearnedRules(): LearnedRulesFile {
   return { version: 1, cacheable: [] }
 }
 
+/** Drop exact-duplicate patterns, keeping the first occurrence. */
 function dedupePatterns(patterns: PatternRule[]): PatternRule[] {
   const seen = new Set<string>()
   const result: PatternRule[] = []
@@ -33,6 +34,15 @@ function dedupePatterns(patterns: PatternRule[]): PatternRule[] {
     result.push(rule)
   }
   return result
+}
+
+/** Merge rules whose rendered pattern is identical (e.g. `<num>` and `<hash>` both become `*`). */
+function dedupeByPattern(rules: PatternRule[]): PatternRule[] {
+  const seen = new Map<string, PatternRule>()
+  for (const rule of rules) {
+    if (!seen.has(rule.pattern)) seen.set(rule.pattern, rule)
+  }
+  return [...seen.values()]
 }
 
 export function loadLearnedRules(path: string, excludedRules: PatternRule[] = []): LearnedRulesFile {
@@ -52,7 +62,7 @@ export function loadLearnedRules(path: string, excludedRules: PatternRule[] = []
     })
     return {
       version: 1,
-      cacheable: dedupePatterns(filtered),
+      cacheable: dedupeByPattern(filtered),
     }
   } catch {
     return emptyLearnedRules()
@@ -200,7 +210,7 @@ export function generateLearnedRules(rows: AuditRow[], options: LearnedRuleGener
     })
   }
 
-  const unique = dedupePatterns(cacheable)
-  unique.sort((a, b) => a.pattern.localeCompare(b.pattern))
-  return { version: 1, cacheable: unique }
+  const mergedCacheable = dedupeByPattern(cacheable)
+  mergedCacheable.sort((a, b) => a.pattern.localeCompare(b.pattern))
+  return { version: 1, cacheable: mergedCacheable }
 }

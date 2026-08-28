@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AuditStore } from '../src/audit.ts'
+import { LightAuditStore as AuditStore } from '../src/audit.ts'
 import { emptyLearnedRules, generateLearnedRules, loadLearnedRules, writeLearnedRules } from '../src/learned-rules.ts'
 import type { Decision } from '../src/types.ts'
 

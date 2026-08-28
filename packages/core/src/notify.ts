@@ -50,3 +50,12 @@ export function notifyRoute(
       return config.notifyAsk
   }
 }
+
+/** Single-line page-route text (UI only, never enters context). */
+export function pageNoticeText(decision: Decision): string {
+  const parts = ['Auto Guard', decision.kind === 'allow' ? '放行' : decision.kind === 'deny' ? '拦截' : '询问']
+  if (decision.risk) parts.push(`risk: ${decision.risk}`)
+  parts.push(`来源: ${sourceTag(decision.source)}`)
+  parts.push('未进入上下文')
+  return parts.join(' · ')
+}

@@ -6,7 +6,7 @@
  * same structure (e.g. `--days 7` vs `--days 8`) can hit the template without
  * another LLM call.
  *
- * The ZCode hook model starts one process per tool call, so the pi-era
+ * One-process-per-call hook hosts start a fresh process per tool call, so the earlier
  * in-memory map could never survive a decision — persistence is what makes
  * the learned layer reachable at all. Entries are only written through
  * `set()`, which refuses commands matching no learned pattern, so the file

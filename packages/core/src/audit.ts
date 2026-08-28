@@ -1,17 +1,28 @@
 /**
- * Experimental local audit log for guard decisions.
+ * Experimental local audit log for guard decisions (ADR-0005).
  *
- * Stores one row per guarded shell command decision in a local SQLite database
- * (WAL mode). It intentionally does NOT store command execution output. All
- * storage operations are best-effort: failures are swallowed so auditing can
- * never block or alter command execution.
+ * Stores one row per guarded shell command decision. It intentionally does NOT
+ * store command execution output. All storage operations are best-effort:
+ * failures are swallowed so auditing can never block or alter command
+ * execution.
+ *
+ * Two implementations share one 18-column schema, one redaction helper and
+ * one interface:
+ *  - {@link LightAuditStore}: node:sqlite + field-level AES-GCM (zero native
+ *    dependencies).
+ *  - SqlcipherAuditStore (audit-sqlcipher.ts): full-database SQLCipher via the
+ *    optional better-sqlite3-multiple-ciphers dependency.
+ * {@link createAuditStore} picks SQLCipher when the optional module loads and
+ * falls back to Light otherwise.
  */
+import { createRequire } from 'node:module'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { expandHome, normalizeCommand } from './command.ts'
 import { decryptField, deriveKey, encryptField, isEncrypted } from './audit-crypto.ts'
+import { SqlcipherAuditStore } from './audit-sqlcipher.ts'
 import type { Decision } from './types.ts'
 
 export interface AuditRecordInput {
@@ -49,6 +60,49 @@ export interface AuditRow {
   extra: string | null
 }
 
+/** Shared 18-column schema for both audit store implementations. */
+export const SCHEMA_DDL = `
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT NOT NULL,
+    session_id TEXT,
+    workspace TEXT,
+    source TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    command TEXT NOT NULL,
+    command_normalized TEXT NOT NULL,
+    decision_kind TEXT NOT NULL,
+    final_action TEXT,
+    decision_source TEXT NOT NULL,
+    risk TEXT,
+    category TEXT,
+    rule_pattern TEXT,
+    reason TEXT,
+    reviewer_failed INTEGER NOT NULL DEFAULT 0,
+    cached INTEGER NOT NULL DEFAULT 0,
+    needs_reason INTEGER NOT NULL DEFAULT 0,
+    extra TEXT
+  )
+`
+
+/** Encryption level reported by a store implementation. */
+export type AuditEncryptionLevel = 'sqlcipher' | 'field-aes-gcm' | 'none'
+
+/**
+ * Host-agnostic surface both audit implementations satisfy. History and the
+ * learned-rule analyzer depend only on this interface.
+ */
+export interface AuditStore {
+  insert(input: AuditRecordInput): void
+  list(): AuditRow[]
+  count(): number
+  clearOld(days: number): number
+  clearAll(): void
+  close(): void
+  /** Where a decision command is stored: full-db encryption, per-field, or none. */
+  encryptionLevel(): AuditEncryptionLevel
+}
+
 const SECRET_KEY_VALUE =
   /(\b(?:token|password|passwd|secret|api[_-]?key)\b\s*[=:]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi
@@ -65,10 +119,11 @@ export function redactCommand(command: string): string {
 }
 
 /**
- * Best-effort SQLite audit store. If the database cannot be opened or a write
- * fails, methods no-op instead of throwing so the guard pipeline is unaffected.
+ * Best-effort audit store on node:sqlite with field-level AES-256-GCM for the
+ * free-text columns. If the database cannot be opened or a write fails,
+ * methods no-op instead of throwing so the guard pipeline is unaffected.
  */
-export class AuditStore {
+export class LightAuditStore implements AuditStore {
   private db: DatabaseSync | null
   private readonly key?: Buffer
 
@@ -90,29 +145,7 @@ export class AuditStore {
       }
       db = new DatabaseSync(resolved)
       db.exec('PRAGMA journal_mode=WAL')
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS audit_log (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          recorded_at TEXT NOT NULL,
-          session_id TEXT,
-          workspace TEXT,
-          source TEXT NOT NULL,
-          tool TEXT NOT NULL,
-          command TEXT NOT NULL,
-          command_normalized TEXT NOT NULL,
-          decision_kind TEXT NOT NULL,
-          final_action TEXT,
-          decision_source TEXT NOT NULL,
-          risk TEXT,
-          category TEXT,
-          rule_pattern TEXT,
-          reason TEXT,
-          reviewer_failed INTEGER NOT NULL DEFAULT 0,
-          cached INTEGER NOT NULL DEFAULT 0,
-          needs_reason INTEGER NOT NULL DEFAULT 0,
-          extra TEXT
-        )
-      `)
+      db.exec(SCHEMA_DDL)
       db.exec('CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(recorded_at)')
       db.exec('CREATE INDEX IF NOT EXISTS idx_audit_command ON audit_log(command_normalized)')
       db.exec('CREATE INDEX IF NOT EXISTS idx_audit_decision ON audit_log(decision_kind, decision_source)')
@@ -177,6 +210,10 @@ export class AuditStore {
     } catch {
       // Best-effort migration; never break audit availability.
     }
+  }
+
+  encryptionLevel(): AuditEncryptionLevel {
+    return this.key ? 'field-aes-gcm' : 'none'
   }
 
   insert(input: AuditRecordInput): void {
@@ -276,4 +313,23 @@ export class AuditStore {
     }
     this.db = null
   }
+}
+
+/**
+ * Create the strongest audit store available: SQLCipher when the optional
+ * native module loads, the zero-dependency Light store otherwise (ADR-0005).
+ * Best-effort: never throws.
+ */
+export function createAuditStore(dbPath: string, password?: string): AuditStore {
+  if (password) {
+    try {
+      // Probe the optional module before constructing; a missing or broken
+      // native build downgrades to Light instead of failing the guard.
+      createRequire(import.meta.url)('better-sqlite3-multiple-ciphers')
+      return new SqlcipherAuditStore(dbPath, password)
+    } catch {
+      // fall through to Light
+    }
+  }
+  return new LightAuditStore(dbPath, password)
 }

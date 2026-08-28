@@ -2,7 +2,7 @@
  * Configuration loading and persistence for the auto-guard core.
  *
  * The config root is host-specific (each adapter passes its own directory,
- * e.g. `~/.zcode/auto-guard`, per ADR-0003); this module only owns the
+ * each host keeps its own root, per ADR-0003); this module only owns the
  * superset defaults and the load/merge/save mechanics. On first run a config
  * is created with defaults; missing fields are filled from defaults and
  * written back, so older config files keep working as new options are added.

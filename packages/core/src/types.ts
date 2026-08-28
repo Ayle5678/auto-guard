@@ -5,7 +5,7 @@
  * guard service can be unit-tested standalone (only the host adapters and the
  * DeepSeek-compatible reviewer touch host/network surfaces).
  *
- * GuardConfig is the single superset schema: the 38-key ZCode set as the base
+ * GuardConfig is the single superset schema: the 38-key hook-host set as the base
  * plus the DSH-specific provider/reasoning/fallback and masked-display keys.
  * Hosts that do not use a key simply ignore it (ADR-0007 capability model).
  */
@@ -134,7 +134,7 @@ export interface FileTrackerResult {
 export type HeadlessMode = 'deny' | 'allow'
 
 export interface GuardConfig {
-  /** Master switch toggled by `/guard on|off` (pi/zcode) and persisted to config.json. DSH uses the permission preset instead. */
+  /** Master switch toggled by `/guard on|off` and persisted to config.json; DSH uses the permission preset instead. */
   enabled: boolean
   /** User override rules file. */
   rulesPath: string
@@ -168,7 +168,7 @@ export interface GuardConfig {
   mediumRiskTtlDays: number
   /** Fail-closed policy when the reviewer errors or times out. */
   onTimeout: 'deny' | 'ask'
-  /** Default decision for the `ask` path when no UI is present. Used by the pi/dsh capability layers; zcode delegates to the host permission system. */
+  /** Default decision for the `ask` path when no UI is present. Used by the pi/dsh capability layers; hook hosts delegate to the host permission system. */
   headlessMode: HeadlessMode
   /** Show a notification on cache hits. */
   notifyCacheHit: boolean
