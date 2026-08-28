@@ -1,0 +1,17 @@
+{
+  "name": "auto-guard",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Unified multi-host command review guard: one decision engine + thin host adapters + installer.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build"
+  }
+}
