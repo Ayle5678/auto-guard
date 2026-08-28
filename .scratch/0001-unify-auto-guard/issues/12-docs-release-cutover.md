@@ -7,9 +7,13 @@ What to build:
 - 发布：统一包版本 0.3.0；dsh/pi/zcode 各分发渠道的发布产物清单与步骤。
 
 Blocked by: 11
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 三份 README（根 ×2 语言 + 差异文档）评审通过，配置项与代码 DEFAULT_CONFIG 逐键一致
-- [ ] 迁移指南含"旧配置文件是否兼容"逐项回答（是，路径与 schema 不变）
-- [ ] 0.3.0 tag 与三渠道产物清单齐备
+- [x] 三份 README（根 ×2 语言 + 差异文档）评审通过，配置项与代码 DEFAULT_CONFIG 逐键一致
+- [x] 迁移指南含"旧配置文件是否兼容"逐项回答（是，路径与 schema 不变）
+- [x] 0.3.0 tag 与三渠道产物清单齐备
+
+## Comments
+
+- 2026-08-28: done — README (en/zh) with host matrix, install channels, config table keyed against defaultGuardConfig, migration guide; docs/differences.md per-predecessor deltas; docs/cutover/legacy-repos.md banner text + steps; docs/release-0.3.0.md channel artifact list; docs/cli.md incl. PowerShell alias
