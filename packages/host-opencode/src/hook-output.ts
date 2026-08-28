@@ -29,6 +29,28 @@ export function withDeletionHint(reason: string): string {
   return `${reason} ${DELETION_RETRY_HINT}`
 }
 
+/**
+ * Explain HOW a decision was reached, for the decision history / `guard recent`.
+ * Mirrors the claude/zcode adapters so all hosts render equivalent detail.
+ */
+export function hitDetail(decision: Decision, matchedPattern?: string): string {
+  if (matchedPattern) return `规则 ${matchedPattern}：${decision.reason ?? '命中'}`
+  switch (decision.source) {
+    case 'session-cache':
+      return `会话缓存复用：${decision.reason ?? '此前已放行'}`
+    case 'persistent-cache':
+      return `持久缓存复用：${decision.reason ?? '此前已放行'}`
+    case 'history':
+      return `历史审计放行：${decision.reason ?? '相似命令历史 allow'}`
+    case 'learned':
+      return `学习规则放行：${decision.reason ?? '模板命中'}`
+    case 'passthrough':
+      return '未跟踪工具，直通'
+    default:
+      return (decision.reason ?? '').slice(0, 120)
+  }
+}
+
 /** Serialize a verdict to the exact stdout contract (always one JSON object). */
 export function serializeVerdict(verdict: GuardVerdict): string {
   return JSON.stringify(verdict)

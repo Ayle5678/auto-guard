@@ -2,8 +2,11 @@
  * Host profiles: the installer's data layer (ADR-0008).
  *
  * Each supported host is one declarative profile — detection evidence, the
- * file to touch and the content templates — so adding a host means adding a
- * profile (plus its @auto-guard/host-* adapter), never installer logic.
+ * file to touch and the content templates — so adding a host usually means
+ * adding a profile (plus its @auto-guard/host-* adapter), not installer
+ * logic. The one exception so far is a host needing a new KIND of write
+ * (opencode's permission rules, ADR-0011): op kinds are closed here, and a
+ * new kind touches plan/integration/remove/validate together by design.
  * Templates are JSON strings with ${TOKEN} placeholders resolved against the
  * discovered @auto-guard/host-* package locations; the installer only ever
  * touches files a profile declares.

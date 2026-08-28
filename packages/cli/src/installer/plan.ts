@@ -7,7 +7,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { arrayAt, defaultRunCommand, hasMarker, homePath, type RunCommand } from './integration.ts'
+import { arrayAt, defaultRunCommand, hasMarker, homePath, isPlainObject, type RunCommand } from './integration.ts'
 import { renderTemplate, type HostProfile, type PackagePaths } from './profiles.ts'
 
 export interface PlanStep {  kind: 'backup' | 'write' | 'run-command'
@@ -84,7 +84,7 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
       // (global "allow"/"deny" string) is the user's own choice — never
       // overwritten, surfaced as a note instead.
       const permission = (doc.permission ?? {}) as Record<string, unknown>
-      if (typeof permission !== 'object' || Array.isArray(permission)) {
+      if (!isPlainObject(doc.permission) && doc.permission !== undefined) {
         plan.blocked = `${action.file} 中 permission 不是对象，拒绝写入`
         return plan
       }

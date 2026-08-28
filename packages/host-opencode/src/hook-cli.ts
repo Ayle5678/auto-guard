@@ -18,7 +18,7 @@ import { prepareDeletionMarker, classifyCommand, truncateOneLine, pruneSessions,
 import type { Decision, GuardRequest, RulesFile } from '@auto-guard/core'
 import { appendDecisionHistory, bootstrap, isDisabledByConfig, recordAudit, writeStatus, workspaceFromEnv, type GuardRuntime } from './bootstrap.ts'
 import { AUTO_GUARD_DIR } from './config.ts'
-import { decisionReasonText, serializeVerdict, withDeletionHint, type GuardStatus, type GuardVerdict } from './hook-output.ts'
+import { decisionReasonText, hitDetail, serializeVerdict, withDeletionHint, type GuardStatus, type GuardVerdict } from './hook-output.ts'
 import { normalizeHookInput, toGuardRequest } from './opencode-adapter.ts'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -94,7 +94,7 @@ function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile)
     source: decision.source,
     risk: decision.risk,
     reviewerFailed: decision.reviewerFailed === true ? true : undefined,
-    detail: decision.reason ?? '',
+    detail: hitDetail(decision, pattern),
   }
 }
 
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
       lastDecisionKind: (outcome.meta?.kind ?? outcome.status) as Decision['kind'] | GuardStatus,
       lastDecisionSource: outcome.meta?.source,
       lastRisk: outcome.meta?.risk,
-      lastDetail: outcome.status === 'allow' ? '直通/放行' : (outcome.reason ?? '').slice(0, 120),
+      lastDetail: outcome.meta?.detail ?? (outcome.status === 'allow' ? '直通/放行' : (outcome.reason ?? '').slice(0, 120)),
       reviewerLastFailed: outcome.meta?.reviewerFailed,
     }
     writeStatus(entry)

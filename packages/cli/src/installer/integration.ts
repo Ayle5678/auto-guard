@@ -21,6 +21,11 @@ function normalizePath(value: string): string {
   return value.replaceAll('\\', '/').toLowerCase()
 }
 
+/** True for a plain JSON object (not null, not an array) — the only shape merge ops write into. */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /** True when a raw array element (string or object) carries our marker. */
 export function hasMarker(element: unknown, markerSuffix: string): boolean {
   const raw = typeof element === 'string' ? element : JSON.stringify(element ?? '')
@@ -71,13 +76,10 @@ export function jsonMergeStatus(targetFile: string, action: JsonMergeAction, fil
   for (const op of action.ops) {
     if (op.kind === 'permission-ask-rules') {
       const permission = read.doc.permission
-      if (typeof permission !== 'object' || permission === null || Array.isArray(permission)) return 'not-integrated'
-      const tools = permission as Record<string, unknown>
+      if (!isPlainObject(permission)) return 'not-integrated'
       for (const tool of op.tools) {
-        const rules = tools[tool]
-        if (rules === null || typeof rules !== 'object' || Array.isArray(rules) || (rules as Record<string, unknown>)['*'] === undefined) {
-          return 'not-integrated'
-        }
+        const rules = permission[tool]
+        if (!isPlainObject(rules) || rules['*'] === undefined) return 'not-integrated'
       }
       continue
     }

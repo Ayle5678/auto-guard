@@ -12,6 +12,11 @@ Blocked by: —
 Status: done
 
 Acceptance:
-- [ ] 单测：五类工具 payload→GuardRequest 翻译、NotebookEdit 映射、不可解析 payload→unreviewable
-- [ ] 单测：Decision→permissionDecision 三态输出；异常输入 fail-closed
-- [ ] 集成冒烟：`node dist/hook-cli.js` 吃样例 payload 出正确 JSON
+- [x] 单测：五类工具 payload→GuardRequest 翻译、NotebookEdit 映射、不可解析 payload→unreviewable
+- [x] 单测：Decision→permissionDecision 三态输出；异常输入 fail-closed
+- [x] 集成冒烟：`node dist/hook-cli.js` 吃样例 payload 出正确 JSON（scripts/smoke/smoke-claude.mjs，allow/deny/NotebookEdit 三例 PASS）
+
+## 实施期校正（2026-08-29）
+
+- 崩溃 catch-all 为 **ask 级**（原文「deny 级」为笔误）：与 zcode 镜像先例一致，守卫自身故障时交原生确认框（人工闸门）而非硬阻断；fail-closed-ladder.spec 钉死。
+- 字段以官方 hooks 文档核对：`permissionDecision: allow|deny|ask`（defer 仅 headless SDK 场景，不用）；handler 形态为 `{"type":"command","command":"<shell 命令>","timeout":<秒>}`。

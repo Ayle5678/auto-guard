@@ -119,7 +119,8 @@ export const AutoGuard = async (input: OpencodePluginInput): Promise<AutoGuardHo
         if (event.type !== 'permission.asked') return
         const props = event.properties as PermissionAskedProperties | undefined
         if (!props || typeof props.id !== 'string' || typeof props.sessionID !== 'string') return
-        // Fire-and-forget: the bus dispatch is sync; the reply lands async.
+        // Awaited so failures land in this catch; the host never waits on us
+        // beyond its own permission timeout.
         await handlePermissionAsked(props, input.worktree, deps, seen)
       } catch {
         // Never throw out of a plugin hook (tool error ≠ permission decision).

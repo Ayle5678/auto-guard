@@ -66,6 +66,18 @@ describe('ladder step: guard unavailable lands on the native ask', () => {
     }
     expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny')
   })
+
+  it('crash catch-all is ask, not deny (spec 0004 reconciliation): a sick guard hands the call to the human', () => {
+    // Mirrors the zcode precedent: crash → ask means the native confirmation
+    // box decides; a deny-level catch-all would hard-block everything while
+    // the guard itself is broken. The ladder's last rung serializes the same
+    // shape the runtime emits via failClosedAsk in main().catch.
+    const parsed = JSON.parse(serializeHookOutput({ action: 'ask', reason: 'auto-guard 未捕获异常：boom；保守起见需要人工确认' })) as never as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string }
+    }
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('ask')
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('未捕获异常')
+  })
 })
 
 describe('capabilities declaration (ADR-0007)', () => {

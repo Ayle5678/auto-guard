@@ -12,5 +12,10 @@ Blocked by: 03
 Status: done
 
 Acceptance:
-- [ ] 单测：空 permission / 部分配置 / 已有 `"*"` 三种 opencode.json 形态的写入幂等 + remove 还原（plugin 条目删除、permission 保留）
-- [ ] init 冒烟：真实 opencode 启动加载插件（插件列表/日志可见）
+- [x] 单测：空 permission / 部分配置 / 已有 `"*"` 三种 opencode.json 形态的写入幂等 + remove 还原（plugin 条目删除、permission 保留）
+- [ ] init 冒烟：真实 opencode 启动加载插件（插件列表/日志可见）——待人工（交互式 TUI 启动验证；plugin 条目指向 dist 目录，clawd 本地路径先例 + smoke 已验证插件模块可被加载执行）
+
+## 实施期定案（2026-08-29）
+
+- plugin 条目指向 **dist 目录**（markerSuffix `/host-opencode/dist`）：目录形态与本机 clawd 备份先例一致；dist/index.js 兼作单文件入口，两种形态都可用。
+- 补充语义：permission 键为全局字符串动作（如 `"bash": "allow"`）时跳过不覆盖，diff 中说明（工单未覆盖的第三种形态）。

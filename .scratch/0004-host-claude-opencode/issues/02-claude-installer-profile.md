@@ -13,5 +13,5 @@ Blocked by: 01
 Status: done
 
 Acceptance:
-- [ ] validateProfile 通过；空配置 / 已有用户 hooks 的 settings.json 写入幂等、写前备份 `*.auto-guard.bak`、可 remove 完整还原
-- [ ] init 冒烟：真实 `claude` 会话中 PreToolUse 触发（deny 样例命令被拦）
+- [x] validateProfile 通过；空配置 / 已有用户 hooks 的 settings.json 写入幂等、写前备份 `*.auto-guard.bak`、可 remove 完整还原
+- [ ] init 冒烟：真实 `claude` 会话中 PreToolUse 触发（deny 样例命令被拦）——待人工：本机 Claude Code 会话验证（docs/usage.md claude 警示段含自检步骤）

@@ -37,6 +37,28 @@ describe('host detector (ticket 01)', () => {
     expect(opencode.confidence).toBe('high')
   })
 
+  it('treats claude/opencode directory-only findings as medium confidence (AND semantics)', () => {
+    const home = fakeHome()
+    mkdirSync(join(home, '.claude'))
+    mkdirSync(join(home, '.config', 'opencode'), { recursive: true })
+    const results = detectHosts({ home, hasExecutable: () => false })
+    const claude = results.find((r) => r.profile.id === 'claude')!
+    expect(claude.detected).toBe(false)
+    expect(claude.confidence).toBe('medium')
+    const opencode = results.find((r) => r.profile.id === 'opencode')!
+    expect(opencode.detected).toBe(false)
+    expect(opencode.confidence).toBe('medium')
+  })
+
+  it('detects claude and opencode via executable probe (dirs + executables)', () => {
+    const home = fakeHome()
+    mkdirSync(join(home, '.claude'))
+    mkdirSync(join(home, '.config', 'opencode'), { recursive: true })
+    const results = detectHosts({ home, hasExecutable: (exe) => exe === 'claude' || exe === 'opencode' })
+    expect(results.find((r) => r.profile.id === 'claude')!.detected).toBe(true)
+    expect(results.find((r) => r.profile.id === 'opencode')!.detected).toBe(true)
+  })
+
   it('detects dsh via ~/.dsh + executable with high confidence and evidence', () => {
     const home = fakeHome()
     mkdirSync(join(home, '.dsh'))

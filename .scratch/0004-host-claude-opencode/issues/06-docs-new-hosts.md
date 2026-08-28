@@ -11,4 +11,4 @@ Blocked by: 02, 04, 05
 Status: done
 
 Acceptance:
-- [ ] 中英手册均含两宿主章节与两个警示段
+- [x] 中英手册均含两宿主章节与两个警示段

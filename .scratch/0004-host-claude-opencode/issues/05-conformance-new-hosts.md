@@ -10,5 +10,5 @@ Blocked by: 01, 03
 Status: done
 
 Acceptance:
-- [ ] 五宿主等价性测试绿
-- [ ] fail-closed 矩阵全绿
+- [x] 五宿主等价性测试绿
+- [x] fail-closed 矩阵全绿

@@ -14,7 +14,7 @@
  * claude/opencode protocol ladders pin where each failure lands for the user.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -313,11 +313,21 @@ describe('fail-closed matrix: where each failure lands for the user on claude/op
     expect(replies).toEqual(['p5'])
   })
 
-  it('host-ask fallback: user picks "always" → host allow rule → future calls bypass the guard (ADR-0011, accepted)', async () => {
-    // The bypass lives in opencode's own permission engine (last-matching-
-    // rule-wins); the guard-side contract is only that we never re-answer a
-    // request the host already resolved. Pin: our "*" rule insertion keeps
-    // user rules AFTER it so they win — verified installer-side in plan.spec.
-    expect(existsSync).toBeTypeOf('function')
+  it('host-ask fallback: deny replies carry the guard reason as agent feedback', async () => {
+    const asked: PermissionAskedProperties = { id: 'p6', sessionID: 's', permission: 'bash', patterns: [], metadata: { command: 'rm -rf /' } }
+    const replies: Array<{ id: string; reply: string; message?: string }> = []
+    const deps = {
+      spawnHook: async () => ({ status: 'deny' as const, reason: '命中黑名单' }),
+      reply: async (id: string, reply: 'once' | 'reject', message?: string) => void replies.push({ id, reply, message }),
+    }
+    await handlePermissionAsked(asked, 'D:/w', deps, new SeenRequests())
+    expect(replies).toEqual([{ id: 'p6', reply: 'reject', message: '命中黑名单' }])
+  })
+
+  it('host-ask fallback: the "always" bypass lives in the host permission engine, not the guard', () => {
+    // opencode's last-matching-rule-wins means user rules placed after our
+    // "*" keep priority — pinned installer-side (cli plan.spec); the guard's
+    // own contract is only the no-reply-on-ask rule covered above.
+    expect(statusToReply('ask')).toBeUndefined()
   })
 })

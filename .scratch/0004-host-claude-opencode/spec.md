@@ -38,7 +38,7 @@
 
 - 命名：HostId 增 `claude`、`opencode`；包 `@auto-guard/host-claude`、`@auto-guard/host-opencode`。
 - 两新宿主接入 conformance 等价性矩阵与 fail-closed 矩阵。
-- fail-closed 纪律：不可解析 payload → ask（claude）/ 宿主 ask（opencode）；守卫进程崩溃时 claude 侧 catch-all 输出 deny 级决策，opencode 侧插件 catch 后不改写 status 落原生 TUI（不得 throw——throw 会被宿主当作工具错误而非权限裁决）。
+- fail-closed 纪律：不可解析 payload → ask（claude）/ 宿主 ask（opencode）；守卫进程崩溃时 claude 侧 catch-all 输出 **ask 级**决策（原生确认框 = 人工闸门），opencode 侧插件 catch 后不 throw、不答复落原生 TUI（不得 throw——throw 会被宿主当作工具错误而非权限裁决）。〔实施期校正 2026-08-29：原文「deny 级」为笔误——deny 级会在守卫自身故障时硬阻断一切，且 claude 被定义为 zcode 镜像（zcode 先例即 ask）；行为以 ask 为准，fail-closed-ladder 测试钉死〕
 
 Design: ADR-0011（opencode permission.ask 委托与进程隔离）。
 
