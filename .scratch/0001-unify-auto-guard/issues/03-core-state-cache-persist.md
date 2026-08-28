@@ -8,9 +8,13 @@ What to build:
 - `file-tracker.ts`（WriteStore 注入）、`sensitive-path.ts`。
 
 Blocked by: 02
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 内存与磁盘实现通过同一套接口契约测试
-- [ ] zcode session-store/persist-map spec 原样迁入并通过
-- [ ] 宿主 bootstrap 只需换一个工厂函数即可切换实现
+- [x] 内存与磁盘实现通过同一套接口契约测试
+- [x] zcode session-store/persist-map spec 原样迁入并通过
+- [x] 宿主 bootstrap 只需换一个工厂函数即可切换实现
+
+## Comments
+
+- 2026-08-28: done — session-state-contract.spec pins SessionLruCache/DiskSessionCache, tracker stores, pending sinks behind one contract; factory swap at bootstrap

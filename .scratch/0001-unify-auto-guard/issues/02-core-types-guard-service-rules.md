@@ -7,9 +7,13 @@ What to build:
 - `defaults/rules.json`：三库并集 + 人工复审去重（staticAllow 114/dsh100/zcode110、alwaysReview 71/80、sensitivePaths 15 等逐类合并）。
 
 Blocked by: 01
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 前代 guard-service/rules/command 相关 spec 断言全部迁入 core 且绿
-- [ ] Decision.source 枚举与 CONTEXT.md 术语表一致
-- [ ] 并集规则文件中每条 pattern 三库语义核对无冲突（同 pattern 不同 reason 的取最新 reason 并记录在提交说明）
+- [x] 前代 guard-service/rules/command 相关 spec 断言全部迁入 core 且绿
+- [x] Decision.source 枚举与 CONTEXT.md 术语表一致
+- [x] 并集规则文件中每条 pattern 三库语义核对无冲突（同 pattern 不同 reason 的取最新 reason 并记录在提交说明）
+
+## Comments
+
+- 2026-08-28: done — zcode base ported + superset types; rules.json union 0 conflicts; 270 core tests green

@@ -8,9 +8,13 @@ What to build:
 - git 仓库初始化与首次提交。
 
 Blocked by: 无
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] `pnpm install && pnpm -r typecheck && pnpm -r test` 在空包集上通过
-- [ ] 五个包均能被 workspace 解析，无幽灵依赖
-- [ ] core 的 optional 依赖不出现在 host-zcode 的依赖树
+- [x] `pnpm install && pnpm -r typecheck && pnpm -r test` 在空包集上通过
+- [x] 五个包均能被 workspace 解析，无幽灵依赖
+- [x] core 的 optional 依赖不出现在 host-zcode 的依赖树
+
+## Comments
+
+- 2026-08-28: done — pnpm workspace green on empty set; five packages resolve; cipher dep only under core; git initialized

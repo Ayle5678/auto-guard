@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { decryptField, deriveKey, encryptField } from './audit-crypto.ts'
 import { loadOrCreateMachineKey } from './secret.ts'
+import type { GuardConfig } from './types.ts'
 
 const API_KEY_FILE = 'api-key.json'
 
@@ -56,4 +57,21 @@ export function clearApiKey(dir: string): void {
   } catch {
     // Already gone.
   }
+}
+
+/**
+ * Resolve the review API key in priority order (ADR-0006): env var named by
+ * `config.apiKeyEnv`, then encrypted storage (via `loadStored`), then the
+ * legacy plaintext `config.apiKey` field. Hydration happens in memory only —
+ * the legacy plaintext field is never rewritten, so no write path can reach
+ * it. Mutates and returns `config` so callers can pass it straight on.
+ */
+export function hydrateApiKey(config: GuardConfig, loadStored: () => string | undefined = () => undefined): GuardConfig {
+  if (process.env[config.apiKeyEnv]) return config
+  const stored = loadStored()
+  if (stored) {
+    config.apiKey = stored
+    return config
+  }
+  return config
 }

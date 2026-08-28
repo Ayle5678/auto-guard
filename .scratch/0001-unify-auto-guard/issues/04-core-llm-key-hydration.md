@@ -7,9 +7,13 @@ What to build:
 - `secret.ts`、`analyze-state.ts`。
 
 Blocked by: 02
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] zcode key-store/水合 spec 迁入并通过
-- [ ] 水合链三层优先级有逐层覆盖测试；遗留明文字段任何写路径都不可达
-- [ ] dsh 侧注入 mock reviewer 后 decide() 全链路不需要真实网络
+- [x] zcode key-store/水合 spec 迁入并通过
+- [x] 水合链三层优先级有逐层覆盖测试；遗留明文字段任何写路径都不可达
+- [x] dsh 侧注入 mock reviewer 后 decide() 全链路不需要真实网络
+
+## Comments
+
+- 2026-08-28: done — hydrateApiKey(config, loadStored) in core key-store; three-tier priority + no-writeback tested; dsh provider-route error stays in host-dsh
