@@ -63,11 +63,11 @@ type SessionStateKind = 'memory' | 'disk'
 
 interface Bootstrap {
   name: string
-  make: (dir: string, reviewer: LlmReviewer, apiKey: string) => GuardService
+  make: (dir: string, reviewer: LlmReviewer, apiKey: string, lang?: 'zh' | 'en') => GuardService
 }
 
 function bootstraps(): Bootstrap[] {
-  const makeService = (dir: string, reviewer: LlmReviewer, state: SessionStateKind): GuardService => {
+  const makeService = (dir: string, reviewer: LlmReviewer, state: SessionStateKind, lang?: 'zh' | 'en'): GuardService => {
     const config = defaultGuardConfig(dir)
     config.apiKey = 'sk-test'
     const rules = loadRules(config.rulesPath, config.defaultRulesPath)
@@ -91,12 +91,13 @@ function bootstraps(): Bootstrap[] {
       historyStore: history,
       templateCache,
       pendingPersistence,
+      ...(lang ? { lang } : {}),
     })
   }
   return [
-    { name: 'pi-style bootstrap (memory state)', make: (dir, reviewer) => makeService(dir, reviewer, 'memory') },
-    { name: 'dsh-style bootstrap (memory state)', make: (dir, reviewer) => makeService(dir, reviewer, 'memory') },
-    { name: 'zcode-style bootstrap (disk state)', make: (dir, reviewer) => makeService(dir, reviewer, 'disk') },
+    { name: 'pi-style bootstrap (memory state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'memory', lang) },
+    { name: 'dsh-style bootstrap (memory state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'memory', lang) },
+    { name: 'zcode-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
   ]
 }
 
@@ -213,5 +214,43 @@ describe('shared reviewer contract across hosts', () => {
 
   it('timeout budget and system prompt come from core only', () => {
     expect(typeof DeepSeekReviewer).toBe('function')
+  })
+})
+
+describe('language equivalence (SPEC 0004): language changes wording, never verdicts', () => {
+  it.each(bootstraps())('$name: zh and en configs yield identical decisions for every scenario', async ({ make }) => {
+    for (const { request, kind, source } of scenarios()) {
+      const zh = make(root(), okReviewer(), 'sk', 'zh')
+      const en = make(root(), okReviewer(), 'sk', 'en')
+      const zhDecision = await zh.decide({ tool: request.tool, command: request.command, filePath: request.filePath, session: 's1', workspace: 'w' })
+      const enDecision = await en.decide({ tool: request.tool, command: request.command, filePath: request.filePath, session: 's1', workspace: 'w' })
+      expect(enDecision.kind).toBe(zhDecision.kind)
+      expect(enDecision.kind).toBe(kind)
+      expect(enDecision.source).toBe(zhDecision.source)
+      expect(enDecision.source).toBe(source)
+      expect(enDecision.risk).toBe(zhDecision.risk)
+    }
+  })
+
+  it.each(bootstraps())('$name: engine-authored reasons follow the language, decision shape does not', async ({ make }) => {
+    // LLM deny, then retry: the pending-deny ask is engine-authored, so its
+    // reason is the observable that flips with the language.
+    const denyReviewer = (): LlmReviewer => ({
+      async review(): Promise<LlmReviewResult> {
+        return { decision: 'deny', risk: 'medium', reason: 'nope' }
+      },
+    })
+    const zh = make(root(), denyReviewer(), 'sk', 'zh')
+    const en = make(root(), denyReviewer(), 'sk', 'en')
+    const command = { tool: 'bash' as const, command: 'npm install left-pad', session: 's1', workspace: 'w' }
+    await zh.decide(command)
+    await en.decide(command)
+    const zhAsk = await zh.decide(command)
+    const enAsk = await en.decide(command)
+    expect(zhAsk.kind).toBe(enAsk.kind)
+    expect(zhAsk.source).toBe(enAsk.source)
+    expect(zhAsk.source).toBe('llm')
+    expect(zhAsk.reason).toContain('LLM 已拒绝过此命令')
+    expect(enAsk.reason).toContain('The LLM already denied this command')
   })
 })

@@ -117,7 +117,7 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 # …或非交互：auto-guard init --host pi,zcode --yes
 ```
 
-交互 `init` 先展示块状大字头图（tagline 双语），随后弹双语提问（请选择语言 / Select language——`1` 中文默认、`2` English）；脚本 / CI 用 `--lang en` 或环境变量 `AUTO_GUARD_LANG=en` 指定（非交互未指定时保持中文输出）。
+交互 `init` 先展示块状大字头图（tagline 双语），随后弹双语提问（请选择语言 / Select language——`1` 中文默认、`2` English）。选择立即落盘为机器默认（`~/.auto-guard/config.json`）——之后再跑 `init` 不再提问，`remove` 也保留该偏好。全产品双语（安装器、管理 CLI、引擎提示、宿主会话提示、LLM 裁决理由），统一四层解析：环境变量 `AUTO_GUARD_LANG` → 各宿主 `set lang <zh|en>` → 机器默认 → 中文兜底；`[删除理由]` 是协议标记，永远保持中文。
 
 每次写入前展示 diff、强制备份为 `*.auto-guard.bak`、写后校验——重复 `init` 幂等（交互终端下带块状大字头图，青→蓝→紫逐行渐变 + ANSI Shadow 式双线立体钩边，`NO_COLOR` 退化为无色版）。装完在**新会话**中验证（ZCode hooks 无热重载）：`auto-guard guard status` 会总览全部宿主的状态；`auto-guard list` 查看检测证据与接入状态；`auto-guard remove [--host …]` 完整卸载（还原备份；`~/.<host>/auto-guard/` 数据保留）。详见[使用手册](docs/usage.md) · [CLI 指南](docs/cli.md) · [故障排查](docs/troubleshooting.md)。
 
@@ -146,6 +146,7 @@ auto-guard guard status                                # 不带 flag = 多宿主
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 总开关（pi/zcode）；dsh 用权限预设 |
+| `lang` | *(未设)* | 输出语言（`set lang zh\|en`）；未设 = 机器默认，再兜底中文 |
 | `apiBase` | `https://api.deepseek.com` | OpenAI 兼容审查端点（dsh：空 = provider 路由） |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 环境变量优先于本地存储 |
 | `model` / `fallbackModel` | `deepseek-v4-flash` | 审查模型与回退模型 |

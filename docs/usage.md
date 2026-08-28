@@ -92,6 +92,8 @@ auto-guard init
 
 选 `2`（English）后流程完全一致，全部提示换成英文（例如 `Installation complete:`、`Write to ZCode? (y/N):`）。
 
+**选一次，一直用**：交互提问的选择（以及 `--lang`）都会立即写入机器默认 `~/.auto-guard/config.json`（提问后马上落盘，不等安装结果）——之后再跑 `init` 读到机器默认就不再提问；`remove` 也不清除它，重装后语言偏好原样恢复。此后全产品（管理 CLI、引擎提示、宿主会话内的询问与拦截提示、LLM 裁决理由）都跟随这个设置；`[删除理由]` 是协议标记，永远保持中文。
+
 头图说明：默认只在交互终端（stdout 为 TTY）显示，7 行实心块状大字（清晰字形）；立体钩边为 ANSI Shadow 同款双线字符（`══ ║ ╔ ╗ ╚ ╝`），由确定性规则从字形生成——右缘生竖线（起点 `╗`、止点 `╝`），下缘生横线（起头 `╚`、接笔画 `╔`），实心覆盖一切交叠，因此钩边永远贴合笔画、方向不会错乱；钩边与所在行渐变同色，颜色自上而下逐行渐变（亮青 → 蓝 → 紫，一行一色）；设了 `NO_COLOR` 时以无色版显示；管道 / CI 下完全不输出，保证结构化输出可解析——想在非交互环境看效果，加 `--banner` 强制显示。
 
 ### 2.2 `auto-guard init --host … --yes` — 非交互安装
@@ -104,7 +106,7 @@ auto-guard init --host pi,zcode --yes
 
 - `--host` 逗号分隔，可用值 `dsh` `pi` `zcode`；写了未知值会报错并列出可用值。
 - `--yes` 跳过 diff 确认；**备份仍然强制执行**，不会被跳过。
-- `--lang <zh|en>` 指定输出语言（也接受 `zh-CN` / `en-US` 这类区域写法），或设环境变量 `AUTO_GUARD_LANG=en`。非交互场景不提问：未指定时沿用中文，保证既有管道 / CI 输出不变。
+- `--lang <zh|en>` 指定输出语言（也接受 `zh-CN` / `en-US` 这类区域写法），或设环境变量 `AUTO_GUARD_LANG=en`。非交互场景不提问：未指定时依次看环境变量、机器默认（`~/.auto-guard/config.json`），都没有则沿用中文，保证既有管道 / CI 输出不变。`--lang` 同时会更新机器默认。
 - 指定的宿主必须被检测到，否则退出码 2 并提示先安装宿主（安装器**从不代装宿主**）。检测是启发式，确认无误要强制接入时，用交互模式手动勾选并确认路径。
 - 典型输出：
 
@@ -244,6 +246,7 @@ auto-guard guard ping            # DeepSeek API 连通性测试
 
 🛡️ Pi Coding Agent — ~/.pi/auto-guard
   enabled : true
+  lang    : zh
   config  : C:\Users\me\.pi\auto-guard\config.json
   review  : https://api.deepseek.com · deepseek-v4-flash
   examine : on · history: off
@@ -251,6 +254,7 @@ auto-guard guard ping            # DeepSeek API 连通性测试
 
 🛡️ ZCode — ~/.zcode/auto-guard
   enabled : true
+  lang    : en
   config  : C:\Users\me\.zcode\auto-guard\config.json
   review  : https://api.deepseek.com · deepseek-v4-flash
   examine : on · history: on
@@ -262,9 +266,11 @@ auto-guard guard ping            # DeepSeek API 连通性测试
 （管理命令作用于单个宿主：加 --config-root ~/.<host>/auto-guard，或设 AUTO_GUARD_CONFIG_ROOT）
 ```
 
+每个宿主显示一行 `lang`：该根的**生效语言**（四层解析后的结果，见 3.2；各根可以不同——上图 Pi 跟随中文兜底，ZCode 被单独设成了英文）。
+
 注意：聚合的只有 `status` 这一个只读视图；`guard on/off`、`set`、`examine`、`optimize` 始终作用于解析出的**单个**配置根（见 3.0）。
 
-### 3.2 `set` — Key 与 API 配置
+### 3.2 `set` — Key、API 与语言配置
 
 API Key 解析优先级：**环境变量 → 加密存储（`api-key.json`，AES-256-GCM 机器绑定）→ 遗留明文字段（只读）**。
 
@@ -275,11 +281,25 @@ auto-guard set clear-key         # 删除加密存储（环境变量不受影响
 auto-guard set set-api base https://api.deepseek.com   # 改审查端点
 auto-guard set set-api model deepseek-v4-flash         # 改审查模型
 auto-guard set set-api reset                           # 恢复默认
+auto-guard set lang en           # 本宿主输出语言切换为英文（回执也用新语言）
+auto-guard set lang zh           # 切回中文
 auto-guard set history on        # 开运行时历史层（配合 guard recent）
 auto-guard set reload            # 提示：配置与规则每次 hook 进程启动时自动重读
 ```
 
 安全约定：Key 永远不接受命令行参数（shell 历史会留存），只走 TTY 向导或环境变量 `DEEPSEEK_API_KEY`（可用 `apiKeyEnv` 改名）。
+
+**语言设置（四层解析）**。`set lang` 写入当前配置根的 `lang` 字段，只影响这一个宿主；全产品生效语言按以下顺序解析（第一层命中即止）：
+
+```
+环境变量 AUTO_GUARD_LANG   →   各宿主 config.json 的 lang（set lang 写入）   →   机器默认 ~/.auto-guard/config.json（安装器写入）   →   中文兜底
+```
+
+- 环境变量是单次调用覆盖，适合 CI / 脚本固定输出语言，不落盘。
+- 机器默认由安装器在语言提问或 `--lang` 后立即写入；未单独设置过的宿主都跟随它。
+- 中文兜底保证存量用户与既有测试零变化；`set lang` 后回执立即用新语言输出，作为生效证明。
+- LLM 裁决理由语言跟随该设置落库；`[删除理由]` 协议标记与其解析不受影响，历史记录不翻译。
+- 改语言在下次进程启动生效即可（hook 本就每次启动重读配置）；ZCode 宿主自带管理 CLI（`node dist/cli.js`）与管理 CLI 行为一致，也有 `set lang`。
 
 ### 3.3 `examine` — 审计日志（本地 SQLite，默认关）
 
