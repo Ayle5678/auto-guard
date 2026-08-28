@@ -1,11 +1,11 @@
 # auto-guard
 
-AI 编码 agent 的命令审查守卫：在宿主工具执行命令或读写文件之前，用规则、记忆与 LLM 裁决自动给出 allow / deny / ask 的安全网。一个核心裁决引擎服务多个宿主（DSH、Pi、ZCode），每宿主一层薄适配。本文件是全域唯一术语表；三前代项目（dsh-auto-guard / pi-auto-guard / zcode-auto-guard）的术语表由本文吸收取代。
+AI 编码 agent 的命令审查守卫：在宿主工具执行命令或读写文件之前，用规则、记忆与 LLM 裁决自动给出 allow / deny / ask 的安全网。一个核心裁决引擎服务多个宿主（DSH、Pi、ZCode、Claude Code、OpenCode），每宿主一层薄适配。本文件是全域唯一术语表；三前代项目（dsh-auto-guard / pi-auto-guard / zcode-auto-guard）的术语表由本文吸收取代。
 
 ## 宿主与适配
 
 **宿主（Host）**:
-承载守卫的 AI 编码工具。当前三个：DSH（DeepSeek Harness 插件体系）、Pi（Pi Coding Agent 扩展）、ZCode（PreToolUse hook 插件）。
+承载守卫的 AI 编码工具。当前五个：DSH（DeepSeek Harness 插件体系）、Pi（Pi Coding Agent 扩展）、ZCode（PreToolUse hook 插件）、Claude Code（PreToolUse hook）、OpenCode（permission.ask 插件）。
 _Avoid_: 平台、客户端、载体
 
 **宿主适配层（Host Adapter）**:
@@ -43,7 +43,7 @@ _Avoid_: 规则名、层级号
 _Avoid_: 安全默认
 
 **headless fallback**:
-宿主没有确认 UI 时 ask 的归宿；由宿主能力声明（dsh 原生 ask→deny、pi headlessMode、zcode 委托宿主权限系统）。
+宿主没有确认 UI 时 ask 的归宿；由宿主能力声明（dsh 原生 ask→deny、pi headlessMode、zcode/claude 委托宿主权限系统、opencode 委托宿主 permission.ask 与 TUI）。
 _Avoid_: 无人值守模式
 
 ## 规则
