@@ -16,3 +16,4 @@ Acceptance:
 ## Comments
 
 - 2026-08-28: done — packages/conformance: scenario matrix (whitelist/hard-deny/always-review-LLM/sensitive-path/directory-delete two-phase) × three bootstrap styles (memory/memory/disk); fail-closed matrix (reviewer throw, malformed parse, missing key); 21 tests <5s with fake LLM; scripts/smoke/{zcode,pi,dsh}.mjs one-click via pnpm smoke (zcode full e2e on built dist, pi/dsh pure-adapter smokes + full-mount instructions)
+- 2026-08-28 code-review: added 写后执行 (shell-redirect write → execute, source=file-tracker) and 缓存命中链 (llm → cached repeat) scenarios; pi/dsh smokes now really exercise the adapters via Node type stripping (no silent SKIP)

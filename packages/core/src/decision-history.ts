@@ -5,7 +5,7 @@
  * a pull-based way to inspect what the guard decided (`guard recent`).
  * Purely cosmetic — failures never break a decision.
  */
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 /** Best-effort status snapshot for one decided tool call. */

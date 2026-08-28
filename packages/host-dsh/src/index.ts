@@ -31,6 +31,10 @@ import {
   SessionLruCache,
   PersistentCache,
   SqlcipherAuditStore,
+  LightAuditStore,
+  createAuditStore,
+  effectiveNotifyRoute,
+  type AuditStore,
   shouldRunAutoAnalysis,
   analysisIntervalMs,
   TemplateCache,
@@ -45,6 +49,7 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { PreToolDecision, ToolExecution, ToolGuard } from '@deepseek-ai/dsh-tools'
 import { toGuardRequest, type ExecutionLike } from './adapter.ts'
+import { DSH_CAPABILITIES } from './dsh-capabilities.ts'
 import { createContextNotice, createPageNoticeEvents, notifyRoute } from './notify-policy.ts'
 import { DshLlmReviewer } from './dsh-reviewer.ts'
 import { FileTracker } from '@auto-guard/core'
@@ -53,11 +58,14 @@ import { AUTO_GUARD_DIR, installGuardSettings, loadConfig } from './config.ts'
 export const name = 'auto-guard'
 export const inject = ['tools', 'permissionPresets']
 
+/** Audit surface dsh relies on: the shared interface plus SQLCipher extras that degrade gracefully. */
+type DshAudit = AuditStore & Partial<Pick<SqlcipherAuditStore, 'rekey' | 'setPassword' | 'createNew' | 'exportPlaintext'>>
+
 interface GuardState {
   config: GuardConfig
   rules: RulesFile
   service: GuardService
-  audit: SqlcipherAuditStore
+  audit: DshAudit
   history?: HistoryStore
   learned: ReturnType<typeof loadLearnedRules>
   templateCache: TemplateCache
@@ -75,7 +83,18 @@ function createState(
   const persistentCache = new PersistentCache(expandHome(config.cachePath))
   const llmReviewer = new DshLlmReviewer(ctx, config)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
-  const audit = new SqlcipherAuditStore(expandHome(config.auditDbPath), config.auditPassword)
+  // ADR-0005: SQLCipher is the dsh implementation but the optional native
+  // dependency may be absent; degrade to Light rather than losing the audit.
+  let audit: DshAudit
+  if (config.auditPassword) {
+    try {
+      audit = new SqlcipherAuditStore(expandHome(config.auditDbPath), config.auditPassword)
+    } catch {
+      audit = new LightAuditStore(expandHome(config.auditDbPath), config.auditPassword)
+    }
+  } else {
+    audit = createAuditStore(expandHome(config.auditDbPath))
+  }
   const history = new HistoryStore({ dbPath: config.auditDbPath, password: config.auditPassword, days: config.historyDays, store: audit })
   const learned = loadLearnedRules(config.learnedRulesPath, [...rules.hardDeny, ...rules.alwaysReview, ...rules.directoryDelete])
   const templateCache = new TemplateCache(config.templateCachePath)
@@ -150,6 +169,7 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
       return { ok: true }
     },
     exportPlaintext(): { ok: boolean; message: string } {
+      if (!state.audit.exportPlaintext) return { ok: false, message: '当前审计实现不支持明文导出（Light 降级模式）' }
       const ok = state.audit.exportPlaintext(join(AUTO_GUARD_DIR, 'audit.export.db'))
       return ok
         ? { ok: true, message: '已导出明文审计库到 ~/.dsh/auto-guard/audit.export.db' }
@@ -157,6 +177,7 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
     },
     createNewAudit(): { ok: boolean; message: string } {
       if (!state.config.auditPassword) return { ok: false, message: '请先设置审计密码' }
+      if (!state.audit.createNew) return { ok: false, message: '当前审计实现不支持重建（Light 降级模式）' }
       const ok = state.audit.createNew(state.config.auditPassword)
       return ok
         ? { ok: true, message: '已创建新的空审计库；旧加密库已保留为 orphan 文件' }
@@ -179,7 +200,7 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
   const config = loadConfig(undefined, patchConfig)
   let state!: GuardState
   const settings = installGuardSettings(ctx, config, patchConfig, undefined, (newPassword) => {
-    state?.audit.setPassword(newPassword)
+    state?.audit.setPassword?.(newPassword)
   })
   state = createState(ctx, patchConfig, config, settings)
   ctx.provide('autoGuard', createAutoGuardRemote(state))
@@ -233,6 +254,8 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     let route = notifyRoute(decision, state.config)
     // Rule-based allows are always UI-only; they never enter the model context.
     if (isRuleAllow && route === 'context') route = 'page'
+    // Clamp to channels the host can actually deliver (ADR-0007).
+    route = effectiveNotifyRoute(route, DSH_CAPABILITIES)
     if (route === 'off') return
 
     if (route === 'context') {

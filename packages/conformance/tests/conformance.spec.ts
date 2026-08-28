@@ -168,6 +168,26 @@ describe('fail-closed matrix: identical reviewer-failure semantics on all hosts'
     expect(parseReviewJson('{"decision":"deny"}')).toMatchObject({ decision: 'deny', risk: 'medium' })
   })
 
+  it.each(bootstraps())('$name: write-then-execute tracker fires identically', async ({ make }) => {
+    const dir = root()
+    const service = make(dir, okReviewer(), 'memory')
+    const script = join(dir, 'deploy.sh')
+    await service.decide({ tool: 'bash', command: `echo 'echo deploy' > ${script}`, session: 's1', workspace: dir })
+    const hit = await service.decide({ tool: 'bash', command: `bash ${script}`, session: 's1', workspace: dir })
+    expect(hit.source).toBe('file-tracker')
+  })
+
+  it.each(bootstraps())('$name: cache-hit chain serves repeats from cache with cached=true', async ({ make }) => {
+    const dir = root()
+    const service = make(dir, okReviewer(), 'memory')
+    const first = await service.decide({ tool: 'bash', command: 'npm install left-pad', session: 's1', workspace: dir })
+    expect(first.source).toBe('llm')
+    const second = await service.decide({ tool: 'bash', command: 'npm install left-pad', session: 's1', workspace: dir })
+    expect(second.kind).toBe(first.kind)
+    expect(second.cached).toBe(true)
+    expect(['session-cache', 'persistent-cache']).toContain(second.source)
+  })
+
   it('missing API key is detectable identically via hasUsableApiKey semantics', () => {
     const config = defaultGuardConfig(root())
     config.apiKey = ''

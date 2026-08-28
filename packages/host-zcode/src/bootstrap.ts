@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import {
   appendDecisionHistory as appendCore,
   readRecentDecisions as readCore,
+  type RuntimeStatus,
   createAuditStore,
   DeepSeekReviewer,
   FileTracker,
@@ -114,17 +115,7 @@ function sessionsDir(): string {
 }
 
 /** Best-effort status snapshot for `/guard status` (hook processes are short-lived). */
-export interface RuntimeStatus {
-  lastRunAt?: string
-  lastTool?: string
-  /** Guarded subject for `guard recent`: the bash command or file path (single line). */
-  lastCommand?: string
-  lastDecisionKind?: string
-  lastDecisionSource?: string
-  lastRisk?: string
-  lastDetail?: string
-  reviewerLastFailed?: boolean
-}
+export type { RuntimeStatus }
 
 const STATUS_PATH = () => join(AUTO_GUARD_DIR, 'status.json')
 
