@@ -12,18 +12,24 @@
  * Host coupling allowed here only (ADR-0002): event wiring, decision-protocol
  * translation, ask implementation and notification channels. All guard logic
  * lives in `@auto-guard/core`.
+ *
+ * Output language resolves once per runtime build (four-layer resolution,
+ * ADR-0011): env > config.lang > machine default > zh.
  */
+import { homedir } from 'node:os'
 import { createLocalBashOperations, isToolCallEventType, type BashOperations, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import {
   analyzeLearnedRules,
-  ASK_MEMORY_OPTIONS,
+  askMemoryLabels,
+  askMemoryValueOfChoice,
   canRememberAsk,
+  coreMessage,
   createAuditStore,
   resolveAskMemory,
+  isDenyAskValue,
   loadAnalyzeState,
   analysisIntervalMs,
   shouldRunAutoAnalysis,
-  updateLastAnalysis,
   prepareDeletionMarker,
   GuardService,
   type GuardDeps,
@@ -33,6 +39,8 @@ import {
   restoreLearnedRules,
   applyHistoryToggle,
   DeepSeekReviewer,
+  effectiveLang,
+  envLang,
   FileTracker,
   SessionLruCache,
   PersistentCache,
@@ -43,6 +51,8 @@ import {
   saveApiKey,
   loadAuditPassword,
   saveAuditPassword,
+  machineConfigPath,
+  readMachineLang,
   classifyCommand,
   loadRules,
   maskKey,
@@ -54,10 +64,11 @@ import {
   effectiveNotifyRoute,
   usesFourStateAsk,
 } from '@auto-guard/core'
-import type { Decision, GuardConfig, GuardRequest, RulesFile } from '@auto-guard/core'
+import type { Decision, GuardConfig, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
 import { AUTO_GUARD_DIR, defaultConfig, loadConfig, saveConfig } from './config.ts'
 import { PI_CAPABILITIES } from './pi-capabilities.ts'
 import { toGuardRequest } from './adapter.ts'
+import { piMessage } from './messages.ts'
 
 interface GuardState {
   config: GuardConfig
@@ -68,11 +79,22 @@ interface GuardState {
   history?: HistoryStore
   learned: ReturnType<typeof loadLearnedRules>
   templateCache: TemplateCache
+  /** Effective output language, resolved once per runtime build. */
+  lang: Lang
 }
 
 /** True when a usable API key exists (env var, encrypted store or legacy field). */
 function hasUsableApiKey(config: GuardConfig): boolean {
   return Boolean(process.env[config.apiKeyEnv] || config.apiKey)
+}
+
+/** Four-layer language resolution (env > config.lang > machine default > zh). */
+function resolveLang(config: GuardConfig): Lang {
+  return effectiveLang({
+    env: envLang(),
+    configLang: config.lang,
+    machineLang: readMachineLang(machineConfigPath(homedir())),
+  })
 }
 
 interface EvaluateOutcome {
@@ -85,10 +107,11 @@ interface EvaluateOutcome {
 
 function buildGuard(): GuardState {
   const config = hydrateApiKey(loadConfig(), () => loadApiKey(AUTO_GUARD_DIR))
+  const lang = resolveLang(config)
   const rules = loadRules(config.rulesPath, config.defaultRulesPath)
   const sessionCache = new SessionLruCache(config.sessionCacheSize)
   const persistentCache = new PersistentCache(config.cachePath)
-  const llmReviewer = new DeepSeekReviewer(config)
+  const llmReviewer = new DeepSeekReviewer(config, lang)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
   const auditPassword = loadAuditPassword(AUTO_GUARD_DIR)
   const audit = createAuditStore(config.auditDbPath, auditPassword)
@@ -105,9 +128,10 @@ function buildGuard(): GuardState {
     fileTracker,
     historyStore: history,
     templateCache,
+    lang,
   }
   const service = new GuardService(deps)
-  return { config, rules, service, reviewer: llmReviewer, audit, history, learned, templateCache }
+  return { config, rules, service, reviewer: llmReviewer, audit, history, learned, templateCache, lang }
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -140,7 +164,7 @@ export default function (pi: ExtensionAPI): void {
     }
     const last = guard.reviewer.lastReview
     if (last && !last.ok) {
-      ui.setStatus('auto-guard', ui.theme.fg('error', `${label}:审查✗`))
+      ui.setStatus('auto-guard', ui.theme.fg('error', `${label}:${piMessage(guard.lang, 'statusReviewFailed')}`))
       return
     }
     ui.setStatus('auto-guard', ui.theme.fg('success', `${label}:on`))
@@ -155,6 +179,7 @@ export default function (pi: ExtensionAPI): void {
     ctx: { hasUI: boolean; ui: { input: (t: string, p?: string) => Promise<string | undefined>; select: (t: string, o: string[]) => Promise<string | undefined>; confirm: (t: string, m: string) => Promise<boolean> } },
     request: GuardRequest,
   ): Promise<EvaluateOutcome> {
+    const lang = guard.lang
     // Headless directory-delete retries carry `[删除理由] <reason>` in the
     // command; strip it before deciding so the marker never executes.
     const prepared = prepareDeletionMarker(request)
@@ -174,8 +199,8 @@ export default function (pi: ExtensionAPI): void {
     // are all resolved by the same human confirmation; no UI fails closed.
     if (decision.source === 'directory-delete' && decision.kind !== 'allow') {
       if (ctx.hasUI) {
-        const title = decision.reviewerFailed ? '审查器故障，这次删除未过审' : 'LLM 未通过这次删除'
-        const override = await ctx.ui.confirm(title, `${decision.reason ?? '审查未通过'}\n仍要执行吗？`)
+        const title = piMessage(lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+        const override = await ctx.ui.confirm(title, `${decision.reason ?? piMessage(lang, 'deleteFailDefaultReason')}\n${piMessage(lang, 'deleteRunAnyway')}`)
         if (override) {
           return { action: 'allow', reason: decision.reason, decision }
         }
@@ -190,17 +215,20 @@ export default function (pi: ExtensionAPI): void {
       return { action: 'block', reason: decision.reason, decision }
     }
     // ask → four-state interactive confirm (capability: four-state), or
-    // fail-closed headless policy.
+    // fail-closed headless policy. Options render in the effective language;
+    // the choice maps back to a semantic value, never matched by label text.
     if (ctx.hasUI) {
       if (usesFourStateAsk(PI_CAPABILITIES) && canRememberAsk(decision)) {
-        const choice = await ctx.ui.select('LLM 不确定，如何决定？', [...ASK_MEMORY_OPTIONS])
+        const choice = await ctx.ui.select(piMessage(lang, 'askTitle'), askMemoryLabels(lang))
         if (!choice) return { action: 'block', reason: decision.reason, decision }
+        const value = askMemoryValueOfChoice(choice)
+        if (!value) return { action: 'block', reason: decision.reason, decision }
         let reason: string | undefined
-        if (choice === '拒绝（可输原因）' || choice === '本会话都拒绝（可输原因）') {
-          reason = await ctx.ui.input('拒绝原因', '可选，留空使用系统原因')
+        if (isDenyAskValue(value)) {
+          reason = await ctx.ui.input(piMessage(lang, 'denyReasonTitle'), piMessage(lang, 'denyReasonPlaceholder'))
           if (reason === undefined) return { action: 'block', reason: decision.reason, decision }
         }
-        const resolved = resolveAskMemory(choice, reason?.trim() || decision.reason)
+        const resolved = resolveAskMemory(value, reason?.trim() || decision.reason)
         if (resolved.cacheWrite) {
           const memoryCommand = decision.command ?? guardedRequest.command ?? ''
           if (memoryCommand) {
@@ -211,7 +239,7 @@ export default function (pi: ExtensionAPI): void {
           ? { action: 'allow', reason: decision.reason, decision }
           : { action: 'block', reason: resolved.reason ?? decision.reason, decision }
       }
-      const ok = await ctx.ui.confirm('需要确认', decision.reason ?? '是否允许执行？')
+      const ok = await ctx.ui.confirm(piMessage(lang, 'confirmTitle'), decision.reason ?? piMessage(lang, 'confirmBody'))
       return ok
         ? { action: 'allow', reason: decision.reason, decision }
         : { action: 'block', reason: decision.reason, decision }
@@ -225,7 +253,10 @@ export default function (pi: ExtensionAPI): void {
   /** Ping the configured review API and notify the user whether it is reachable. */
   async function pingAndNotify(ctx: { ui: { notify: (m: string, t?: 'info' | 'warning' | 'error') => void } }): Promise<void> {
     const ping = await guard.reviewer.ping()
-    ctx.ui.notify(ping.ok ? 'API 联通成功' : `API 联通失败：${ping.error ?? '未知错误'}`, ping.ok ? 'info' : 'warning')
+    ctx.ui.notify(
+      ping.ok ? piMessage(guard.lang, 'pingOk') : piMessage(guard.lang, 'pingFail', { error: ping.error ?? piMessage(guard.lang, 'unknownError') }),
+      ping.ok ? 'info' : 'warning',
+    )
   }
 
   /** Write one audit record when the experimental audit log is enabled. */
@@ -267,10 +298,10 @@ export default function (pi: ExtensionAPI): void {
     if (route === 'off') return
     if (route === 'context') {
       // customType 'auto-guard' + display=true → shown in TUI AND enters model context.
-      pi.sendMessage({ customType: 'auto-guard', content: notificationText(decision), display: true })
+      pi.sendMessage({ customType: 'auto-guard', content: notificationText(decision, guard.lang), display: true })
       return
     }
-    ctx.ui.notify(notificationText(decision), 'info')
+    ctx.ui.notify(notificationText(decision, guard.lang), 'info')
   }
 
   pi.on('tool_call', async (event, ctx) => {
@@ -365,12 +396,13 @@ export default function (pi: ExtensionAPI): void {
   })
 
   pi.registerCommand('guard', {
-    description: '守卫运行时：/guard on | off | status | stats',
+    description: piMessage(guard.lang, 'guardCmdDesc'),
     handler: async (args, ctx) => {
+      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim()
       const sub = raw.toLowerCase()
       if (sub === 'on' || sub === 'off') {
-        ctx.ui.notify(setEnabled(guard.config, sub === 'on'), 'info')
+        ctx.ui.notify(setEnabled(guard.config, sub === 'on', guard.lang), 'info')
         saveConfig(guard.config)
         updateGuardStatus(ctx)
       } else if (sub === 'stats') {
@@ -379,51 +411,59 @@ export default function (pi: ExtensionAPI): void {
         const denominator = cacheHits + stats.llmCalls
         const rate = denominator === 0 ? 'N/A' : `${Math.round((cacheHits / denominator) * 100)}%`
         const lines = [
-          `LLM 调用：${stats.llmCalls}`,
-          `会话缓存命中：${stats.sessionCacheHits}`,
-          `持久缓存命中：${stats.persistentCacheHits}`,
-          `历史命中：${stats.historyHits}`,
-          `学习规则命中：${stats.learnedHits}`,
-          `命中率：${rate}`,
-          `规则命中：static-allow ${stats.ruleHits['static-allow']} / user-confirmed ${stats.ruleHits['user-confirmed']} / hard-deny ${stats.ruleHits['hard-deny']} / directory-delete ${stats.ruleHits['directory-delete']} / file-tracker ${stats.ruleHits['file-tracker']} / sensitive-path ${stats.ruleHits['sensitive-path']}`,
+          t('statsLlmCalls', { count: stats.llmCalls }),
+          t('statsSessionHits', { count: stats.sessionCacheHits }),
+          t('statsPersistentHits', { count: stats.persistentCacheHits }),
+          t('statsHistoryHits', { count: stats.historyHits }),
+          t('statsLearnedHits', { count: stats.learnedHits }),
+          t('statsHitRate', { rate }),
+          t('statsRuleHits', {
+            staticAllow: stats.ruleHits['static-allow'],
+            userConfirmed: stats.ruleHits['user-confirmed'],
+            hardDeny: stats.ruleHits['hard-deny'],
+            directoryDelete: stats.ruleHits['directory-delete'],
+            fileTracker: stats.ruleHits['file-tracker'],
+            sensitivePath: stats.ruleHits['sensitive-path'],
+          }),
         ]
         ctx.ui.notify(lines.join('\n'), 'info')
       } else if (sub === 'status') {
         const last = guard.reviewer.lastReview
         const when = last ? new Date(last.at).toLocaleString() : ''
         const reviewLine = !last
-          ? '从未调用（尚未拦截过需要审查的命令）'
+          ? t('statusReviewerNever')
           : last.ok
-            ? `正常（最近一次 ${when}）`
-            : `失败：${last.error ?? 'unknown'}（${when}）`
+            ? t('statusReviewerOk', { when })
+            : t('statusReviewerFailed', { error: last.error ?? 'unknown', when })
         const keyLine = !hasUsableApiKey(guard.config)
-          ? '未配置（未知命令将全部被拒绝）'
+          ? t('statusKeyMissing')
           : guard.config.apiKey
-            ? `已水合 ${maskKey(guard.config.apiKey)}`
-            : `环境变量 ${guard.config.apiKeyEnv} 已配置`
+            ? t('statusKeyHydrated', { key: maskKey(guard.config.apiKey) })
+            : t('statusKeyEnv', { name: guard.config.apiKeyEnv })
         const lines = [
-          `守卫状态：${guard.config.enabled ? '已启用' : '已停用'}`,
-          `审查端点：${guard.config.apiBase}`,
-          `模型：${guard.config.model}`,
-          `API Key：${keyLine}`,
-          `审查器：${reviewLine}`,
+          guard.config.enabled ? t('statusEnabled') : t('statusDisabled'),
+          t('statusEndpoint', { base: guard.config.apiBase }),
+          t('statusModel', { model: guard.config.model }),
+          t('statusApiKey', { value: keyLine }),
+          t('statusReviewer', { value: reviewLine }),
         ]
         ctx.ui.notify(lines.join('\n'), 'info')
       } else {
-        ctx.ui.notify('用法：/guard on | off | status | stats', 'info')
+        ctx.ui.notify(t('guardUsage'), 'info')
       }
     },
   })
 
   pi.registerCommand('guard-examine', {
-    description: '实验性审查日志：/guard-examine on | off | status | clear old | clear all',
+    description: piMessage(guard.lang, 'examineCmdDesc'),
     handler: async (args, ctx) => {
+      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim().toLowerCase()
       if (raw === 'on') {
         if (!loadAuditPassword(AUTO_GUARD_DIR)) {
-          const password = await ctx.ui.input('审计库密码', '开启历史记录需要设置密码（用于加密审计库）')
+          const password = await ctx.ui.input(t('examinePasswordTitle'), t('examinePasswordPrompt'))
           if (!password || !password.trim()) {
-            ctx.ui.notify('已取消，未开启审查日志', 'info')
+            ctx.ui.notify(t('examineCancelled'), 'info')
             return
           }
           saveAuditPassword(AUTO_GUARD_DIR, password.trim())
@@ -431,51 +471,52 @@ export default function (pi: ExtensionAPI): void {
         guard.config.examineEnabled = true
         saveConfig(guard.config)
         reloadGuard()
-        ctx.ui.notify('审查日志已开启（实验性，审计库已加密）', 'info')
+        ctx.ui.notify(t('examineOn'), 'info')
       } else if (raw === 'off') {
         guard.config.examineEnabled = false
         saveConfig(guard.config)
-        ctx.ui.notify('审查日志已关闭', 'info')
+        ctx.ui.notify(t('examineOff'), 'info')
       } else if (raw === 'status') {
-        ctx.ui.notify(`审查日志：${guard.config.examineEnabled ? '已开启' : '已关闭'}；数据库：${guard.config.auditDbPath}`, 'info')
+        ctx.ui.notify(`${t(guard.config.examineEnabled ? 'examineStatusOn' : 'examineStatusOff')}${guard.lang === 'zh' ? '；' : '; '}${t('examineDb', { path: guard.config.auditDbPath })}`, 'info')
       } else if (raw === 'clear old') {
         const removed = guard.audit.clearOld(30)
-        ctx.ui.notify(`已删除 ${removed} 条 30 天前的审查日志`, 'info')
+        ctx.ui.notify(t('examineClearedOld', { count: removed }), 'info')
       } else if (raw === 'clear all') {
         guard.audit.clearAll()
-        ctx.ui.notify('已清空全部审查日志', 'info')
+        ctx.ui.notify(t('examineClearedAll'), 'info')
       } else {
-        ctx.ui.notify('用法：/guard-examine on | off | status | clear old | clear all', 'info')
+        ctx.ui.notify(t('examineUsage'), 'info')
       }
     },
   })
 
   /** Run a learned-rule analysis through the shared core operation. */
   async function runLearnedAnalysis(ctx: { ui: { notify: (m: string, t?: 'info' | 'warning' | 'error') => void } }): Promise<void> {
-    const result = analyzeLearnedRules({ config: guard.config, rules: guard.rules, audit: guard.audit })
+    const result = analyzeLearnedRules({ config: guard.config, rules: guard.rules, audit: guard.audit }, guard.lang)
     if (!result.ok) {
       ctx.ui.notify(result.message, 'warning')
       return
     }
     guard.learned = loadLearnedRules(guard.config.learnedRulesPath, [...guard.rules.hardDeny, ...guard.rules.alwaysReview, ...guard.rules.directoryDelete])
     guard.templateCache.setCacheablePatterns(guard.learned.cacheable)
-    ctx.ui.notify(`学习规则分析完成：cacheable ${guard.learned.cacheable.length}`, 'info')
+    ctx.ui.notify(piMessage(guard.lang, 'learnedAnalyzed', { count: guard.learned.cacheable.length }), 'info')
   }
 
   pi.registerCommand('guard-optimize', {
-    description: '学习规则维护：/guard-optimize status | analyze | list | rollback | history on|off | auto on|off',
+    description: piMessage(guard.lang, 'optimizeCmdDesc'),
     handler: async (args, ctx) => {
+      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim().toLowerCase()
       if (raw === 'analyze') {
         await runLearnedAnalysis(ctx)
       } else if (raw === 'status') {
         const state = loadAnalyzeState(guard.config.analyzeStatePath)
         const lines = [
-          `收集开关：${guard.config.examineEnabled ? '开' : '关'}`,
-          `历史层：${guard.config.historyEnabled ? '开' : '关'}`,
-          `自动分析：${guard.config.autoAnalyzeEnabled ? '开' : '关'}`,
-          `上次分析：${state.lastAnalysisAt ?? '从未'}`,
-          `cacheable：${guard.learned.cacheable.length}`,
+          t('optimizeStatusCollect', { value: t(guard.config.examineEnabled ? 'switchOn' : 'switchOff') }),
+          t('optimizeStatusHistory', { value: t(guard.config.historyEnabled ? 'switchOn' : 'switchOff') }),
+          t('optimizeStatusAuto', { value: t(guard.config.autoAnalyzeEnabled ? 'switchOn' : 'switchOff') }),
+          t('optimizeStatusLast', { value: state.lastAnalysisAt ?? coreMessage(guard.lang, 'never') }),
+          t('optimizeStatusCacheable', { count: guard.learned.cacheable.length }),
         ]
         ctx.ui.notify(lines.join('\n'), 'info')
       } else if (raw === 'list') {
@@ -483,60 +524,61 @@ export default function (pi: ExtensionAPI): void {
           'cacheable:',
           ...guard.learned.cacheable.slice(0, 20).map((r) => `  ${r.pattern}`),
         ]
-        ctx.ui.notify(lines.join('\n') || '（无学习规则）', 'info')
+        ctx.ui.notify(lines.join('\n') || t('optimizeListEmpty'), 'info')
       } else if (raw === 'rollback') {
         if (restoreLearnedRules(guard.config.learnedRulesPath, guard.config.learnedBackupPath)) {
           guard.learned = loadLearnedRules(guard.config.learnedRulesPath, [...guard.rules.hardDeny, ...guard.rules.alwaysReview, ...guard.rules.directoryDelete])
           guard.templateCache.setCacheablePatterns(guard.learned.cacheable)
-          ctx.ui.notify('已从 backup 恢复学习规则', 'info')
+          ctx.ui.notify(t('optimizeRollbackDone'), 'info')
         } else {
-          ctx.ui.notify('没有可恢复的 backup', 'warning')
+          ctx.ui.notify(t('optimizeRollbackNone'), 'warning')
         }
       } else if (raw === 'history on' || raw === 'history off') {
-        const result = applyHistoryToggle(guard.config, raw === 'history on' ? 'on' : 'off')
+        const result = applyHistoryToggle(guard.config, raw === 'history on' ? 'on' : 'off', guard.lang)
         if (result.ok) saveConfig(guard.config)
-        ctx.ui.notify(`运行时历史层已${guard.config.historyEnabled ? '开启' : '关闭'}`, 'info')
+        ctx.ui.notify(t(guard.config.historyEnabled ? 'optimizeHistoryOn' : 'optimizeHistoryOff'), 'info')
       } else if (raw === 'auto on' || raw === 'auto off') {
         guard.config.autoAnalyzeEnabled = raw === 'auto on'
         saveConfig(guard.config)
-        ctx.ui.notify(`自动分析已${guard.config.autoAnalyzeEnabled ? '开启' : '关闭'}`, 'info')
+        ctx.ui.notify(t(guard.config.autoAnalyzeEnabled ? 'optimizeAutoOn' : 'optimizeAutoOff'), 'info')
       } else {
-        ctx.ui.notify('用法：/guard-optimize status | analyze | list | rollback | history on|off | auto on|off', 'info')
+        ctx.ui.notify(t('optimizeUsage'), 'info')
       }
     },
   })
 
   pi.registerCommand('guard-set', {
-    description: '守卫配置与维护：/guard-set reload | set-key | show-key | clear-key | set-api | set-api reset',
+    description: piMessage(guard.lang, 'setCmdDesc'),
     handler: async (args, ctx) => {
+      const t = (key: Parameters<typeof piMessage>[1], params: Record<string, string | number> = {}) => piMessage(guard.lang, key, params)
       const raw = (args ?? '').trim()
       const sub = raw.toLowerCase()
       if (sub === 'reload') {
         reloadGuard()
         updateGuardStatus(ctx)
-        ctx.ui.notify('auto-guard 已重载配置与规则', 'info')
+        ctx.ui.notify(piMessage(guard.lang, 'setReloadDone'), 'info')
       } else if (sub === 'set-key') {
         // Refuse inline arguments: anything typed in chat lands in the session transcript.
         if (raw !== 'set-key') {
-          ctx.ui.notify('为避免密钥进入会话记录，请不带参数运行 /guard-set set-key，在弹窗中输入', 'warning')
+          ctx.ui.notify(t('setKeyInlineWarning'), 'warning')
           return
         }
-        const key = await ctx.ui.input('Auto Guard API Key', '输入 API Key（sk-...），AES-GCM 加密存储于 ~/.pi/auto-guard/api-key.json')
+        const key = await ctx.ui.input(t('setKeyTitle'), t('setKeyPrompt'))
         if (!key || !key.trim()) {
-          ctx.ui.notify('已取消，未修改 API Key', 'info')
+          ctx.ui.notify(t('setKeyCancelled'), 'info')
           return
         }
         saveApiKey(AUTO_GUARD_DIR, key.trim())
         guard.config = hydrateApiKey(guard.config, () => loadApiKey(AUTO_GUARD_DIR))
         updateGuardStatus(ctx)
-        ctx.ui.notify(`API Key 已保存（加密落盘，${maskKey(key.trim())}）`, 'info')
+        ctx.ui.notify(t('setKeySaved', { key: maskKey(key.trim()) }), 'info')
         await pingAndNotify(ctx)
       } else if (sub === 'show-key') {
         const envSet = Boolean(process.env[guard.config.apiKeyEnv])
         const lines = [
-          `环境变量 ${guard.config.apiKeyEnv}：${envSet ? '已配置（优先生效）' : '未配置'}`,
-          `加密存储：${hasStoredApiKey(AUTO_GUARD_DIR) ? `已存储（AES-GCM 加密于 ${AUTO_GUARD_DIR}/api-key.json）` : '(未存储)'}`,
-          `明文遗留：${guard.config.apiKey ? `${maskKey(guard.config.apiKey)}（只读保留，建议 set-key 重存加密版）` : '(无)'}`,
+          t(envSet ? 'showKeyEnvSet' : 'showKeyEnvUnset', { name: guard.config.apiKeyEnv }),
+          hasStoredApiKey(AUTO_GUARD_DIR) ? t('showKeyStored', { dir: AUTO_GUARD_DIR }) : t('showKeyNoStore'),
+          guard.config.apiKey ? t('showKeyLegacy', { key: maskKey(guard.config.apiKey) }) : t('showKeyNoLegacy'),
         ]
         ctx.ui.notify(lines.join('\n'), 'info')
       } else if (sub === 'clear-key') {
@@ -544,13 +586,13 @@ export default function (pi: ExtensionAPI): void {
         // encrypted store is cleared.
         clearApiKey(AUTO_GUARD_DIR)
         updateGuardStatus(ctx)
-        ctx.ui.notify('已清除加密存储的 API Key（明文遗留字段保持只读；环境变量不受影响）', 'info')
+        ctx.ui.notify(t('clearKeyDone'), 'info')
       } else if (sub.startsWith('set-api ') && sub !== 'set-api reset') {
-        ctx.ui.notify('为避免密钥进入会话记录，set-api 不接受参数；请运行 /guard-set set-api 或 /guard-set set-api reset', 'warning')
+        ctx.ui.notify(t('setApiInlineWarning'), 'warning')
       } else if (sub === 'set-api reset') {
         const defaults = defaultConfig()
-        const result = applySetApi(guard.config, 'reset', undefined, defaults)
-        const keyChoice = await ctx.ui.input('API Key', '留空=保留现有 Key；输入 clear 清除加密存储的 Key')
+        const result = applySetApi(guard.config, 'reset', undefined, defaults, guard.lang)
+        const keyChoice = await ctx.ui.input(t('setApiKeyTitle'), t('setApiKeyPrompt'))
         if (keyChoice !== undefined) {
           const trimmed = keyChoice.trim()
           if (trimmed.toLowerCase() === 'clear') clearApiKey(AUTO_GUARD_DIR)
@@ -560,14 +602,14 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(result.message, 'info')
         await pingAndNotify(ctx)
       } else if (sub === 'set-api') {
-        const baseUrl = await ctx.ui.input('审查端点 Base URL', guard.config.apiBase)
+        const baseUrl = await ctx.ui.input(t('setApiBaseTitle'), guard.config.apiBase)
         if (baseUrl === undefined) {
-          ctx.ui.notify('已取消，未修改审查端点', 'info')
+          ctx.ui.notify(t('setApiCancelled'), 'info')
           return
         }
-        const model = await ctx.ui.input('审查模型', guard.config.model)
+        const model = await ctx.ui.input(t('setApiModelTitle'), guard.config.model)
         if (model === undefined) {
-          ctx.ui.notify('已取消，未修改审查端点', 'info')
+          ctx.ui.notify(t('setApiCancelled'), 'info')
           return
         }
         if (baseUrl.trim()) guard.config.apiBase = baseUrl.trim()
@@ -577,10 +619,10 @@ export default function (pi: ExtensionAPI): void {
         }
         saveConfig(guard.config)
         updateGuardStatus(ctx)
-        ctx.ui.notify('审查端点已更新', 'info')
+        ctx.ui.notify(t('setApiUpdated'), 'info')
         await pingAndNotify(ctx)
       } else {
-        ctx.ui.notify('用法：/guard-set reload | set-key | show-key | clear-key | set-api | set-api reset', 'info')
+        ctx.ui.notify(t('setUsage'), 'info')
       }
     },
   })

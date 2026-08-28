@@ -7,14 +7,22 @@
  * capture them). `set set-key` reads the key from a TTY with echo disabled and
  * stores it AES-GCM-encrypted (core key-store); the env var remains primary.
  *
+ * Output language follows the four-layer resolution (ADR-0011): env >
+ * config.lang > machine default > zh, resolved per command after its config
+ * load (one command per process, so effectively once per process).
+ *
  * Usage: node dist/cli.js <group> <action> [args]
  */
 import { createInterface } from 'node:readline'
+import { homedir } from 'node:os'
 import {
   analysisIntervalMs,
   clearApiKey,
+  coreMessage,
   createAuditStore,
   DeepSeekReviewer,
+  effectiveLang,
+  envLang,
   formatLocalTime,
   hasStoredApiKey,
   hydrateApiKey,
@@ -23,7 +31,10 @@ import {
   loadApiKey,
   loadLearnedRules,
   loadRules,
+  machineConfigPath,
   maskKey,
+  normalizeLang,
+  readMachineLang,
   saveApiKey,
   analyzeLearnedRules,
   applyHistoryToggle,
@@ -36,15 +47,27 @@ import {
   setEnabled,
   statusLines,
   updateLastAnalysis,
-  } from '@auto-guard/core'
+} from '@auto-guard/core'
+import type { Lang } from '@auto-guard/core'
 import { AUTO_GUARD_DIR, DEFAULT_CONFIG_PATH, defaultConfig, loadConfig, saveConfig } from './config.ts'
 import { appendDecisionHistory, bootstrap, readRecentDecisions, readStatus } from './bootstrap.ts'
+import { zcMessage } from './messages.ts'
 
 function print(message: string): void {
   process.stdout.write(`${message}\n`)
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+/** Four-layer language resolution (env > config.lang > machine default > zh). */
+function resolveLang(configLang?: Lang): Lang {
+  return effectiveLang({
+    env: envLang(),
+    configLang,
+    machineLang: readMachineLang(machineConfigPath(homedir())),
+  })
+}
+
+/** CLI entry (exported for tests; argv excludes the binary name). */
+export async function main(argv: readonly string[]): Promise<number> {
   const [group, action = '', ...rest] = argv
   switch (group) {
     case 'guard':
@@ -56,7 +79,7 @@ async function main(argv: readonly string[]): Promise<number> {
     case 'optimize':
       return optimizeCommand(action)
     default:
-      print('用法：node dist/cli.js <guard|set|examine|optimize> <action>')
+      print(zcMessage(resolveLang(), 'usage'))
       return 1
   }
 }
@@ -68,78 +91,93 @@ function auditFor(config: ReturnType<typeof loadConfig>) {
 function guardCommand(action: string, rest: readonly string[] = []): number | Promise<number> {
   // Read-only group: hydrate the encrypted key so status/ping see it.
   const config = hydrateApiKey(loadConfig(), () => loadApiKey(AUTO_GUARD_DIR))
+  const lang = resolveLang(config.lang)
   switch (action) {
     case 'on':
     case 'off': {
-      print(setEnabled(config, action === 'on'))
+      print(setEnabled(config, action === 'on', lang))
       saveConfig(config, DEFAULT_CONFIG_PATH)
       return 0
     }
     case 'status': {
-      print(statusLines(config, readStatus(), `${AUTO_GUARD_DIR}/config.json`).join('\n'))
+      print(statusLines(config, readStatus(), `${AUTO_GUARD_DIR}/config.json`, undefined, lang).join('\n'))
       return 0
     }
     case 'stats': {
       if (config.examineEnabled) {
         const audit = auditFor(config)
         try {
-          print(`审计库记录总数：${audit.count()}（学习分析数据源）`)
+          print(zcMessage(lang, 'statsAuditCount', { count: audit.count() }))
         } finally {
           audit.close()
         }
       } else {
-        print('审查日志未开启（cli.js examine on 后才有持久统计）')
+        print(zcMessage(lang, 'statsExamineOff'))
       }
       return 0
     }
     case 'recent': {
       const count = Number(rest[0]) > 0 ? Number(rest[0]) : 10
-      print(recentLines(readRecentDecisions(count), count).join('\n'))
+      print(recentLines(readRecentDecisions(count), count, lang).join('\n'))
       return 0
     }
     case 'ping': {
-      const reviewer = new DeepSeekReviewer(config)
+      const reviewer = new DeepSeekReviewer(config, lang)
       return reviewer.ping().then((result) => {
-        print(result.ok ? 'API 联通成功' : `API 联通失败：${result.error ?? '未知错误'}`)
+        print(result.ok ? zcMessage(lang, 'pingOk') : zcMessage(lang, 'pingFail', { error: result.error ?? zcMessage(lang, 'unknownError') }))
         return result.ok ? 0 : 2
       })
     }
     default:
-      print('用法：node dist/cli.js guard <on|off|status|recent|stats|ping>')
+      print(zcMessage(lang, 'guardUsage'))
       return 1
   }
 }
 
 function setCommand(action: string, rest: readonly string[]): number | Promise<number> {
   const config = loadConfig()
+  const lang = resolveLang(config.lang)
   switch (action) {
     case 'set-key':
-      return setKeyInteractive(config)
+      return setKeyInteractive(config, lang)
     case 'show-key': {
       const envSet = Boolean(process.env[config.apiKeyEnv])
       print(
         [
-          `env ${config.apiKeyEnv}: ${envSet ? '已设置（优先于本地存储）' : '未设置'}`,
-          `stored     : ${hasStoredApiKey(AUTO_GUARD_DIR) ? `已存储（AES-GCM 加密于 ${AUTO_GUARD_DIR}/api-key.json）` : '(未存储)'}`,
-          `legacy     : ${config.apiKey && !config.apiKey.startsWith('v1:') ? `${maskKey(config.apiKey)}（config.json 明文遗留，建议 set-key 重存）` : '(无)'}`,
+          zcMessage(lang, envSet ? 'showKeyEnvSet' : 'showKeyEnvUnset', { name: config.apiKeyEnv }),
+          hasStoredApiKey(AUTO_GUARD_DIR) ? zcMessage(lang, 'showKeyStored', { dir: AUTO_GUARD_DIR }) : zcMessage(lang, 'showKeyNoStore'),
+          config.apiKey && !config.apiKey.startsWith('v1:')
+            ? zcMessage(lang, 'showKeyLegacy', { key: maskKey(config.apiKey) })
+            : zcMessage(lang, 'showKeyNoLegacy'),
         ].join('\n'),
       )
       return 0
     }
     case 'clear-key': {
       clearApiKey(AUTO_GUARD_DIR)
-      print('已清除本地存储的 API Key（加密文件已删除；环境变量不受影响）')
+      print(zcMessage(lang, 'clearKeyDone'))
       return 0
     }
     case 'set-api': {
       const [sub, value] = rest
-      const result = applySetApi(config, sub, value, defaultConfig())
+      const result = applySetApi(config, sub, value, defaultConfig(), lang)
       if (result.ok) saveConfig(config, DEFAULT_CONFIG_PATH)
       print(result.message)
       return result.ok ? 0 : 1
     }
+    case 'lang': {
+      const parsed = normalizeLang(rest[0])
+      if (!parsed) {
+        print(zcMessage(lang, 'setLangInvalid', { value: rest[0] ?? '' }))
+        return 1
+      }
+      config.lang = parsed
+      saveConfig(config, DEFAULT_CONFIG_PATH)
+      print(zcMessage(parsed, 'setLangDone', { lang: parsed }))
+      return 0
+    }
     case 'history': {
-      const result = applyHistoryToggle(config, rest[0])
+      const result = applyHistoryToggle(config, rest[0], lang)
       if (result.ok) saveConfig(config, DEFAULT_CONFIG_PATH)
       print(result.messages.join('\n'))
       return result.ok ? 0 : 1
@@ -147,27 +185,28 @@ function setCommand(action: string, rest: readonly string[]): number | Promise<n
     case 'reload':
       // Kept for muscle-memory parity; hooks re-read on every process.
       loadConfig()
-      print('配置与规则在每次 hook 进程启动时自动重读')
+      print(zcMessage(lang, 'reloadNote'))
       return 0
     default:
-      print('用法：node dist/cli.js set <set-key|show-key|clear-key|set-api|history|reload>')
+      print(zcMessage(lang, 'setUsage'))
       return 1
   }
 }
 
 function examineCommand(action: string): number {
   const config = loadConfig()
+  const lang = resolveLang(config.lang)
   switch (action) {
     case 'on': {
       config.examineEnabled = true
       saveConfig(config, DEFAULT_CONFIG_PATH)
-      print('审查日志已开启（本地 SQLite + 字段级加密，数据不出本机）')
+      print(zcMessage(lang, 'examineOn'))
       return 0
     }
     case 'off': {
       config.examineEnabled = false
       saveConfig(config, DEFAULT_CONFIG_PATH)
-      print('审查日志已关闭')
+      print(zcMessage(lang, 'examineOff'))
       return 0
     }
     case 'status': {
@@ -179,10 +218,10 @@ function examineCommand(action: string): number {
       const audit = auditFor(config)
       try {
         if (action === 'clear-old') {
-          print(`已删除 ${audit.clearOld(30)} 条 30 天前记录`)
+          print(zcMessage(lang, 'examineClearedOld', { count: audit.clearOld(30) }))
         } else {
           audit.clearAll()
-          print('已清空全部审查日志')
+          print(zcMessage(lang, 'examineClearedAll'))
         }
       } finally {
         audit.close()
@@ -190,22 +229,23 @@ function examineCommand(action: string): number {
       return 0
     }
     default:
-      print('用法：node dist/cli.js examine <on|off|status|clear-old|clear-all>')
+      print(zcMessage(lang, 'examineUsage'))
       return 1
   }
 }
 
 function optimizeCommand(action: string): number {
   const config = loadConfig()
+  const lang = resolveLang(config.lang)
   switch (action) {
     case 'status': {
-      print(optimizeStatusLines(config, loadLearnedRules(config.learnedRulesPath), loadAnalyzeState(config.analyzeStatePath).lastAnalysisAt).join('\n'))
+      print(optimizeStatusLines(config, loadLearnedRules(config.learnedRulesPath), loadAnalyzeState(config.analyzeStatePath).lastAnalysisAt, lang).join('\n'))
       return 0
     }
     case 'analyze': {
       const runtime = bootstrap()
       try {
-        const result = analyzeLearnedRules({ config: runtime.config, rules: runtime.rules, audit: runtime.audit })
+        const result = analyzeLearnedRules({ config: runtime.config, rules: runtime.rules, audit: runtime.audit }, lang)
         print(result.message)
         if (result.ok) updateLastAnalysis(config.analyzeStatePath)
         return result.ok ? 0 : 2
@@ -214,20 +254,20 @@ function optimizeCommand(action: string): number {
       }
     }
     case 'auto': {
-      print('用法：node dist/cli.js set 不支持 auto；请手改 config.json 的 autoAnalyzeEnabled')
+      print(zcMessage(lang, 'optimizeAutoUnsupported'))
       return 1
     }
     case 'list': {
-      print(optimizeListLines(loadLearnedRules(config.learnedRulesPath)).join('\n'))
+      print(optimizeListLines(loadLearnedRules(config.learnedRulesPath), lang).join('\n'))
       return 0
     }
     case 'rollback': {
-      const result = rollbackLearnedRules(config)
+      const result = rollbackLearnedRules(config, lang)
       print(result.message)
       return result.ok ? 0 : 2
     }
     default:
-      print('用法：node dist/cli.js optimize <status|analyze|list|rollback>')
+      print(zcMessage(lang, 'optimizeUsage'))
       return 1
   }
 }
@@ -237,37 +277,37 @@ function optimizeCommand(action: string): number {
  * model name, then the API key (echo disabled). Each step accepts Enter to
  * keep the current value. The key never passes through argv or the chat.
  */
-async function setKeyInteractive(config: ReturnType<typeof loadConfig>): Promise<number> {
+async function setKeyInteractive(config: ReturnType<typeof loadConfig>, lang: Lang): Promise<number> {
   if (!process.stdin.isTTY) {
-    print('set set-key 需要交互式终端（IDE 内置终端即可）。请不要把 Key 粘贴到对话中——那会进入会话日志。')
+    print(zcMessage(lang, 'setKeyNeedsTty'))
     return 2
   }
   if (process.env[config.apiKeyEnv]) {
-    print(`⚠ 环境变量 ${config.apiKeyEnv} 已设置且优先于本地存储；继续存储仅作为无环境变量环境的兜底。`)
+    print(zcMessage(lang, 'setKeyEnvWarning', { name: config.apiKeyEnv }))
   }
 
   // Steps 1-2 are not secrets: plain readline with echo.
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   const ask = (question: string) => new Promise<string>((resolve) => rl.question(question, (answer) => resolve(answer)))
-  print('—— auto-guard 审查端点配置向导（任意一步直接回车 = 保持当前值）——')
-  const baseAnswer = (await ask(`[1/3] 审查端点 base URL（回车 = ${config.apiBase}）: `)).trim().replace(/\/+$/, '')
-  const modelAnswer = (await ask(`[2/3] 模型名称（回车 = ${config.model}）: `)).trim()
+  print(zcMessage(lang, 'wizardBanner'))
+  const baseAnswer = (await ask(zcMessage(lang, 'wizardBasePrompt', { base: config.apiBase }))).trim().replace(/\/+$/, '')
+  const modelAnswer = (await ask(zcMessage(lang, 'wizardModelPrompt', { model: config.model }))).trim()
   rl.close()
 
   if (baseAnswer && !/^https?:\/\//.test(baseAnswer)) {
-    print(`base URL 无效（需要 http(s):// 开头）：${baseAnswer}，未保存`)
+    print(zcMessage(lang, 'wizardInvalidBase', { value: baseAnswer }))
     return 2
   }
 
   // Step 3 is the secret: raw-mode hidden read.
-  const key = await readHidden('[3/3] API Key（输入不回显，Ctrl+C 取消）: ')
+  const key = await readHidden(zcMessage(lang, 'wizardKeyPrompt'))
   if (key === undefined) {
-    print('已取消')
+    print(zcMessage(lang, 'wizardCancelled'))
     return 2
   }
   const trimmed = key.trim()
   if (trimmed.length < 8 || /\s/.test(trimmed)) {
-    print('Key 无效（过短或含空白），未存储')
+    print(zcMessage(lang, 'wizardInvalidKey'))
     return 2
   }
 
@@ -285,8 +325,8 @@ async function setKeyInteractive(config: ReturnType<typeof loadConfig>): Promise
 
   saveApiKey(AUTO_GUARD_DIR, trimmed)
   print('')
-  print(`✅ 已保存：端点 ${config.apiBase} · 模型 ${config.model} · Key ${maskKey(trimmed)}（加密落盘 api-key.json）`)
-  print('立即生效（新 hook 进程自动读取）；可运行 guard ping 验证连通性')
+  print(zcMessage(lang, 'wizardSaved', { base: config.apiBase, model: config.model, key: maskKey(trimmed) }))
+  print(zcMessage(lang, 'wizardSavedHint'))
   return 0
 }
 

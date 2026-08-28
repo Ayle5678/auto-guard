@@ -17,16 +17,21 @@
  * translation, notification channels and settings mounting.
  */
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   classifyCommand,
+  effectiveLang,
+  envLang,
   expandHome,
   generateLearnedRules,
   GuardService,
   HistoryStore,
   loadAnalyzeState,
   loadLearnedRules,
+  machineConfigPath,
   prepareDeletionMarker,
+  readMachineLang,
   restoreLearnedRules,
   SessionLruCache,
   PersistentCache,
@@ -44,6 +49,7 @@ import {
   type Decision,
   type GuardConfig,
   type GuardRequest,
+  type Lang,
   type RulesFile,
 } from '@auto-guard/core'
 import type { Context } from '@deepseek-ai/cordis'
@@ -51,6 +57,7 @@ import type { PreToolDecision, ToolExecution, ToolGuard } from '@deepseek-ai/dsh
 import { toGuardRequest, type ExecutionLike } from './adapter.ts'
 import { DSH_CAPABILITIES } from './dsh-capabilities.ts'
 import { createContextNotice, createPageNoticeEvents, notifyRoute } from './notify-policy.ts'
+import { dshMessage } from './messages.ts'
 import { DshLlmReviewer } from './dsh-reviewer.ts'
 import { FileTracker } from '@auto-guard/core'
 import { AUTO_GUARD_DIR, installGuardSettings, loadConfig } from './config.ts'
@@ -69,6 +76,8 @@ interface GuardState {
   history?: HistoryStore
   learned: ReturnType<typeof loadLearnedRules>
   templateCache: TemplateCache
+  /** Effective output language, resolved once per state build. */
+  lang: Lang
 }
 
 function createState(
@@ -78,10 +87,15 @@ function createState(
   settings: ReturnType<typeof installGuardSettings>,
 ): GuardState {
   settings.syncFromSettings()
+  const lang = effectiveLang({
+    env: envLang(),
+    configLang: config.lang,
+    machineLang: readMachineLang(machineConfigPath(homedir())),
+  })
   const rules = loadRules(expandHome(config.rulesPath), expandHome(config.defaultRulesPath))
   const sessionCache = new SessionLruCache(config.sessionCacheSize)
   const persistentCache = new PersistentCache(expandHome(config.cachePath))
-  const llmReviewer = new DshLlmReviewer(ctx, config)
+  const llmReviewer = new DshLlmReviewer(ctx, config, lang)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
   // ADR-0005: SQLCipher is the dsh implementation but the optional native
   // dependency may be absent; degrade to Light rather than losing the audit.
@@ -108,17 +122,19 @@ function createState(
     fileTracker,
     historyStore: history,
     templateCache,
+    lang,
   })
-  return { config, rules, service, audit, history, learned, templateCache }
+  return { config, rules, service, audit, history, learned, templateCache, lang }
 }
 
 /** Run a learned-rule analysis and overwrite learned-rules.json. */
 function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string } {
+  const lang = state.lang
   if (!state.config.examineEnabled) {
-    return { ok: false, message: '请先开启审查日志（examineEnabled）再分析' }
+    return { ok: false, message: dshMessage(lang, 'analyzeNeedsExamine') }
   }
   if (!state.config.auditPassword) {
-    return { ok: false, message: '请先设置审计密码（auditPassword）' }
+    return { ok: false, message: dshMessage(lang, 'analyzeNeedsPassword') }
   }
   const rules = generateLearnedRules(state.audit.list(), {
     days: state.config.historyDays,
@@ -131,11 +147,12 @@ function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string }
   state.learned = rules
   state.templateCache.setCacheablePatterns(rules.cacheable)
   updateLastAnalysis(state.config.analyzeStatePath)
-  return { ok: true, message: `学习规则分析完成：cacheable ${rules.cacheable.length}` }
+  return { ok: true, message: dshMessage(lang, 'analyzeDone', { count: rules.cacheable.length }) }
 }
 
 /** Remote service exposed to the settings page via Typert Remote. */
 function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
+  const t = (key: Parameters<typeof dshMessage>[1], params: Record<string, string | number> = {}) => dshMessage(state.lang, key, params)
   const service = {
     analyzeNow(): { ok: boolean; message: string } {
       return runLearnedAnalysis(state)
@@ -145,11 +162,11 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
     },
     rollback(): { ok: boolean; message: string } {
       if (!restoreLearnedRules(state.config.learnedRulesPath, state.config.learnedBackupPath)) {
-        return { ok: false, message: '没有可恢复的 backup' }
+        return { ok: false, message: t('rollbackNone') }
       }
       state.learned = loadLearnedRules(state.config.learnedRulesPath, [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete])
       state.templateCache.setCacheablePatterns(state.learned.cacheable)
-      return { ok: true, message: '已从 backup 恢复学习规则' }
+      return { ok: true, message: t('rollbackDone') }
     },
     status(): Record<string, unknown> {
       const stateFile = loadAnalyzeState(state.config.analyzeStatePath)
@@ -169,19 +186,19 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
       return { ok: true }
     },
     exportPlaintext(): { ok: boolean; message: string } {
-      if (!state.audit.exportPlaintext) return { ok: false, message: '当前审计实现不支持明文导出（Light 降级模式）' }
+      if (!state.audit.exportPlaintext) return { ok: false, message: t('exportUnsupported') }
       const ok = state.audit.exportPlaintext(join(AUTO_GUARD_DIR, 'audit.export.db'))
       return ok
-        ? { ok: true, message: '已导出明文审计库到 ~/.dsh/auto-guard/audit.export.db' }
-        : { ok: false, message: '明文导出失败，请确认已设置审计密码' }
+        ? { ok: true, message: t('exportDone') }
+        : { ok: false, message: t('exportFailed') }
     },
     createNewAudit(): { ok: boolean; message: string } {
-      if (!state.config.auditPassword) return { ok: false, message: '请先设置审计密码' }
-      if (!state.audit.createNew) return { ok: false, message: '当前审计实现不支持重建（Light 降级模式）' }
+      if (!state.config.auditPassword) return { ok: false, message: t('createNeedsPassword') }
+      if (!state.audit.createNew) return { ok: false, message: t('createUnsupported') }
       const ok = state.audit.createNew(state.config.auditPassword)
       return ok
-        ? { ok: true, message: '已创建新的空审计库；旧加密库已保留为 orphan 文件' }
-        : { ok: false, message: '重建审计库失败' }
+        ? { ok: true, message: t('createDone') }
+        : { ok: false, message: t('createFailed') }
     },
     stats(): Record<string, unknown> {
       return { ...state.service.stats }
@@ -259,7 +276,7 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     if (route === 'off') return
 
     if (route === 'context') {
-      const message = createContextNotice(decision)
+      const message = createContextNotice(decision, state.lang)
       try {
         exec.agent.session?.inject?.(message)
       } catch {
@@ -269,7 +286,7 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     }
 
     const commandId = `auto-guard-${randomUUID()}`
-    const events = createPageNoticeEvents(decision, commandId)
+    const events = createPageNoticeEvents(decision, commandId, state.lang)
     const session = exec.agent.session as { append(type: string, data: unknown): unknown } | undefined
     try {
       session?.append('command/run', events.run)
@@ -302,8 +319,9 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
       // DSH has no plugin-owned confirm dialog; route this through `ask` so
       // the human can still veto-override after an LLM deny/reviewer failure.
       recordAudit(request, decision, undefined)
-      const title = decision.reviewerFailed ? '审查器故障，这次删除未过审' : 'LLM 否决了这次删除'
-      return { kind: 'ask', reason: `${title}；${decision.reason ?? '审查未通过'}\n仍要执行吗？` }
+      const title = dshMessage(state.lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+      const reason = decision.reason ?? dshMessage(state.lang, 'deleteFailDefaultReason')
+      return { kind: 'ask', reason: `${title}${state.lang === 'zh' ? '；' : '; '}${reason}\n${dshMessage(state.lang, 'deleteRunAnyway')}` }
     }
     if (decision.kind === 'deny') {
       recordAudit(request, decision, 'block')

@@ -6,7 +6,8 @@
  * The payload follows the Claude-compatible hook protocol (confirmed from the
  * ZCode client): snake_case fields plus camelCase fallbacks.
  */
-import type { GuardRequest } from '@auto-guard/core'
+import type { GuardRequest, Lang } from '@auto-guard/core'
+import { zcMessage } from './messages.ts'
 
 export interface ZcodeHookInput {
   session_id?: string
@@ -73,7 +74,7 @@ export type GuardableExtraction =
  *   `{kind:'unreviewable'}` — fail closed: the guard must not guess around
  *   payloads it cannot read, so callers surface these as `ask`.
  */
-export function toGuardRequest(input: ZcodeHookInput, workspace?: string): GuardableExtraction {
+export function toGuardRequest(input: ZcodeHookInput, workspace?: string, lang: Lang = 'zh'): GuardableExtraction {
   const guardTool = GUARDED_TOOL_NAMES[input.tool_name ?? '']
   if (!guardTool) {
     return { kind: 'passthrough', reason: input.tool_name ? `untracked tool ${input.tool_name}` : 'no tool name in payload' }
@@ -83,7 +84,7 @@ export function toGuardRequest(input: ZcodeHookInput, workspace?: string): Guard
   if (guardTool === 'bash') {
     const command = firstString(params.command)
     if (command === undefined) {
-      return { kind: 'unreviewable', reason: `无法读取 Bash 命令参数（tool_input 解析失败），保守起见需要人工确认 [${input.tool_name}]` }
+      return { kind: 'unreviewable', reason: zcMessage(lang, 'unreviewableBash', { tool: input.tool_name ?? 'Bash' }) }
     }
     return {
       kind: 'guardable',
@@ -98,7 +99,7 @@ export function toGuardRequest(input: ZcodeHookInput, workspace?: string): Guard
 
   const filePath = firstString(params.file_path) ?? firstString(params.filePath) ?? firstString(params.path)
   if (filePath === undefined) {
-    return { kind: 'unreviewable', reason: `无法读取 ${input.tool_name} 目标路径（tool_input 解析失败），保守起见需要人工确认` }
+    return { kind: 'unreviewable', reason: zcMessage(lang, 'unreviewablePath', { tool: input.tool_name ?? '?' }) }
   }
   const content = firstString(params.content) ?? firstString(params.file_text)
   return {

@@ -10,9 +10,13 @@
  *  - allow  → emit nothing and exit 0 (fast path; silence is the pass signal)
  *  - ask    → permissionDecision "ask"; ZCode renders its native prompt
  *  - deny   → permissionDecision "deny"; the reason reaches the model context
+ *
+ * Text resolves from the ZCode catalog with the effective language (ADR-0011);
+ * the `[删除理由]` marker inside the retry hint is protocol and stays Chinese.
  */
-import { notificationText, sourceTag } from '@auto-guard/core'
+import { notificationText, type Lang } from '@auto-guard/core'
 import type { Decision } from '@auto-guard/core'
+import { zcMessage } from './messages.ts'
 
 export type HookAction =
   | { action: 'allow'; silent?: boolean }
@@ -29,20 +33,18 @@ export interface HookOutput {
   hookSpecificOutput: HookSpecificOutput
 }
 
-const DELETION_RETRY_HINT = '如需继续，请在原命令后附带 [删除理由] <你的理由> 重试；理由将由 LLM 复核。'
-
 /**
  * Build the printable reason for a deny/ask outcome. Uses the shared
  * notification text (layer tag + risk + reason) so the model sees which guard
  * layer decided.
  */
-export function decisionReasonText(decision: Decision): string {
-  return notificationText(decision)
+export function decisionReasonText(decision: Decision, lang: Lang = 'zh'): string {
+  return notificationText(decision, lang)
 }
 
 /** Append the deletion-retry hint on the first directory-delete denial. */
-export function withDeletionHint(reason: string): string {
-  return `${reason} ${DELETION_RETRY_HINT}`
+export function withDeletionHint(reason: string, lang: Lang = 'zh'): string {
+  return `${reason} ${zcMessage(lang, 'deletionRetryHint')}`
 }
 
 /**
@@ -50,19 +52,19 @@ export function withDeletionHint(reason: string): string {
  * Rule hits name the exact pattern; cache hits name the cache layer plus the
  * original review reason; LLM decisions carry their verdict reason.
  */
-export function hitDetail(decision: Decision, matchedPattern?: string): string {
-  if (matchedPattern) return `规则 ${matchedPattern}：${decision.reason ?? '命中'}`
+export function hitDetail(decision: Decision, matchedPattern: string | undefined, lang: Lang = 'zh'): string {
+  if (matchedPattern) return zcMessage(lang, 'hitRule', { pattern: matchedPattern, reason: decision.reason ?? zcMessage(lang, 'hitRuleDefault') })
   switch (decision.source) {
     case 'session-cache':
-      return `会话缓存复用：${decision.reason ?? '此前已放行'}`
+      return zcMessage(lang, 'hitSessionCache', { reason: decision.reason ?? zcMessage(lang, 'hitSessionCacheDefault') })
     case 'persistent-cache':
-      return `持久缓存复用：${decision.reason ?? '此前已放行'}`
+      return zcMessage(lang, 'hitPersistentCache', { reason: decision.reason ?? zcMessage(lang, 'hitSessionCacheDefault') })
     case 'history':
-      return `历史审计放行：${decision.reason ?? '相似命令历史 allow'}`
+      return zcMessage(lang, 'hitHistory', { reason: decision.reason ?? zcMessage(lang, 'hitHistoryDefault') })
     case 'learned':
-      return `学习规则放行：${decision.reason ?? '模板命中'}`
+      return zcMessage(lang, 'hitLearned', { reason: decision.reason ?? zcMessage(lang, 'hitLearnedDefault') })
     case 'passthrough':
-      return '未跟踪工具，直通'
+      return zcMessage(lang, 'hitUntracked')
     default:
       return (decision.reason ?? '').slice(0, 120)
   }
