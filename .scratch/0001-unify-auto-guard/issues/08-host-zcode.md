@@ -8,9 +8,13 @@ What to build:
 - 预构建 dist + vitest；配置根 `~/.zcode/auto-guard/`。
 
 Blocked by: 06
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] zcode 版 24 个 spec 中宿主侧部分全绿；core 部分改引 @auto-guard/core
-- [ ] fail-closed 阶梯（stdin 不可解析/参数不可读/bootstrap 失败→ask；enabled:false→静默）逐级有测试
-- [ ] allow 决策 stdout 为空串且 exit 0；绝不 exit 2
+- [x] zcode 版 24 个 spec 中宿主侧部分全绿；core 部分改引 @auto-guard/core
+- [x] fail-closed 阶梯（stdin 不可解析/参数不可读/bootstrap 失败→ask；enabled:false→静默）逐级有测试
+- [x] allow 决策 stdout 为空串且 exit 0；绝不 exit 2
+
+## Comments
+
+- 2026-08-28: done — hook-cli/hook-output/zcode-adapter/session-start ported on core; bootstrap = disk session state + LightAuditStore + key hydration at ~/.zcode/auto-guard; plugin assets with guard-set.md fixed to ${ZCODE_PLUGIN_ROOT}; fail-closed ladder spec added; 21 tests green

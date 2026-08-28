@@ -1,0 +1,11 @@
+{
+  "name": "auto-guard",
+  "version": "0.3.0",
+  "description": "Layered LLM command & path safety guard for ZCode. Reviews every Bash/Write/Edit/Read tool call via a PreToolUse hook: static whitelist, hard blacklist, sensitive-path gates, optional DeepSeek review, caches.",
+  "author": {
+    "name": "pi-auto-guard"
+  },
+  "license": "MIT",
+  "hooks": "hooks",
+  "commands": "commands"
+}

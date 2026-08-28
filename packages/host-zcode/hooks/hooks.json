@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|Read|Write|Edit|ApplyPatch)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/dist/hook-cli.js"],
+            "timeoutMs": 90000,
+            "statusMessage": "🛡️ auto-guard 安全审查中…"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/dist/session-start.js"],
+            "timeoutMs": 10000,
+            "statusMessage": "🛡️ auto-guard 会话初始化"
+          }
+        ]
+      }
+    ]
+  }
+}
