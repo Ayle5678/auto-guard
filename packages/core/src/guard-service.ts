@@ -26,6 +26,9 @@ import type { LlmReviewer } from './llm.ts'
 import type { RiskLevel, RulesFile } from './types.ts'
 import { classifyCommand, containsDangerousPattern, staticAllowGuardHit, type Classification } from './rules.ts'
 import { matchesSensitivePath, shellCommandHasSensitivePath } from './sensitive-path.ts'
+import type { Lang } from './lang.ts'
+import { langOf } from './lang.ts'
+import { coreMessage } from './messages.ts'
 import type { Decision, GuardConfig, GuardRequest, LlmReviewResult } from './types.ts'
 
 export interface PendingPersistence {
@@ -45,6 +48,8 @@ export interface GuardDeps {
   historyStore?: HistoryStore
   templateCache?: TemplateCache
   pendingPersistence?: PendingPersistence
+  /** Effective output language for engine-authored reasons (four-layer resolved by the host; default zh). */
+  lang?: Lang
 }
 
 export interface GuardStats {
@@ -93,6 +98,7 @@ export class GuardService {
   private readonly fileTracker: FileTracker
   private readonly historyStore?: HistoryStore
   private readonly templateCache?: TemplateCache
+  private readonly lang: Lang
   private readonly pendingDirectoryDeletes: PersistableMap<{ deniedAt: number }>
   private readonly pendingDenies: PersistableMap<RiskLevel | undefined>
   readonly stats: GuardStats = createStats()
@@ -106,6 +112,7 @@ export class GuardService {
     this.fileTracker = deps.fileTracker
     this.historyStore = deps.historyStore
     this.templateCache = deps.templateCache
+    this.lang = deps.lang ?? langOf(deps.config)
     this.pendingDirectoryDeletes = new PersistableMap(deps.pendingPersistence?.directoryDeletes)
     this.pendingDenies = new PersistableMap(deps.pendingPersistence?.denies)
   }
@@ -739,7 +746,7 @@ export class GuardService {
       kind: 'ask',
       source: 'llm',
       ...(risk !== undefined ? { risk } : {}),
-      reason: 'LLM 已拒绝过此命令，是否仍要执行',
+      reason: coreMessage(this.lang, 'pendingDenyAskReason'),
       command,
     }
   }

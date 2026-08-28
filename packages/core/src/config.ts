@@ -61,6 +61,7 @@ export function defaultGuardConfig(dir: string): GuardConfig {
 
 const CONFIG_KEYS: Array<keyof GuardConfig> = [
   'enabled',
+  'lang',
   'rulesPath',
   'defaultRulesPath',
   'cachePath',
@@ -121,7 +122,9 @@ export function loadConfig(userPath: string, defaults: GuardConfig): GuardConfig
   const stored = JSON.parse(raw) as Partial<GuardConfig>
   let changed = false
   for (const key of CONFIG_KEYS) {
-    if (stored[key] === undefined) {
+    // Optional keys with no default (lang, masked display values) stay unset
+    // when absent — "not set" is meaningful for the four-layer resolution.
+    if (stored[key] === undefined && defaults[key] !== undefined) {
       ;(stored as Record<string, unknown>)[key] = defaults[key]
       changed = true
     }

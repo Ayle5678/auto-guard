@@ -6,6 +6,10 @@
  * injectable so integration tests run with fakes and no network or real
  * SQLite. Windows discipline: natural exit, set-key requires a real TTY,
  * exit codes 0/2.
+ *
+ * Output language follows the four-layer resolution (ADR-0011):
+ * `AUTO_GUARD_LANG` > per-host config.lang > machine default > zh. Commands
+ * that print before a config root is known use the env/machine layers only.
  */
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -15,8 +19,11 @@ import {
   applyHistoryToggle,
   applySetApi,
   clearApiKey,
+  coreMessage,
   createAuditStore,
   DeepSeekReviewer,
+  effectiveLang,
+  envLang,
   examineStatusLines,
   hasStoredApiKey,
   hydrateApiKey,
@@ -27,9 +34,12 @@ import {
   loadConfig,
   loadLearnedRules,
   loadRules,
+  machineConfigPath,
   maskKey,
+  normalizeLang,
   optimizeListLines,
   optimizeStatusLines,
+  readMachineLang,
   recentLines,
   rollbackLearnedRules,
   saveApiKey,
@@ -38,11 +48,13 @@ import {
   statusLines,
   type AuditStore,
   type GuardConfig,
+  type Lang,
   type LlmReviewer,
 } from '@auto-guard/core'
 import { readRecentDecisions, readStatus } from './status-store.ts'
 import { runInstallerCommand, type InstallerDeps } from './installer/install.ts'
 import { PROFILES } from './installer/profiles.ts'
+import { shellMessage } from './shell-messages.ts'
 
 /** Lightweight connectivity check result (see core DeepSeekReviewer). */
 interface PingResult {
@@ -63,6 +75,10 @@ export interface CliDeps {
   installer?: InstallerDeps
   /** Override the standard per-host roots scanned by aggregate `guard status` (tests). */
   hostRoots?: () => readonly HostRootRef[]
+  /** Environment override for language resolution (tests); default process.env. */
+  env?: Record<string, string | undefined>
+  /** Override the machine-default config path (tests); default ~/.auto-guard/config.json. */
+  machineLangPath?: string
 }
 
 export interface RunResult {
@@ -108,10 +124,20 @@ function resolveConfigRoot(deps: CliDeps): string | undefined {
   return detectConfigRoot()
 }
 
+/** Four-layer language resolution for one invocation; `configLang` is the loaded root's own setting. */
+function resolveCliLang(deps: CliDeps, configLang?: Lang): Lang {
+  return effectiveLang({
+    env: envLang(deps.env ?? process.env),
+    configLang,
+    machineLang: readMachineLang(deps.machineLangPath ?? machineConfigPath(homedir())),
+  })
+}
+
 /** Load, save and audit access, all rooted at the given config root. */
 function openRoot(configRoot: string, deps: CliDeps) {
   const configPath = join(configRoot, 'config.json')
   return {
+    configPath,
     load: () => loadConfig(configPath, defaultGuardConfig(configRoot)),
     save: (config: GuardConfig) => saveConfig(config, configPath),
     auditFor: (config: GuardConfig): AuditStore =>
@@ -148,7 +174,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
   if (!configRoot) {
     const detected = resolveConfigRoot(deps)
     if (!detected) {
-      out.push('未找到宿主配置根；请用 --config-root <path> 指定（例如 ~/.zcode/auto-guard）')
+      out.push(shellMessage(resolveCliLang(deps), 'noRootFound'))
       return { code: 2, output: out }
     }
     configRoot = detected
@@ -156,19 +182,19 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
 
   const [group, action = '', ...rest] = args
   const io = openRoot(configRoot, deps)
-  const ctx: Ctx = { out, configRoot, configPath: join(configRoot, 'config.json'), explicitRoot }
+  const ctx: Ctx = { out, configRoot, configPath: io.configPath, explicitRoot }
 
   switch (group) {
     case 'guard':
       return guardCommand(action, rest, ctx, io, deps)
     case 'set':
-      return setCommand(action, rest, ctx, io)
+      return setCommand(action, rest, ctx, io, deps)
     case 'examine':
-      return examineCommand(action, ctx, io)
+      return examineCommand(action, ctx, io, deps)
     case 'optimize':
-      return optimizeCommand(action, ctx, io)
+      return optimizeCommand(action, ctx, io, deps)
     default:
-      out.push('用法：auto-guard <init|list|remove|guard|set|examine|optimize> …（init/list/remove 为安装器；可选 --config-root <path>）')
+      out.push(shellMessage(resolveCliLang(deps), 'usage'))
       return { code: 1, output: out }
   }
 }
@@ -189,18 +215,20 @@ function tildePath(p: string): string {
  * from the machine are skipped entirely.
  */
 function aggregateStatusLines(roots: readonly HostRootRef[], deps: CliDeps): string[] {
-  const lines: string[] = ['🛡️ auto-guard 多宿主状态']
+  const viewLang = resolveCliLang(deps)
+  const lines: string[] = [shellMessage(viewLang, 'aggregateHeader')]
   for (const { label, homeDir, root } of roots) {
     if (!existsSync(homeDir)) continue
     lines.push('')
     if (!existsSync(root)) {
       const hostName = label.replace(/ Coding Agent$/, '')
-      lines.push(`◇ ${label} — ${tildePath(root)}：尚未播种（新开一次 ${hostName} 会话后自动创建）`)
+      lines.push(shellMessage(viewLang, 'aggregateUnseeded', { label, root: tildePath(root), host: hostName }))
       continue
     }
     lines.push(`🛡️ ${label} — ${tildePath(root)}`)
     const io = openRoot(root, deps)
     const config = io.load()
+    const lang = resolveCliLang(deps, config.lang)
     let auditCount: number | undefined
     if (config.examineEnabled) {
       const audit = io.auditFor(config)
@@ -210,12 +238,12 @@ function aggregateStatusLines(roots: readonly HostRootRef[], deps: CliDeps): str
         audit.close()
       }
     }
-    for (const line of statusLines(config, readStatus(join(root, 'status.json')), join(root, 'config.json'), auditCount)) {
+    for (const line of statusLines(config, readStatus(join(root, 'status.json')), join(root, 'config.json'), auditCount, lang)) {
       lines.push(`  ${line}`)
     }
   }
   lines.push('')
-  lines.push('（管理命令作用于单个宿主：加 --config-root ~/.<host>/auto-guard，或设 AUTO_GUARD_CONFIG_ROOT）')
+  lines.push(shellMessage(viewLang, 'aggregateFooter'))
   return lines
 }
 
@@ -235,10 +263,11 @@ function guardCommand(
   }
   // Read-only group: hydrate the encrypted key so status/ping see it.
   const config = hydrateApiKey(io.load(), () => loadApiKey(ctx.configRoot))
+  const lang = resolveCliLang(deps, config.lang)
   switch (action) {
     case 'on':
     case 'off': {
-      ctx.out.push(setEnabled(config, action === 'on'))
+      ctx.out.push(setEnabled(config, action === 'on', lang))
       io.save(config)
       return { code: 0, output: ctx.out }
     }
@@ -252,96 +281,112 @@ function guardCommand(
           audit.close()
         }
       }
-      ctx.out.push(statusLines(config, readStatus(join(ctx.configRoot, 'status.json')), ctx.configPath, auditCount).join('\n'))
+      ctx.out.push(statusLines(config, readStatus(join(ctx.configRoot, 'status.json')), ctx.configPath, auditCount, lang).join('\n'))
       return { code: 0, output: ctx.out }
     }
     case 'recent': {
       const count = Number(rest[0]) > 0 ? Number(rest[0]) : 10
-      ctx.out.push(recentLines(readRecentDecisions(count, join(ctx.configRoot, 'decision-history.jsonl')), count).join('\n'))
+      ctx.out.push(recentLines(readRecentDecisions(count, join(ctx.configRoot, 'decision-history.jsonl')), count, lang).join('\n'))
       return { code: 0, output: ctx.out }
     }
     case 'stats': {
       if (config.examineEnabled) {
         const audit = io.auditFor(config)
         try {
-          ctx.out.push(`审计库记录总数：${audit.count()}（学习分析数据源）`)
+          ctx.out.push(shellMessage(lang, 'statsAuditCount', { count: audit.count() }))
         } finally {
           audit.close()
         }
       } else {
-        ctx.out.push('审查日志未开启（auto-guard examine on 后才有持久统计）')
+        ctx.out.push(shellMessage(lang, 'statsExamineOff'))
       }
       return { code: 0, output: ctx.out }
     }
     case 'ping': {
-      const reviewer: PingableReviewer = deps.makeReviewer ? deps.makeReviewer(config) : new DeepSeekReviewer(config)
+      const reviewer: PingableReviewer = deps.makeReviewer ? deps.makeReviewer(config) : new DeepSeekReviewer(config, lang)
       return reviewer.ping().then((result) => {
-        ctx.out.push(result.ok ? 'API 联通成功' : `API 联通失败：${result.error ?? '未知错误'}`)
+        ctx.out.push(result.ok ? shellMessage(lang, 'pingOk') : shellMessage(lang, 'pingFail', { error: result.error ?? shellMessage(lang, 'unknownError') }))
         return { code: result.ok ? 0 : 2, output: ctx.out }
       })
     }
     default:
-      ctx.out.push('用法：auto-guard guard <on|off|status|recent|stats|ping>')
+      ctx.out.push(shellMessage(lang, 'guardUsage'))
       return { code: 1, output: ctx.out }
   }
 }
 
-function setCommand(action: string, rest: readonly string[], ctx: Ctx, io: ReturnType<typeof openRoot>): RunResult {
+function setCommand(action: string, rest: readonly string[], ctx: Ctx, io: ReturnType<typeof openRoot>, deps: CliDeps): RunResult {
   const config = io.load()
+  const lang = resolveCliLang(deps, config.lang)
   switch (action) {
     case 'set-key':
-      ctx.out.push('set set-key 需要交互式终端（IDE 内置终端即可）。请不要把 Key 粘贴到对话中——那会进入会话日志。')
+      ctx.out.push(shellMessage(lang, 'setKeyNeedsTty'))
       return { code: 2, output: ctx.out }
     case 'show-key': {
-      const envSet = Boolean(process.env[config.apiKeyEnv])
+      const envSet = Boolean((deps.env ?? process.env)[config.apiKeyEnv])
       ctx.out.push(
         [
-          `env ${config.apiKeyEnv}: ${envSet ? '已设置（优先于本地存储）' : '未设置'}`,
-          `stored     : ${hasStoredApiKey(ctx.configRoot) ? `已存储（AES-GCM 加密于 ${ctx.configRoot}/api-key.json）` : '(未存储)'}`,
-          `legacy     : ${config.apiKey && !config.apiKey.startsWith('v1:') ? `${maskKey(config.apiKey)}（config.json 明文遗留，建议 set-key 重存）` : '(无)'}`,
+          shellMessage(lang, envSet ? 'showKeyEnvSet' : 'showKeyEnvUnset', { name: config.apiKeyEnv }),
+          hasStoredApiKey(ctx.configRoot) ? shellMessage(lang, 'showKeyStored', { root: ctx.configRoot }) : shellMessage(lang, 'showKeyNoStore'),
+          config.apiKey && !config.apiKey.startsWith('v1:')
+            ? shellMessage(lang, 'showKeyLegacy', { key: maskKey(config.apiKey) })
+            : shellMessage(lang, 'showKeyNoLegacy'),
         ].join('\n'),
       )
       return { code: 0, output: ctx.out }
     }
     case 'clear-key': {
       clearApiKey(ctx.configRoot)
-      ctx.out.push('已清除本地存储的 API Key（加密文件已删除；环境变量不受影响）')
+      ctx.out.push(shellMessage(lang, 'clearKeyDone'))
       return { code: 0, output: ctx.out }
     }
     case 'set-api': {
-      const result = applySetApi(config, rest[0], rest[1], io.load())
+      const result = applySetApi(config, rest[0], rest[1], io.load(), lang)
       if (result.ok) io.save(config)
       ctx.out.push(result.message)
       return { code: result.ok ? 0 : 1, output: ctx.out }
     }
+    case 'lang': {
+      const parsed = normalizeLang(rest[0])
+      if (!parsed) {
+        ctx.out.push(shellMessage(lang, 'setLangInvalid', { value: rest[0] ?? '' }))
+        return { code: 1, output: ctx.out }
+      }
+      config.lang = parsed
+      io.save(config)
+      // Receipt in the newly selected language: immediate proof the setting took effect.
+      ctx.out.push(shellMessage(parsed, 'setLangDone', { lang: parsed }))
+      return { code: 0, output: ctx.out }
+    }
     case 'history': {
-      const result = applyHistoryToggle(config, rest[0])
+      const result = applyHistoryToggle(config, rest[0], lang)
       if (result.ok) io.save(config)
       ctx.out.push(result.messages.join('\n'))
       return { code: result.ok ? 0 : 1, output: ctx.out }
     }
     case 'reload':
-      ctx.out.push('配置与规则在每次 hook 进程启动时自动重读')
+      ctx.out.push(shellMessage(lang, 'reloadNote'))
       return { code: 0, output: ctx.out }
     default:
-      ctx.out.push('用法：auto-guard set <set-key|show-key|clear-key|set-api|history|reload>')
+      ctx.out.push(shellMessage(lang, 'setUsage'))
       return { code: 1, output: ctx.out }
   }
 }
 
-function examineCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot>): RunResult {
+function examineCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot>, deps: CliDeps): RunResult {
   const config = io.load()
+  const lang = resolveCliLang(deps, config.lang)
   switch (action) {
     case 'on': {
       config.examineEnabled = true
       io.save(config)
-      ctx.out.push('审查日志已开启（本地 SQLite + 字段级加密，数据不出本机）')
+      ctx.out.push(shellMessage(lang, 'examineOn'))
       return { code: 0, output: ctx.out }
     }
     case 'off': {
       config.examineEnabled = false
       io.save(config)
-      ctx.out.push('审查日志已关闭')
+      ctx.out.push(shellMessage(lang, 'examineOff'))
       return { code: 0, output: ctx.out }
     }
     case 'status': {
@@ -353,10 +398,10 @@ function examineCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot
       const audit = io.auditFor(config)
       try {
         if (action === 'clear-old') {
-          ctx.out.push(`已删除 ${audit.clearOld(30)} 条 30 天前记录`)
+          ctx.out.push(shellMessage(lang, 'examineClearedOld', { count: audit.clearOld(30) }))
         } else {
           audit.clearAll()
-          ctx.out.push('已清空全部审查日志')
+          ctx.out.push(shellMessage(lang, 'examineClearedAll'))
         }
       } finally {
         audit.close()
@@ -364,27 +409,28 @@ function examineCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot
       return { code: 0, output: ctx.out }
     }
     default:
-      ctx.out.push('用法：auto-guard examine <on|off|status|clear-old|clear-all>')
+      ctx.out.push(shellMessage(lang, 'examineUsage'))
       return { code: 1, output: ctx.out }
   }
 }
 
-function optimizeCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot>): RunResult {
+function optimizeCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot>, deps: CliDeps): RunResult {
   const config = io.load()
+  const lang = resolveCliLang(deps, config.lang)
   switch (action) {
     case 'status': {
-      ctx.out.push(optimizeStatusLines(config, loadLearnedRules(config.learnedRulesPath), loadAnalyzeState(config.analyzeStatePath).lastAnalysisAt).join('\n'))
+      ctx.out.push(optimizeStatusLines(config, loadLearnedRules(config.learnedRulesPath), loadAnalyzeState(config.analyzeStatePath).lastAnalysisAt, lang).join('\n'))
       return { code: 0, output: ctx.out }
     }
     case 'analyze': {
       if (!config.examineEnabled) {
-        ctx.out.push('请先开启审查日志（examine on）再分析')
+        ctx.out.push(coreMessage(lang, 'analyzeNeedsExamine'))
         return { code: 2, output: ctx.out }
       }
       const audit = io.auditFor(config)
       try {
         const rules = loadRules(config.rulesPath, config.defaultRulesPath)
-        const result = analyzeLearnedRules({ config, rules, audit })
+        const result = analyzeLearnedRules({ config, rules, audit }, lang)
         ctx.out.push(result.message)
         return { code: result.ok ? 0 : 2, output: ctx.out }
       } finally {
@@ -392,16 +438,16 @@ function optimizeCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoo
       }
     }
     case 'list': {
-      ctx.out.push(optimizeListLines(loadLearnedRules(config.learnedRulesPath)).join('\n'))
+      ctx.out.push(optimizeListLines(loadLearnedRules(config.learnedRulesPath), lang).join('\n'))
       return { code: 0, output: ctx.out }
     }
     case 'rollback': {
-      const result = rollbackLearnedRules(config)
+      const result = rollbackLearnedRules(config, lang)
       ctx.out.push(result.message)
       return { code: result.ok ? 0 : 2, output: ctx.out }
     }
     default:
-      ctx.out.push('用法：auto-guard optimize <status|analyze|list|rollback>')
+      ctx.out.push(shellMessage(lang, 'optimizeUsage'))
       return { code: 1, output: ctx.out }
   }
 }

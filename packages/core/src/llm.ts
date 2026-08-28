@@ -5,6 +5,8 @@
  * `DEEPSEEK_API_KEY`) so it never lands on disk.
  */
 import { parseReviewJson } from './review-parse.ts'
+import type { Lang } from './lang.ts'
+import { langOf } from './lang.ts'
 import type { GuardConfig, LlmReviewResult } from './types.ts'
 
 export interface LlmReviewRequest {
@@ -45,6 +47,19 @@ export const REVIEW_SYSTEM_PROMPT = [
   '  - risk reflects blast radius. reason is a single Chinese or English sentence.',
   '  - Never output anything besides the JSON object. No markdown fences.',
 ].join('\n')
+
+/** Instruction appended for en so decision reasons land in English (ADR-0011); zh keeps the base prompt byte-identical. */
+const REVIEW_REASON_LANGUAGE_EN = 'Write "reason" in English.'
+
+/**
+ * The review system prompt for one language. zh is the historical base prompt
+ * (unchanged, so existing prompt-cache prefixes stay valid); en appends the
+ * reason-language instruction. The instruction is a fixed suffix, so for any
+ * given config the prompt stays stable across calls.
+ */
+export function reviewSystemPrompt(lang: Lang): string {
+  return lang === 'en' ? `${REVIEW_SYSTEM_PROMPT}\n${REVIEW_REASON_LANGUAGE_EN}` : REVIEW_SYSTEM_PROMPT
+}
 
 /** Merge two abort signals, or return the single one if the other is absent. */
 function combineSignals(a: AbortSignal | undefined, b: AbortSignal | undefined): AbortSignal | undefined {
@@ -87,11 +102,15 @@ class HttpError extends Error {
  */
 export class DeepSeekReviewer implements LlmReviewer {
   private readonly config: GuardConfig
+  private readonly lang: Lang
   /** Result of the last {@link review} call (success or failure), for `/guard status`. */
   lastReview: ReviewOutcome | undefined
 
-  constructor(config: GuardConfig) {
+  constructor(config: GuardConfig, lang?: Lang) {
     this.config = config
+    // Explicit lang wins (the caller may have resolved the machine-default
+    // layer); otherwise fall back to the config's own language.
+    this.lang = lang ?? langOf(config)
   }
 
   /**
@@ -179,7 +198,7 @@ export class DeepSeekReviewer implements LlmReviewer {
       const body: Record<string, unknown> = {
         model,
         messages: [
-          { role: 'system', content: REVIEW_SYSTEM_PROMPT },
+          { role: 'system', content: reviewSystemPrompt(this.lang) },
           { role: 'user', content: userMessage },
         ],
         temperature: 0,
