@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import { createNoticeMessage } from './notice-message.ts'
 import {
+  httpPostText,
   parseReviewJson,
   reviewTimeoutBudget,
   reviewSystemPrompt,
@@ -81,8 +82,7 @@ export class DshLlmReviewer implements LlmReviewer {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
     try {
-      const res = await fetch(`${this.config.apiBase}/chat/completions`, {
-        method: 'POST',
+      const res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
@@ -91,12 +91,13 @@ export class DshLlmReviewer implements LlmReviewer {
           model: this.config.model,
           messages: [{ role: 'user', content: 'ping' }],
         }),
+        timeoutMs: this.config.timeoutMs,
         signal: controller.signal,
       })
       if (!res.ok) {
         return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
       }
-      const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const json = JSON.parse(res.text) as { choices?: Array<{ message?: { content?: string } }> }
       const text = json.choices?.[0]?.message?.content
       if (typeof text !== 'string' || text.length === 0) {
         return { ok: false, error: 'Empty response' }
@@ -197,7 +198,8 @@ export class DshLlmReviewer implements LlmReviewer {
 
   private async callDirect(model: string, userMessage: string, request: LlmReviewRequest, apiKey: string): Promise<LlmReviewResult> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort))
+    const budget = reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort)
+    const timer = setTimeout(() => controller.abort(), budget)
     const signal = request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal
 
     try {
@@ -211,15 +213,15 @@ export class DshLlmReviewer implements LlmReviewer {
       }
       if (request.reasoningEffort) body.reasoning_effort = request.reasoningEffort
 
-      let res: Awaited<ReturnType<typeof fetch>>
+      let res: Awaited<ReturnType<typeof httpPostText>>
       try {
-        res = await fetch(`${this.config.apiBase}/chat/completions`, {
-          method: 'POST',
+        res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify(body),
+          timeoutMs: budget,
           signal,
         })
       } catch (e) {
@@ -231,7 +233,7 @@ export class DshLlmReviewer implements LlmReviewer {
         throw new HttpError(res.status, res.statusText)
       }
 
-      const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const json = JSON.parse(res.text) as { choices?: Array<{ message?: { content?: string } }> }
       const text = json.choices?.[0]?.message?.content ?? ''
       const parsed = parseReviewJson(text)
       if (!parsed) throw new Error('Invalid LLM review response')

@@ -4,14 +4,36 @@
  * persists and receipts in the new language. The config root is mocked into
  * a temp dir; stdout is captured through a spy.
  */
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { GuardConfig } from '@auto-guard/core'
 
 const dir = mkdtempSync(join(tmpdir(), 'ag-zc-cli-'))
 const saved: GuardConfig[] = []
+
+// Local LLM mock serving a deny decision; baseConfig() points apiBase at it
+// (the reviewer talks real one-shot HTTP, so fetch stubs no longer apply).
+let llmServer: Server | undefined
+let llmApiBase = 'https://api.deepseek.com'
+beforeAll(async () => {
+  llmServer = createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"decision":"deny","risk":"medium","reason":"nope"}' } }] }))
+    })
+  })
+  await new Promise<void>((resolve) => llmServer!.listen(0, '127.0.0.1', resolve))
+  const addr = llmServer!.address()
+  const port = typeof addr === 'object' && addr ? addr.port : 0
+  llmApiBase = `http://127.0.0.1:${port}`
+})
+afterAll(async () => {
+  await new Promise<void>((resolve) => (llmServer ? llmServer.close(() => resolve()) : resolve()))
+})
 
 vi.mock('../src/config.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/config.ts')>()
@@ -36,7 +58,7 @@ function baseConfig(): GuardConfig {
     rulesPath: join(dir, 'rules.json'),
     defaultRulesPath: join(dir, 'defaults.json'),
     cachePath: join(dir, 'cache.json'),
-    apiBase: 'https://api.deepseek.com',
+    apiBase: llmApiBase,
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     apiKey: '',
     model: 'm',
@@ -141,15 +163,6 @@ describe('zcode cli: English golden paths', () => {
 describe('zcode bootstrap: runtime carries the effective language (review find)', () => {
   it('hook path engine reasons follow config.lang without any machine-default/env layer', async () => {
     process.env.DEEPSEEK_API_KEY = 'sk-test'
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => ({ choices: [{ message: { content: '{"decision":"deny","risk":"medium","reason":"nope"}' } }] }),
-      })),
-    )
     try {
       const { bootstrap } = await import('../src/bootstrap.ts')
       const runtime = bootstrap()
@@ -166,7 +179,6 @@ describe('zcode bootstrap: runtime carries the effective language (review find)'
       runtime.audit.close()
     } finally {
       delete process.env.DEEPSEEK_API_KEY
-      vi.unstubAllGlobals()
     }
   })
 })

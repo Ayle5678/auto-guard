@@ -8,6 +8,8 @@ import { parseReviewJson } from './review-parse.ts'
 import type { Lang } from './lang.ts'
 import { langOf } from './lang.ts'
 import type { GuardConfig, LlmReviewResult } from './types.ts'
+import http from 'node:http'
+import https from 'node:https'
 
 export interface LlmReviewRequest {
   command: string
@@ -84,6 +86,68 @@ interface ChatCompletionResponse {
   choices?: Array<{ message?: { content?: string } }>
 }
 
+/** Result of {@link httpPostText}: status metadata plus the raw body text. */
+export interface HttpPostTextResult {
+  ok: boolean
+  status: number
+  statusText: string
+  text: string
+}
+
+export interface HttpPostTextInit {
+  headers?: Record<string, string>
+  body: string
+  /** Socket inactivity budget; expiry and {@link HttpPostTextInit.signal} both abort as `AbortError`. */
+  timeoutMs: number
+  signal?: AbortSignal
+}
+
+/**
+ * One-shot POST over `node:http`/`node:https` with `agent: false`: the socket
+ * closes with the response and nothing is pooled. Deliberately not global
+ * `fetch` — undici's pooled keep-alive connection races `process.exit()` in
+ * the host hooks on Windows and aborts inside libuv (`uv_async_send` on a
+ * closing handle → exit 0xC0000409) after the decision JSON was already
+ * emitted. Verified 2026-08-29: pooled fetch + exit crashed 22/22 live probes;
+ * one-shot-agent + exit 0/12; the `Connection: close` header is stripped by
+ * undici and does not opt out of the pool.
+ */
+export async function httpPostText(url: string, init: HttpPostTextInit): Promise<HttpPostTextResult> {
+  const target = new URL(url)
+  const transport = target.protocol === 'https:' ? https : http
+  return await new Promise((resolve, reject) => {
+    const req = transport.request(target, {
+      method: 'POST',
+      agent: false,
+      headers: { ...init.headers, 'Content-Length': Buffer.byteLength(init.body) },
+      timeout: init.timeoutMs,
+    }, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk: Buffer) => chunks.push(chunk))
+      res.on('end', () => {
+        const status = res.statusCode ?? 0
+        resolve({
+          ok: status >= 200 && status < 300,
+          status,
+          statusText: res.statusMessage ?? '',
+          text: Buffer.concat(chunks).toString('utf8'),
+        })
+      })
+    })
+    const abort = () => req.destroy(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    req.on('timeout', abort)
+    if (init.signal) {
+      if (init.signal.aborted) {
+        abort()
+        return
+      }
+      init.signal.addEventListener('abort', abort, { once: true })
+    }
+    req.on('error', reject)
+    req.end(init.body)
+  })
+}
+
 /** HTTP-level error carrying the response status so callers can decide on fallback. */
 class HttpError extends Error {
   status: number
@@ -96,9 +160,10 @@ class HttpError extends Error {
 
 /**
  * Reviewer that calls the DeepSeek-compatible `/chat/completions` endpoint
- * directly with the global `fetch`. When the primary model is rejected with a
- * 400 (e.g. unknown model name) it retries once on `fallbackModel`; all other
- * failures throw so the guard service can apply its fail-closed policy.
+ * directly via {@link httpPostText} (one-shot connection, no keep-alive
+ * pool). When the primary model is rejected with a 400 (e.g. unknown model
+ * name) it retries once on `fallbackModel`; all other failures throw so the
+ * guard service can apply its fail-closed policy.
  */
 export class DeepSeekReviewer implements LlmReviewer {
   private readonly config: GuardConfig
@@ -124,8 +189,7 @@ export class DeepSeekReviewer implements LlmReviewer {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
     try {
-      const res = await fetch(`${this.config.apiBase}/chat/completions`, {
-        method: 'POST',
+      const res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
@@ -134,12 +198,13 @@ export class DeepSeekReviewer implements LlmReviewer {
           model: this.config.model,
           messages: [{ role: 'user', content: 'ping' }],
         }),
+        timeoutMs: this.config.timeoutMs,
         signal: controller.signal,
       })
       if (!res.ok) {
         return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
       }
-      const json = (await res.json()) as ChatCompletionResponse
+      const json = JSON.parse(res.text) as ChatCompletionResponse
       const text = json.choices?.[0]?.message?.content
       if (typeof text !== 'string' || text.length === 0) {
         return { ok: false, error: 'Empty response' }
@@ -191,7 +256,8 @@ export class DeepSeekReviewer implements LlmReviewer {
 
   private async call(model: string, userMessage: string, request: LlmReviewRequest, apiKey: string): Promise<LlmReviewResult> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort))
+    const budget = reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort)
+    const timer = setTimeout(() => controller.abort(), budget)
     const signal = combineSignals(request.signal, controller.signal)
 
     try {
@@ -205,15 +271,15 @@ export class DeepSeekReviewer implements LlmReviewer {
       }
       if (request.reasoningEffort) body.reasoning_effort = request.reasoningEffort
 
-      let res: Awaited<ReturnType<typeof fetch>>
+      let res: HttpPostTextResult
       try {
-        res = await fetch(`${this.config.apiBase}/chat/completions`, {
-          method: 'POST',
+        res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify(body),
+          timeoutMs: budget,
           signal,
         })
       } catch (e) {
@@ -225,7 +291,7 @@ export class DeepSeekReviewer implements LlmReviewer {
         throw new HttpError(res.status, res.statusText)
       }
 
-      const json = (await res.json()) as ChatCompletionResponse
+      const json = JSON.parse(res.text) as ChatCompletionResponse
       const text = json.choices?.[0]?.message?.content ?? ''
       const parsed = parseReviewJson(text)
       if (!parsed) throw new Error('Invalid LLM review response')

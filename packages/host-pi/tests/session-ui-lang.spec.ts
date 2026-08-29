@@ -3,10 +3,12 @@
  * four-option ask dialog renders English labels, the deny-reason branch
  * triggers on the two deny states, choices resolve by value (either
  * language's label), and the session-memory semantics are unchanged.
- * The config root is mocked into a temp dir; the LLM is a fetch stub.
+ * The config root is mocked into a temp dir; the LLM is a local HTTP mock
+ * (the reviewer talks real one-shot HTTP, so fetch stubs no longer apply).
  */
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
@@ -16,7 +18,25 @@ import type { GuardConfig } from '@auto-guard/core'
 // never closed inside the extension, so per-test cleanup would hit EPERM on
 // Windows. Best-effort cleanup at the end; the OS temp dir handles the rest.
 const dir = mkdtempSync(join(tmpdir(), 'ag-pi-ui-'))
-afterAll(() => {
+
+// Local LLM mock serving an ask decision; baseConfig() points apiBase at it.
+let llmServer: Server | undefined
+let llmApiBase = 'https://api.deepseek.com'
+beforeAll(async () => {
+  llmServer = createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"decision":"ask","risk":"medium","reason":"uncertain"}' } }] }))
+    })
+  })
+  await new Promise<void>((resolve) => llmServer!.listen(0, '127.0.0.1', resolve))
+  const addr = llmServer!.address()
+  const port = typeof addr === 'object' && addr ? addr.port : 0
+  llmApiBase = `http://127.0.0.1:${port}`
+})
+afterAll(async () => {
+  await new Promise<void>((resolve) => (llmServer ? llmServer.close(() => resolve()) : resolve()))
   try {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   } catch {
@@ -55,7 +75,7 @@ function baseConfig(): GuardConfig {
     rulesPath: join(dir, 'rules.json'),
     defaultRulesPath: join(dir, 'defaults.json'),
     cachePath: join(dir, 'cache.json'),
-    apiBase: 'https://api.deepseek.com',
+    apiBase: llmApiBase,
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     apiKey: 'sk-test-key',
     model: 'm',
@@ -137,16 +157,8 @@ function bashEvent(command: string) {
   return { toolName: 'bash', input: { command } }
 }
 
-const askResponse = () => ({
-  ok: true,
-  status: 200,
-  statusText: 'OK',
-  json: async () => ({ choices: [{ message: { content: '{"decision":"ask","risk":"medium","reason":"uncertain"}' } }] }),
-})
-
 describe('pi ask dialog: English labels + value matching', () => {
   it('renders the four English labels for an LLM ask', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => askResponse()))
     const { pi, handlers } = makePi()
     const { default: extension } = await import('../src/index.ts')
     extension(pi)
@@ -168,7 +180,6 @@ describe('pi ask dialog: English labels + value matching', () => {
   })
 
   it('asks for a deny reason on the deny states and passes it through', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => askResponse()))
     const { pi, handlers } = makePi()
     const { default: extension } = await import('../src/index.ts')
     extension(pi)
@@ -182,7 +193,6 @@ describe('pi ask dialog: English labels + value matching', () => {
   })
 
   it('session-wide deny is remembered: the retry blocks from the session cache', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => askResponse()))
     const { pi, handlers } = makePi()
     const { default: extension } = await import('../src/index.ts')
     extension(pi)
@@ -203,7 +213,6 @@ describe('pi ask dialog: English labels + value matching', () => {
   })
 
   it('an unresolvable choice still fails closed', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => askResponse()))
     const { pi, handlers } = makePi()
     const { default: extension } = await import('../src/index.ts')
     extension(pi)
@@ -222,7 +231,7 @@ describe('pi slash commands: English registration', () => {
     const { pi, commands } = makePi()
     const { default: extension } = await import('../src/index.ts')
     extension(pi)
-    expect(commands.get('guard')!.description).toBe('Guard runtime: /guard on | off | status | stats')
+    expect(commands.get('guard')!.description).toBe('Guard runtime: /guard on | off | status | stats | report [days]')
     expect(commands.get('guard-set')!.description).toBe('Guard config & maintenance: /guard-set reload | set-key | show-key | clear-key | set-api | set-api reset')
   })
 })

@@ -79,3 +79,13 @@
 **Q20 新出厂规则如何到达存量安装？运行时自动合并吗？**
 ➡️ 自答：**不自动合并，维持「用户字段整体胜出 + 只补缺失顶层字段」**，它是 ADR-0008 显式写入的一致推论（静默改写用户规则违背显式性，且无墓碑防「故意删除的模式复活」——注意 rules.json 常是全量数组而非稀疏覆盖，本次实测坐实）。升级走 init 显式步骤：检测出厂默认含本地缺失模式 → diff 预览 → 确认后幂等追加 + 去重 + `*.auto-guard.bak` 备份（ADR-0013）。本次三宿主六份文件的手工同步就是该流程的首次人工执行。
 拒绝项：加载期自动追加（魔法 + 墓碑语义）；「重装即升级」的说法（播种对已存在文件是 no-op，说法与行为不符）。
+
+## Round 7 — hook 进程 LLM 裁决后 libuv 断言崩溃（2026-08-29 事后补，Qoder 实测）
+
+**Q21 hook 进程为何在 LLM 裁决后以 0xC0000409（STATUS_STACK_BUFFER_OVERRUN/abort）退出，stderr 报 `uv_async_send` 断言（src\win\async.c:94）？**
+➡️ 自答：与 auto-guard 的裁决逻辑、stdout 写入、退出策略都无关。根因是全局 `fetch`（undici）的 keep-alive 池化连接在 Windows 上与 `process.exit()` 的竞态：响应结束连接回池（unref'd socket + 保活定时器），exit 触发的 libuv 拆卸期仍有代码向已进入 `UV_HANDLE_CLOSING` 的内部 async 句柄发信号 → 断言 abort。实证收敛四组：池化 fetch + exit 崩 **22/22**（裸脚本真实 API 10/10、12/12）；`node:https` 一事一连接（agent:false）+ exit **0/12**；服务器不回池的快速 401 响应 **0/20**；fetch 请求加 `Connection: close` 头无效（undici 按 fetch 规范剥掉）**12/12 崩**。修复落在 core 单点：新增 `httpPostText`（node:http/https，`agent: false`，连接随响应关闭，零退出延迟），`DeepSeekReviewer.ping/call` 与 dsh 直连路径换轨；宿主 emit 的 flush-后-exit 策略保持不变（它从来不是凶手）。修复后 live 反馈循环 **0/30**（30/30 真实走 LLM 路径），修复前同循环 30/30 崩。
+拒绝项：exit 前延时 250ms（实测 3/30 仍崩，治标不治根）；改自然退出（多等 ~1s 保活定时器到期，慢且未除根）；exit 前手动 destroy 池内 socket（现代 Node 的 `_getActiveHandles` 已列不出目标 socket/Timer，够不着；且 destroy 本身制造关闭期活动，裸脚本 10/10 仍崩）。
+
+**Q22 reviewer 测试的 seam 为何从 fetch 桩迁到本地 mock server？**
+➡️ 自答：传输层换 node:http 后 `vi.stubGlobal('fetch')` 拦截不到任何东西，残留的桩会让测试真实出网（zcode 用例实测打到真 API 收 401 而失败）。本地 127.0.0.1 mock server 是诚实 seam——测试真正跑到新传输路径，且与崩溃本身的网络形态一致。迁移四个文件：core `llm.spec.ts`（新增 tests/helpers/chat-mock.ts）、`llm-lang.spec.ts`、host-pi `session-ui-lang.spec.ts`、host-zcode `zcode-cli-lang.spec.ts`。
+拒绝项：给 reviewer 加 transport 注入参数（为测试污染公共 API，且注入桩又回到"不跑真传输"的老路）。

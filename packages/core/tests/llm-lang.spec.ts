@@ -3,18 +3,19 @@
  * reason-language suffix; zh keeps the historical prompt byte-identical so
  * existing prompt-cache prefixes stay valid.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { DeepSeekReviewer, REVIEW_SYSTEM_PROMPT, reviewSystemPrompt } from '../src/llm.ts'
+import { chatOk, startChatMock, type ChatMock } from './helpers/chat-mock.ts'
 import type { GuardConfig } from '../src/types.ts'
 
-function makeConfig(lang?: 'zh' | 'en'): GuardConfig {
+function makeConfig(lang?: 'zh' | 'en', apiBase = 'https://api.deepseek.com'): GuardConfig {
   return {
     enabled: true,
     ...(lang ? { lang } : {}),
     rulesPath: 'x',
     defaultRulesPath: 'x',
     cachePath: 'x',
-    apiBase: 'https://api.deepseek.com',
+    apiBase,
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     apiKey: '',
     model: 'm',
@@ -51,8 +52,17 @@ function makeConfig(lang?: 'zh' | 'en'): GuardConfig {
   }
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals()
+const openMocks: ChatMock[] = []
+
+async function startMock(): Promise<ChatMock> {
+  const mock = await startChatMock()
+  openMocks.push(mock)
+  mock.respond(chatOk('{"decision":"allow","risk":"low","reason":"ok"}'))
+  return mock
+}
+
+afterEach(async () => {
+  await Promise.allSettled(openMocks.splice(0).map((mock) => mock.close()))
   delete process.env.DEEPSEEK_API_KEY
 })
 
@@ -72,36 +82,21 @@ describe('reviewSystemPrompt', () => {
 describe('DeepSeekReviewer: language follows the config', () => {
   it('sends the en system prompt when config.lang is en', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret'
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({ choices: [{ message: { content: '{"decision":"allow","risk":"low","reason":"ok"}' } }] }),
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-    await new DeepSeekReviewer(makeConfig('en')).review({ command: 'ls' })
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }]
-    const body = JSON.parse(init.body) as { messages: Array<{ role: string; content: string }> }
-    expect(body.messages[0]!.content).toBe(reviewSystemPrompt('en'))
+    const mock = await startMock()
+    await new DeepSeekReviewer(makeConfig('en', mock.apiBase)).review({ command: 'ls' })
+    const enBody = JSON.parse(mock.requests[0]!.body) as { messages: Array<{ role: string; content: string }> }
+    expect(enBody.messages[0]!.content).toBe(reviewSystemPrompt('en'))
 
-    await new DeepSeekReviewer(makeConfig('zh')).review({ command: 'ls' })
-    const [, zhInit] = fetchMock.mock.calls[1] as unknown as [string, { body: string }]
-    const zhBody = JSON.parse(zhInit.body) as { messages: Array<{ role: string; content: string }> }
+    await new DeepSeekReviewer(makeConfig('zh', mock.apiBase)).review({ command: 'ls' })
+    const zhBody = JSON.parse(mock.requests[1]!.body) as { messages: Array<{ role: string; content: string }> }
     expect(zhBody.messages[0]!.content).toBe(REVIEW_SYSTEM_PROMPT)
   })
 
   it('an explicit constructor lang wins over the config field (machine-default layer)', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret'
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({ choices: [{ message: { content: '{"decision":"allow","risk":"low","reason":"ok"}' } }] }),
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-    await new DeepSeekReviewer(makeConfig(), 'en').review({ command: 'ls' })
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }]
-    const body = JSON.parse(init.body) as { messages: Array<{ role: string; content: string }> }
+    const mock = await startMock()
+    await new DeepSeekReviewer(makeConfig(undefined, mock.apiBase), 'en').review({ command: 'ls' })
+    const body = JSON.parse(mock.requests[0]!.body) as { messages: Array<{ role: string; content: string }> }
     expect(body.messages[0]!.content).toBe(reviewSystemPrompt('en'))
   })
 })
