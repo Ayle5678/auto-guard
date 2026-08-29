@@ -97,8 +97,20 @@ export class PersistableMap<T> {
     return removed
   }
 
+  /** Drop every key starting with `prefix` (session-scoped cleanup). */
+  deleteByPrefix(prefix: string): void {
+    for (const key of this.map.keys()) {
+      if (key.startsWith(prefix)) this.map.delete(key)
+    }
+    this.flush()
+  }
+
   keys(): IterableIterator<string> {
     return this.map.keys()
+  }
+
+  entries(): IterableIterator<[string, T]> {
+    return this.map.entries()
   }
 
   clear(): void {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { buildSessionKey, buildWorkspaceKey, PersistentCache, SessionLruCache } from '../src/cache.ts'
 import { FileTracker } from '../src/file-tracker.ts'
 import { GuardService, prepareDeletionMarker } from '../src/guard-service.ts'
+import { memorySink } from '../src/persist-map.ts'
 import { loadRules } from '../src/rules.ts'
 import type { GuardConfig, GuardRequest, LlmReviewResult } from '../src/types.ts'
 import type { LlmReviewer, LlmReviewRequest } from '../src/llm.ts'
@@ -84,6 +85,30 @@ function setup(overrides: { config?: Partial<GuardConfig>; llm?: LlmReviewer } =
 
 function shell(command: string, overrides: Partial<GuardRequest> = {}): GuardRequest {
   return { tool: 'bash', command, session: 's1', workspace: '/workspace/a', ...overrides }
+}
+
+/** Like setup, but with the pending directory-deletes sink exposed for inspection. */
+function setupWithPending(overrides: { config?: Partial<GuardConfig>; llm?: StubReviewer; seed?: Record<string, unknown> } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-guard-svc-'))
+  const config = makeConfig(overrides.config)
+  config.rulesPath = join(dir, 'rules.json')
+  config.defaultRulesPath = join(dir, 'defaults.json')
+  config.cachePath = join(dir, 'cache.json')
+  const sessionCache = new SessionLruCache(config.sessionCacheSize)
+  const persistentCache = new PersistentCache(config.cachePath)
+  const llm = overrides.llm ?? new StubReviewer({ decision: 'allow', risk: 'low', reason: 'seems fine' })
+  const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
+  const store: Record<string, unknown> = overrides.seed ?? {}
+  const service = new GuardService({
+    config,
+    rules: loadRules(config.rulesPath, config.defaultRulesPath),
+    sessionCache,
+    persistentCache,
+    llmReviewer: llm,
+    fileTracker,
+    pendingPersistence: { directoryDeletes: memorySink(store) },
+  })
+  return { service, llm, store, dir }
 }
 
 describe('GuardService: rules layer', () => {
@@ -1151,6 +1176,152 @@ describe('GuardService: directory delete review flow', () => {
     const prepared = prepareDeletionMarker(original)
     expect(prepared.cleanedCommand).toBeUndefined()
     expect(prepared.request).toBe(original)
+  })
+
+  it('strips comment residue left between the command and the marker', () => {
+    const prepared = prepareDeletionMarker(shell('rm -rf ./dist # [删除理由] 清理构建产物'))
+    expect(prepared.cleanedCommand).toBe('rm -rf ./dist')
+    expect(prepared.request.command).toBe('rm -rf ./dist')
+    expect(prepared.request.deletionReason).toBe('清理构建产物')
+  })
+
+  it('keeps a hash that is part of a path token when cleaning', () => {
+    const prepared = prepareDeletionMarker(shell('rm -rf ./dist#1 [删除理由] 清理'))
+    expect(prepared.cleanedCommand).toBe('rm -rf ./dist#1')
+  })
+
+  // Regression for the real incident behind this spec: the first block landed
+  // on a compound command, each standalone `[删除理由]` retry missed the
+  // whole-text pending key and stacked a new denial forever. Every retry
+  // variant must land on that single pending, trigger exactly one review and
+  // consume the entry.
+  const COMPOUND = 'cd "/repo" && rm -rf .tmp-ag-test && grep -rn debug . | wc -l && git status --short'
+  it.each([
+    ['standalone retry with comment residue', 'rm -rf .tmp-ag-test # [删除理由] clean temp dir'],
+    ['standalone retry with bare marker', 'rm -rf .tmp-ag-test [删除理由] clean temp dir'],
+    ['same compound retried with an appended marker', `${COMPOUND} [删除理由] clean temp dir`],
+  ])('retry of a compound first block hits the same pending: %s', async (_label, retryCommand) => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'clean temp dir' })
+    const { service, llm: reviewer, store, dir } = setupWithPending({ llm })
+    try {
+      const first = await service.decide(shell(COMPOUND))
+      expect(first).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(reviewer.calls).toHaveLength(0)
+      expect(Object.keys(store)).toHaveLength(1)
+
+      const prepared = prepareDeletionMarker(shell(retryCommand))
+      const retry = await service.decide(prepared.request)
+      expect(retry).toMatchObject({ kind: 'allow', source: 'directory-delete' })
+      expect(reviewer.calls).toHaveLength(1)
+      expect(reviewer.calls[0]).toMatchObject({ command: prepared.cleanedCommand, deletionReason: 'clean temp dir' })
+      // Exactly one pending existed and the single review consumed it.
+      expect(store).toEqual({})
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('echoes the recorded command text in deny reasons', async () => {
+    const { service, dir } = setupWithPending()
+    try {
+      const first = await service.decide(shell('rm -rf ./dist'))
+      expect(first.reason).toContain('rm -rf ./dist')
+      // A markerless retry of the recorded command echoes the recorded original.
+      const second = await service.decide(shell('rm -rf ./dist'))
+      expect(second.reason).toContain('rm -rf ./dist')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not reuse a pending delete whose recorded target differs', async () => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
+    const { service, llm: reviewer, store, dir } = setupWithPending({ llm })
+    try {
+      await service.decide(shell('rm -rf ./alpha'))
+      const d = await service.decide(shell('rm -rf ./beta [删除理由] clean'))
+      expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(reviewer.calls).toHaveLength(0)
+      expect(Object.keys(store)).toHaveLength(2)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses a pending across workspace drift within the same subtree', async () => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
+    const { service, llm: reviewer, store, dir } = setupWithPending({ llm })
+    try {
+      // The hook cwd fallback can resolve a different workspace between the
+      // first block and the retry; same project subtree still aligns.
+      await service.decide(shell('rm -rf ./dist', { workspace: '/repo/nested' }))
+      const d = await service.decide(shell('rm -rf ./dist [删除理由] clean', { workspace: '/repo' }))
+      expect(d).toMatchObject({ kind: 'allow', source: 'directory-delete' })
+      expect(reviewer.calls).toHaveLength(1)
+      expect(store).toEqual({})
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('never reuses a pending across sibling project roots', async () => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
+    const { service, llm: reviewer, store, dir } = setupWithPending({ llm })
+    try {
+      await service.decide(shell('rm -rf ./dist', { workspace: '/repo' }))
+      const d = await service.decide(shell('rm -rf ./dist [删除理由] clean', { workspace: '/repo-sibling' }))
+      expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(reviewer.calls).toHaveLength(0)
+      expect(Object.keys(store)).toHaveLength(2)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses a legacy pending entry that predates recorded command text', async () => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
+    const { service, llm: reviewer, dir } = setupWithPending({
+      llm,
+      seed: { [buildSessionKey('s1', '/workspace/a', 'rm -rf ./dist')]: { deniedAt: Date.now() - 1000 } },
+    })
+    try {
+      const d = await service.decide(shell('rm -rf ./dist [删除理由] clean'))
+      expect(d).toMatchObject({ kind: 'allow', source: 'directory-delete' })
+      expect(reviewer.calls).toHaveLength(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('treats a pending delete older than the retry TTL as absent and prunes it', async () => {
+    const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
+    const staleKey = buildSessionKey('s1', '/workspace/a', 'rm -rf ./dist')
+    const { service, llm: reviewer, store, dir } = setupWithPending({
+      llm,
+      seed: { [staleKey]: { deniedAt: Date.now() - 25 * 60 * 60 * 1000, command: 'rm -rf ./dist' } },
+    })
+    try {
+      const d = await service.decide(shell('rm -rf ./dist'))
+      expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(reviewer.calls).toHaveLength(0)
+      const keys = Object.keys(store)
+      expect(keys).toEqual([staleKey])
+      expect((store[staleKey] as { deniedAt: number }).deniedAt).toBeGreaterThan(Date.now() - 60_000)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('clears pending directory deletes with the session', async () => {
+    const { service, store, dir } = setupWithPending()
+    try {
+      await service.decide(shell('rm -rf ./dist'))
+      expect(Object.keys(store)).toHaveLength(1)
+      service.clearSessionCache('s1')
+      expect(store).toEqual({})
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

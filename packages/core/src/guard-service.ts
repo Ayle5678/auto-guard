@@ -17,7 +17,7 @@ import {
   type CacheEntry,
   type SessionCacheLike,
 } from './cache.ts'
-import { containsShellOperators, expandHome, hasCommandSubstitution, isHighRiskStateChangingCommand, isLowRiskStateChangingCommand, normalizeCommand, splitShellCommand } from './command.ts'
+import { containsShellOperators, expandHome, hasCommandSubstitution, isHighRiskStateChangingCommand, isLowRiskStateChangingCommand, normalizeCommand, normalizePath, splitShellCommand } from './command.ts'
 import { FileTracker } from './file-tracker.ts'
 import { PersistableMap, type JsonSink } from './persist-map.ts'
 import type { HistoryStore } from './history.ts'
@@ -26,6 +26,7 @@ import type { LlmReviewer } from './llm.ts'
 import type { RiskLevel, RulesFile } from './types.ts'
 import { classifyCommand, containsDangerousPattern, staticAllowGuardHit, type Classification } from './rules.ts'
 import { matchesSensitivePath, shellCommandHasSensitivePath } from './sensitive-path.ts'
+import { truncateOneLine } from './decision-history.ts'
 import type { Lang } from './lang.ts'
 import { langOf } from './lang.ts'
 import { coreMessage } from './messages.ts'
@@ -37,6 +38,27 @@ export interface PendingPersistence {
   /** Sink mirroring LLM deny records awaiting a user repeat-confirmation. */
   denies?: JsonSink
 }
+
+/** A pending first-hit directory delete, awaiting a `[删除理由]` retry. */
+export interface PendingDirectoryDelete {
+  deniedAt: number
+  /** Original command text at first denial, for the deny echo (absent in legacy entries). */
+  command?: string
+}
+
+/**
+ * Pending deletes older than this are pruned on touch instead of being matched:
+ * the `[删除理由]` retry is a same-session, minutes-scale flow. The window also
+ * bounds pending-deletes.json against stale rows (24h mirrors pruneSessions'
+ * idle-directory window).
+ */
+const PENDING_DELETE_TTL_MS = 24 * 60 * 60 * 1000
+
+/** Command words whose non-flag arguments are deletion targets. */
+const DELETE_COMMAND_WORDS = new Set(['rm', 'rd', 'rmdir', 'del', 'erase', 'remove-item', 'ri'])
+
+/** cmd builtins whose `/x`-style short flags must not count as targets. */
+const WINDOWS_FLAG_DELETE_WORDS = new Set(['rd', 'rmdir', 'del', 'erase'])
 
 export interface GuardDeps {
   config: GuardConfig
@@ -99,7 +121,7 @@ export class GuardService {
   private readonly historyStore?: HistoryStore
   private readonly templateCache?: TemplateCache
   private readonly lang: Lang
-  private readonly pendingDirectoryDeletes: PersistableMap<{ deniedAt: number }>
+  private readonly pendingDirectoryDeletes: PersistableMap<PendingDirectoryDelete>
   private readonly pendingDenies: PersistableMap<RiskLevel | undefined>
   readonly stats: GuardStats = createStats()
 
@@ -122,12 +144,12 @@ export class GuardService {
     if (session) {
       this.sessionCache.clearSession(session)
       const prefix = `${session}|`
-      for (const key of this.pendingDenies.keys()) {
-        if (key.startsWith(prefix)) this.pendingDenies.delete(key)
-      }
+      this.pendingDenies.deleteByPrefix(prefix)
+      this.pendingDirectoryDeletes.deleteByPrefix(prefix)
     } else {
       this.sessionCache.clear()
       this.pendingDenies.clear()
+      this.pendingDirectoryDeletes.clear()
     }
   }
 
@@ -691,16 +713,29 @@ export class GuardService {
   }
 
   private async decideDirectoryDelete(request: GuardRequest, command: string): Promise<Decision> {
+    this.pruneExpiredPendingDeletes()
     const key = buildSessionKey(request.session, request.workspace, command.toLowerCase())
-    const pending = this.pendingDirectoryDeletes.get(key)
+    let pending = this.pendingDirectoryDeletes.get(key)
+    let pendingKey = key
     if (!pending) {
-      this.pendingDirectoryDeletes.set(key, { deniedAt: Date.now() })
+      // A cleaned `[删除理由]` retry often differs textually from the recorded
+      // original (compound first block vs standalone retry, comment residue,
+      // workspace drift) — fall back to same-session neighbor reuse instead of
+      // stacking another denial.
+      const neighbor = this.nearestPendingDelete(request, command)
+      if (neighbor) {
+        pending = neighbor.entry
+        pendingKey = neighbor.key
+      }
+    }
+    if (!pending) {
+      this.pendingDirectoryDeletes.set(key, { deniedAt: Date.now(), command })
       return {
         kind: 'deny',
         source: 'directory-delete',
         category: 'directory-delete',
         needsReason: true,
-        reason: 'Directory deletion requires a reason. Retry the same command with a `[删除理由] <reason>` marker appended.',
+        reason: coreMessage(this.lang, 'deleteNeedsReason', { command: truncateOneLine(command, 120) }),
       }
     }
 
@@ -711,7 +746,7 @@ export class GuardService {
         source: 'directory-delete',
         category: 'directory-delete',
         needsReason: true,
-        reason: 'No [删除理由] found after the previous denial. Retry the same command with a `[删除理由] <reason>` marker appended.',
+        reason: coreMessage(this.lang, 'deleteRetryNoReason', { command: truncateOneLine(pending.command ?? command, 120) }),
       }
     }
 
@@ -724,13 +759,44 @@ export class GuardService {
 
     // Single review per pending delete. Non-allow outcomes are resolved by a
     // human confirmation in the adapter; the pending entry is closed either way.
-    this.pendingDirectoryDeletes.delete(key)
+    this.pendingDirectoryDeletes.delete(pendingKey)
     return {
       ...decision,
       source: 'directory-delete',
       category: 'directory-delete',
       reason: decision.reason ?? 'Directory deletion requires human confirmation',
     }
+  }
+
+  /** Drop pending deletes older than the retry TTL so the JSON sink stays bounded. */
+  private pruneExpiredPendingDeletes(): void {
+    const now = Date.now()
+    for (const [key, entry] of this.pendingDirectoryDeletes.entries()) {
+      if (isExpiredPendingDelete(entry, now)) this.pendingDirectoryDeletes.delete(key)
+    }
+  }
+
+  /**
+   * Same-session pending delete whose deletion targets equal the retry's —
+   * most recent first, never expired. Entries with no extractable targets
+   * (e.g. a first block on syntax the extractor cannot tokenize) never match,
+   * so a miss degrades to a fresh denial, never a wrong reuse.
+   */
+  private nearestPendingDelete(request: GuardRequest, command: string): { key: string; entry: PendingDirectoryDelete } | undefined {
+    const targets = extractDeletionTargets(command, this.rules)
+    if (targets.length === 0) return undefined
+    const sessionPrefix = `${request.session ?? '<no-session>'}|`
+    const now = Date.now()
+    let best: { key: string; entry: PendingDirectoryDelete } | undefined
+    for (const [key, entry] of this.pendingDirectoryDeletes.entries()) {
+      if (!key.startsWith(sessionPrefix)) continue
+      if (isExpiredPendingDelete(entry, now)) continue
+      const parts = splitSessionKey(key)
+      if (!sameWorkspaceRoot(parts.workspace, request.workspace)) continue
+      if (!recordsSameDeletion(parts.command, targets, this.rules)) continue
+      if (!best || entry.deniedAt > best.entry.deniedAt) best = { key, entry }
+    }
+    return best
   }
 
   private recordPendingDeny(request: GuardRequest, command: string, risk?: RiskLevel): void {
@@ -995,7 +1061,7 @@ export function extractDeletionMarker(command?: string): { reason: string; clean
   if (idx < 0) return undefined
   const reason = command.slice(idx + '[删除理由]'.length).trim()
   if (!reason) return undefined
-  const cleaned = command.slice(0, idx).trim()
+  const cleaned = stripTrailingCommentTokens(command.slice(0, idx))
   return { reason: reason.slice(0, 2800), cleaned }
 }
 
@@ -1016,4 +1082,162 @@ export function prepareDeletionMarker(request: GuardRequest): { request: GuardRe
     request: { ...request, command: marker.cleaned, deletionReason: marker.reason },
     cleanedCommand: marker.cleaned || undefined,
   }
+}
+
+/**
+ * Drop comment markers left between the command and an appended `[删除理由]`
+ * retry marker (`rm -rf x # [删除理由] r` must clean to `rm -rf x`, not
+ * `rm -rf x #`). Only whole trailing tokens are removed: `foo#` is a real
+ * path character, and the cleaned text is the command that actually executes.
+ */
+function stripTrailingCommentTokens(text: string): string {
+  let cleaned = text.trim()
+  for (;;) {
+    const stripped = cleaned.replace(/\s+(?:#|%%)$/, '')
+    if (stripped === cleaned) return cleaned
+    cleaned = stripped.trim()
+  }
+}
+
+/** Split a `session|workspace|command` key back apart; the command may itself contain `|`, so only the first two separators are meaningful. */
+function splitSessionKey(key: string): { session: string; workspace: string; command: string } {
+  const sessionEnd = key.indexOf('|')
+  const workspaceEnd = sessionEnd >= 0 ? key.indexOf('|', sessionEnd + 1) : -1
+  if (sessionEnd < 0 || workspaceEnd < 0) return { session: '', workspace: '', command: key }
+  return {
+    session: key.slice(0, sessionEnd),
+    workspace: key.slice(sessionEnd + 1, workspaceEnd),
+    command: key.slice(workspaceEnd + 1),
+  }
+}
+
+/** True when a pending delete is past the retry window and must not be matched again. */
+function isExpiredPendingDelete(entry: PendingDirectoryDelete, now: number): boolean {
+  return now - entry.deniedAt > PENDING_DELETE_TTL_MS
+}
+
+/** Windows paths are case-insensitive; POSIX is not — fold only on Windows so target equality stays exact elsewhere. */
+function foldPathCase(text: string): string {
+  return process.platform === 'win32' ? text.toLowerCase() : text
+}
+
+/** Normalize a workspace for comparison: unified separators, no trailing slash, case-folded on Windows. */
+function normalizeWorkspace(workspace: string): string {
+  return foldPathCase(normalizePath(workspace).replace(/\/+$/, ''))
+}
+
+/**
+ * True when both workspaces describe the same subtree: equal after
+ * normalization, or one a whole path-segment prefix of the other. The
+ * effective workspace can shift between the first denial and the retry (hook
+ * cwd fallback resolves differently around `cd`), but never across projects.
+ */
+function sameWorkspaceRoot(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b
+  const na = normalizeWorkspace(a)
+  const nb = normalizeWorkspace(b)
+  if (na === nb) return true
+  const [short, long] = na.length <= nb.length ? [na, nb] : [nb, na]
+  return long.startsWith(`${short}/`)
+}
+
+/** True when a recorded command deletes exactly the given normalized targets. */
+function recordsSameDeletion(recordedCommand: string, targets: string[], rules: RulesFile): boolean {
+  const recorded = extractDeletionTargets(recordedCommand, rules)
+  return recorded.length > 0 && recorded.join('\n') === targets.join('\n')
+}
+
+/**
+ * Quote-aware deletion-target tokens of every directory-delete segment in a
+ * command, normalized and sorted — the comparable shape for pending retry
+ * alignment. Only segments that classify as directory-delete contribute, so
+ * `ls` companions in a compound never count as targets, and a pipeline or
+ * redirect tail after an operator ends the argument list.
+ */
+export function extractDeletionTargets(command: string, rules: RulesFile): string[] {
+  const collected = new Set<string>()
+  for (const segment of splitShellCommand(normalizeCommand(command))) {
+    if (classifyCommand(segment, rules).category !== 'directory-delete') continue
+    for (const target of deletionTargetsFromSegment(segment)) {
+      const normalized = normalizeTargetToken(target)
+      if (normalized) collected.add(normalized)
+    }
+  }
+  return [...collected].sort()
+}
+
+/** Extract raw target tokens from one already-classified delete segment. */
+function deletionTargetsFromSegment(segment: string): string[] {
+  const markerIdx = segment.indexOf('[删除理由]')
+  const body = markerIdx >= 0 ? segment.slice(0, markerIdx) : segment
+  const tokens = segmentTokens(body)
+  if (tokens.length === 0) return []
+  let word = tokens[0].toLowerCase()
+  let rest = tokens.slice(1)
+  // `cmd /c <builtin>` and `command <builtin>` wrapping shift the command word.
+  if ((word === 'cmd' || word === 'command') && rest.length > 0 && /^\/[ck]$/i.test(rest[0])) {
+    word = (rest[1] ?? '').toLowerCase()
+    rest = rest.slice(2)
+  }
+  if (!DELETE_COMMAND_WORDS.has(word)) return []
+  const windowsFlags = WINDOWS_FLAG_DELETE_WORDS.has(word)
+  const targets: string[] = []
+  let positionalOnly = false
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i]
+    if (!positionalOnly) {
+      if (token === '--') {
+        positionalOnly = true
+        continue
+      }
+      if (token.startsWith('-')) {
+        const lower = token.toLowerCase()
+        // Remove-Item's named path parameters consume the next token as the target.
+        if ((lower === '-path' || lower === '-literalpath') && i + 1 < rest.length) targets.push(rest[++i])
+        continue
+      }
+    }
+    if (/[|<>&]/.test(token)) break
+    if (token === '#' || token === '%%') continue
+    if (windowsFlags && /^\/[a-z0-9]+$/i.test(token)) continue
+    targets.push(token)
+  }
+  return targets
+}
+
+/** Whitespace/quote-aware token split of one command segment; backslashes are ordinary characters (Windows path separators). */
+function segmentTokens(segment: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let quote: "'" | '"' | undefined
+  for (const ch of segment) {
+    if (quote) {
+      if (ch === quote) {
+        quote = undefined
+        if (current) tokens.push(current)
+        current = ''
+      } else {
+        current += ch
+      }
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      continue
+    }
+    if (ch === ' ' || ch === '\t') {
+      if (current) tokens.push(current)
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current) tokens.push(current)
+  return tokens
+}
+
+/** Comparable shape of one deletion target: quotes and trailing separators stripped, separators unified, case-folded on Windows. */
+function normalizeTargetToken(token: string): string {
+  const stripped = token.replace(/^["']|["']+$/g, '').replace(/[\\/]+$/, '')
+  return stripped ? foldPathCase(normalizePath(stripped)) : ''
 }

@@ -38,6 +38,16 @@ describe('PersistableMap', () => {
     map.set('s2|b', 'y')
     expect([...map.keys()].filter((k) => k.startsWith('s1|'))).toEqual(['s1|a'])
   })
+
+  it('deleteByPrefix drops matching keys and flushes once', () => {
+    const store: Record<string, unknown> = { 's1|a': 1, 's1|b': 2, 's2|c': 3 }
+    const map = new PersistableMap<number>(memorySink(store))
+    map.deleteByPrefix('s1|')
+    expect(map.has('s1|a')).toBe(false)
+    expect(map.has('s1|b')).toBe(false)
+    expect(map.get('s2|c')).toBe(3)
+    expect(store).toEqual({ 's2|c': 3 })
+  })
 })
 
 describe('FileJsonSink', () => {
