@@ -113,7 +113,7 @@ describe('auto-guard init (tickets 02/03)', () => {
     expect(readFileSync(backupPath, 'utf8')).toBe(original)
   })
 
-  it('writes zcode hooks with node + dist args and preserves other config', async () => {
+  it('writes zcode hooks under hooks.events with enabled:true and preserves other config', async () => {
     const home = fakeHome()
     const deps = installerDeps(home)
     seedZcodeDist(home)
@@ -125,13 +125,53 @@ describe('auto-guard init (tickets 02/03)', () => {
 
     const doc = JSON.parse(readFileSync(join(home, '.zcode', 'cli', 'config.json'), 'utf8')) as {
       theme: string
-      hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string; args: string[] }> }>; SessionStart: unknown[] }
+      hooks: {
+        enabled: boolean
+        events: {
+          PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string; args: string[] }> }>
+          SessionStart: unknown[]
+        }
+      }
     }
     expect(doc.theme).toBe('dark')
-    expect(doc.hooks.PreToolUse[0]!.matcher).toBe('^(Bash|Read|Write|Edit|ApplyPatch)$')
-    expect(doc.hooks.PreToolUse[0]!.hooks[0]).toMatchObject({ command: 'node', args: [deps.paths!.zcode.distHookCli] })
-    expect(doc.hooks.SessionStart).toHaveLength(1)
+    // ZCode reads configuration-file hooks from hooks.events.<Event> only, and
+    // refuses the whole file over unknown `hooks` keys (v0.3.0 regression).
+    expect(doc.hooks.enabled).toBe(true)
+    expect(doc.hooks.events.PreToolUse[0]!.matcher).toBe('^(Bash|Read|Write|Edit|ApplyPatch)$')
+    expect(doc.hooks.events.PreToolUse[0]!.hooks[0]).toMatchObject({ command: 'node', args: [deps.paths!.zcode.distHookCli] })
+    expect(doc.hooks.events.SessionStart).toHaveLength(1)
     expect(result.output.join('\n')).toContain('新开 ZCode 会话')
+  })
+
+  it('zcode init repairs a v0.3.0-damaged config: appends under hooks.events and strips flat keys', async () => {
+    const home = fakeHome()
+    const deps = installerDeps(home)
+    seedZcodeDist(home)
+    mkdirSync(join(home, '.zcode', 'cli'), { recursive: true })
+    // Exactly what v0.3.0 left behind: entries at the wrong (flat) location,
+    // which makes ZCode reject the entire config file.
+    const damaged = {
+      hooks: {
+        enabled: true,
+        events: {},
+        PreToolUse: [{ matcher: 'x', hooks: [{ type: 'process', command: 'node', args: [deps.paths!.zcode.distHookCli] }] }],
+      },
+      theme: 'dark',
+    }
+    writeFileSync(join(home, '.zcode', 'cli', 'config.json'), JSON.stringify(damaged), 'utf8')
+
+    const result = await runCli(['init', '--host', 'zcode', '--yes'], { installer: deps })
+    expect(result.code).toBe(0)
+
+    const doc = JSON.parse(readFileSync(join(home, '.zcode', 'cli', 'config.json'), 'utf8')) as {
+      theme: string
+      hooks: { enabled: boolean; events: { PreToolUse: unknown[]; SessionStart: unknown[] }; PreToolUse?: unknown[] }
+    }
+    expect(doc.theme).toBe('dark')
+    expect(doc.hooks.enabled).toBe(true)
+    expect(doc.hooks.events.PreToolUse).toHaveLength(1)
+    expect(doc.hooks.events.SessionStart).toHaveLength(1)
+    expect(doc.hooks.PreToolUse).toBeUndefined()
   })
 
   it('is idempotent: second run skips, file content and backup mtime stay stable', async () => {

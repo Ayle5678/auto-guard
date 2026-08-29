@@ -67,6 +67,36 @@ describe('auto-guard remove (ticket 04)', () => {
     expect(doc.pi.extensions).toEqual(['mine.ts'])
   })
 
+  it('zcode structural remove strips events entries and legacy flat-hook garbage', async () => {
+    const home = fakeHome()
+    const deps = installerDeps(home)
+    mkdirSync(join(home, '.zcode', 'cli'), { recursive: true })
+    const configPath = join(home, '.zcode', 'cli', 'config.json')
+    const ours = (file: string) => ({ type: 'process', command: 'node', args: [join(home, 'pkg', 'host-zcode', 'dist', file)] })
+    const damaged = {
+      hooks: {
+        enabled: true,
+        events: { PreToolUse: [{ matcher: 'x', hooks: [ours('hook-cli.js')] }], SessionStart: [] },
+        // v0.3.0 leftovers at the flat location ZCode rejects.
+        PreToolUse: [{ matcher: 'x', hooks: [ours('hook-cli.js')] }],
+        SessionStart: [{ matcher: 'x', hooks: [ours('session-start.js')] }],
+      },
+      theme: 'dark',
+    }
+    writeFileSync(configPath, JSON.stringify(damaged), 'utf8')
+
+    const result = await runCli(['remove', '--host', 'zcode'], { installer: deps })
+    expect(result.code).toBe(0)
+    const doc = JSON.parse(readFileSync(configPath, 'utf8')) as {
+      theme: string
+      hooks: { enabled: boolean; events: { PreToolUse: unknown[]; SessionStart: unknown[] }; PreToolUse?: unknown[]; SessionStart?: unknown[] }
+    }
+    expect(doc.theme).toBe('dark')
+    expect(doc.hooks.events.PreToolUse).toHaveLength(0)
+    expect(doc.hooks.PreToolUse).toBeUndefined()
+    expect(doc.hooks.SessionStart).toBeUndefined()
+  })
+
   it('reports 未接入 and leaves files untouched when nothing is installed', async () => {
     const home = fakeHome()
     const deps = installerDeps(home)

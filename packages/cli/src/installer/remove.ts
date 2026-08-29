@@ -8,7 +8,7 @@
  * — user data survives uninstall by design (spec 0002).
  */
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { arrayAt, hasMarker, homePath, readJsonObject, type RunCommand } from './integration.ts'
+import { arrayAt, hasMarker, homePath, objectAt, readJsonObject, type RunCommand } from './integration.ts'
 import { message, type Lang, type MessageKey } from './i18n.ts'
 import type { HostProfile } from './profiles.ts'
 
@@ -75,6 +75,18 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
     const kept = arr.filter((el) => !hasMarker(el, op.markerSuffix))
     removed += arr.length - kept.length
     if (kept.length !== arr.length) arr.splice(0, arr.length, ...kept)
+  }
+  // Also reclaim entries a previous installer version wrote to wrong-location
+  // arrays (v0.3.0's flat ZCode hooks keys, which ZCode rejects wholesale).
+  for (const item of action.legacyCleanup ?? []) {
+    const parent = objectAt(record, item.path, false)
+    const key = item.path[item.path.length - 1]!
+    const arr = parent?.[key]
+    if (!parent || !Array.isArray(arr)) continue
+    const kept = arr.filter((el) => !hasMarker(el, item.markerSuffix))
+    removed += arr.length - kept.length
+    if (kept.length) parent[key] = kept
+    else delete parent[key]
   }
   if (removed === 0) {
     return { status: 'not-integrated', message: t('notIntegratedUntouched', { label: profile.label }) }

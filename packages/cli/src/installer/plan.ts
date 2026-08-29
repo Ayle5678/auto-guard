@@ -7,7 +7,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { arrayAt, defaultRunCommand, hasMarker, homePath, type RunCommand } from './integration.ts'
+import { arrayAt, defaultRunCommand, hasMarker, homePath, objectAt, type RunCommand } from './integration.ts'
 import { message, type Lang, type MessageKey } from './i18n.ts'
 import { renderTemplate, type HostProfile, type PackagePaths } from './profiles.ts'
 
@@ -100,6 +100,30 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
     arr.push(element)
     plan.diff.push(`+ ${JSON.stringify(element)}`)
     changed = true
+  }
+  for (const item of action.ensure ?? []) {
+    const parent = objectAt(doc, item.path, true)
+    if (!parent) {
+      plan.blocked = t('blockedNotObject', { file: action.file, path: item.path.join('.') })
+      return plan
+    }
+    const key = item.path[item.path.length - 1]!
+    if (parent[key] === item.value) continue
+    parent[key] = item.value
+    plan.diff.push(`+ ${item.path.join('.')} = ${JSON.stringify(item.value)}`)
+    changed = true
+  }
+  for (const item of action.legacyCleanup ?? []) {
+    const parent = objectAt(doc, item.path, false)
+    const key = item.path[item.path.length - 1]!
+    const arr = parent?.[key]
+    if (!parent || !Array.isArray(arr)) continue
+    const kept = arr.filter((el) => !hasMarker(el, item.markerSuffix))
+    if (kept.length === arr.length) continue
+    plan.diff.push(`- ${t('legacyCleanupDesc', { path: item.path.join('.'), count: arr.length - kept.length })}`)
+    changed = true
+    if (kept.length) parent[key] = kept
+    else delete parent[key]
   }
   if (!changed) {
     plan.skipped = t('planSkipped')

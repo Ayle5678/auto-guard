@@ -42,6 +42,10 @@ export interface JsonMergeAction {
     /** Normalized (`/`-separated) suffix identifying "this entry is ours". */
     markerSuffix: string
   }>
+  /** Scalar assignments ensured before the ops run (e.g. ZCode's `hooks.enabled`, off by default). */
+  ensure?: Array<{ path: string[]; value: unknown }>
+  /** Arrays at these paths hold our entries from an older, wrong-location installer version; init/remove strip marker-matched elements and drop empties. */
+  legacyCleanup?: Array<{ path: string[]; markerSuffix: string }>
   /** Tokens whose resolved paths must exist before writing (e.g. built dist entry points). */
   requiredTokens?: string[]
 }
@@ -118,9 +122,19 @@ export const PROFILES: readonly HostProfile[] = [
       kind: 'json-merge',
       file: '~/.zcode/cli/config.json',
       requiredTokens: ['${AUTO_GUARD_ZCODE_HOOK_CLI}', '${AUTO_GUARD_ZCODE_SESSION_START}'],
+      // Configuration-file hooks live under `hooks.events.<Event>` in ZCode
+      // (the outer `hooks` wrapper shape is plugin manifests only), and they
+      // run only when `hooks.enabled` is true — ZCode rejects any other key
+      // under `hooks`, so v0.3.0's flat `hooks.PreToolUse` entries both never
+      // fired and invalidated the whole file; legacyCleanup reclaims them.
+      ensure: [{ path: ['hooks', 'enabled'], value: true }],
       ops: [
-        { arrayPath: ['hooks', 'PreToolUse'], template: ZCODE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-zcode/dist/hook-cli.js' },
-        { arrayPath: ['hooks', 'SessionStart'], template: ZCODE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-zcode/dist/session-start.js' },
+        { arrayPath: ['hooks', 'events', 'PreToolUse'], template: ZCODE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-zcode/dist/hook-cli.js' },
+        { arrayPath: ['hooks', 'events', 'SessionStart'], template: ZCODE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-zcode/dist/session-start.js' },
+      ],
+      legacyCleanup: [
+        { path: ['hooks', 'PreToolUse'], markerSuffix: '/host-zcode/dist/hook-cli.js' },
+        { path: ['hooks', 'SessionStart'], markerSuffix: '/host-zcode/dist/session-start.js' },
       ],
     },
   },
@@ -158,6 +172,15 @@ export function validateProfile(profile: HostProfile): string[] {
       if (!op.arrayPath.length) errors.push('op.arrayPath 不能为空')
       if (!op.template) errors.push('op.template 不能为空')
       if (!op.markerSuffix) errors.push('op.markerSuffix 不能为空')
+    }
+    for (const item of action.ensure ?? []) {
+      if (!item.path.length) errors.push('ensure.path 不能为空')
+      if (item.value === undefined) errors.push('ensure.value 不能为 undefined')
+    }
+    for (const item of action.legacyCleanup ?? []) {
+      if (!item.path.length) errors.push('legacyCleanup.path 不能为空')
+      if (!item.markerSuffix) errors.push('legacyCleanup.markerSuffix 不能为空')
+      if (action.ops.some((op) => op.arrayPath.join('.') === item.path.join('.'))) errors.push(`legacyCleanup 与 op.arrayPath 重叠：${item.path.join('.')}`)
     }
     for (const token of action.requiredTokens ?? []) {
       if (!TOKENS[token]) errors.push(`requiredTokens 含未知 token：${token}`)

@@ -11,6 +11,7 @@
 
 - ZCode hooks **没有热重载**：写入成功后必须**新开 ZCode 会话**才加载。init 的完成摘要会提示这一点。
 - 新会话仍未生效：`auto-guard list` 看 ZCode 是否"已接入"；再确认写入的 `dist/hook-cli.js` 路径存在（缺失时 init 会拒绝并提示先构建（仓库内 `pnpm build`））。
+- ZCode 对配置文件 hooks 结构有硬校验：只认 `hooks.enabled` 与 `hooks.events.<事件>`，其它键（如 v0.3.0 误写的平铺 `hooks.PreToolUse`）会导致**整个 config.json 被拒绝加载**，ZCode 日志报 `hooks: Unrecognized keys`。升级到修复版后跑一次 `auto-guard init --host zcode --yes`，会自动迁到 `hooks.events.*` 并清理失效键。
 - 验证守卫是否在工作：新会话里跑一条会被守卫看到的命令，或 `auto-guard guard status`（需 `--config-root` 指到 `~/.zcode/auto-guard` 或让 CLI 自动探测）。
 
 ## 权限被宿主配置默认禁用

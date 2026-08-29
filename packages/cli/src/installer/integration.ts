@@ -18,7 +18,10 @@ export function homePath(home: string, profilePath: string): string {
 }
 
 function normalizePath(value: string): string {
-  return value.replaceAll('\\', '/').toLowerCase()
+  // JSON.stringify re-escapes each `\` of a native win32 path to `\\`, so a
+  // naive per-char swap yields doubled `/`; collapse runs to keep the suffix
+  // match stable across escaped and raw path forms.
+  return value.replaceAll('\\', '/').replace(/\/{2,}/g, '/').toLowerCase()
 }
 
 /** True when a raw array element (string or object) carries our marker. */
@@ -43,8 +46,23 @@ export function readJsonObject(targetFile: string, fileExists: (p: string) => bo
 
 /** Read the array at `arrayPath`; when `create`, missing parents/arrays are created in place. */
 export function arrayAt(doc: Record<string, unknown>, arrayPath: string[], create: boolean): unknown[] | undefined {
+  const parent = objectAt(doc, arrayPath, create)
+  if (!parent) return undefined
+  const last = arrayPath[arrayPath.length - 1]!
+  const arr = parent[last]
+  if (arr === undefined) {
+    if (!create) return undefined
+    parent[last] = []
+  } else if (!Array.isArray(arr)) {
+    return undefined
+  }
+  return parent[last] as unknown[]
+}
+
+/** Walk to the object at `path`'s leaf (the leaf itself is not visited); when `create`, missing parents are created in place. */
+export function objectAt(doc: Record<string, unknown>, path: string[], create: boolean): Record<string, unknown> | undefined {
   let node: Record<string, unknown> = doc
-  for (const key of arrayPath.slice(0, -1)) {
+  for (const key of path.slice(0, -1)) {
     const next = node[key]
     if (next === undefined) {
       if (!create) return undefined
@@ -54,15 +72,7 @@ export function arrayAt(doc: Record<string, unknown>, arrayPath: string[], creat
     }
     node = node[key] as Record<string, unknown>
   }
-  const last = arrayPath[arrayPath.length - 1]!
-  const arr = node[last]
-  if (arr === undefined) {
-    if (!create) return undefined
-    node[last] = []
-  } else if (!Array.isArray(arr)) {
-    return undefined
-  }
-  return node[last] as unknown[]
+  return node
 }
 
 export function jsonMergeStatus(targetFile: string, action: JsonMergeAction, fileExists: (p: string) => boolean): IntegrationStatus {
@@ -71,6 +81,13 @@ export function jsonMergeStatus(targetFile: string, action: JsonMergeAction, fil
   for (const op of action.ops) {
     const arr = arrayAt(read.doc, op.arrayPath, false)
     if (!arr || !arr.some((el) => hasMarker(el, op.markerSuffix))) return 'not-integrated'
+  }
+  // Our entries lingering at legacy (wrong-location) paths mean the config is
+  // still damaged (e.g. v0.3.0's flat ZCode keys, which ZCode rejects) — keep
+  // reporting not-integrated so init runs its repair instead of skipping.
+  for (const item of action.legacyCleanup ?? []) {
+    const arr = arrayAt(read.doc, item.path, false)
+    if (arr?.some((el) => hasMarker(el, item.markerSuffix))) return 'not-integrated'
   }
   return 'integrated'
 }

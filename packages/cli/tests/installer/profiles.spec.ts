@@ -41,7 +41,10 @@ describe('host profiles (ADR-0008)', () => {
     const zcode = profileById('zcode')!
     if (zcode.action.kind === 'json-merge') {
       expect(zcode.action.file).toBe('~/.zcode/cli/config.json')
-      expect(zcode.action.ops.map((op) => op.arrayPath.join('.'))).toEqual(['hooks.PreToolUse', 'hooks.SessionStart'])
+      // ZCode reads configuration-file hooks from hooks.events.<Event> only.
+      expect(zcode.action.ops.map((op) => op.arrayPath.join('.'))).toEqual(['hooks.events.PreToolUse', 'hooks.events.SessionStart'])
+      expect(zcode.action.ensure).toEqual([{ path: ['hooks', 'enabled'], value: true }])
+      expect(zcode.action.legacyCleanup?.map((item) => item.path.join('.'))).toEqual(['hooks.PreToolUse', 'hooks.SessionStart'])
     }
   })
 

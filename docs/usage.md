@@ -74,6 +74,7 @@ auto-guard init
 [ZCode] 将执行：
   · 备份 ~/.zcode/cli/config.json → C:\Users\me\.zcode\cli\config.json.auto-guard.bak
   · 写入 ~/.zcode/cli/config.json
+    + hooks.enabled = true
     + {"matcher":"^(Bash|Read|Write|Edit|ApplyPatch)$","hooks":[…]}
     + {"matcher":"^(startup|resume)$","hooks":[…]}
 确认写入 DeepSeek Harness？(y/N)：y
@@ -171,7 +172,7 @@ auto-guard remove --host pi --yes
 |---|---|---|---|
 | **dsh** | `~/.dsh/` 存在 **且** `dsh` 在 PATH | `dsh plugin --profile web add link:<host-dsh 包路径>`（原生插件通道，web 为 dsh 默认 profile） | 新会话 |
 | **pi** | `~/.pi/` 存在 **且** `pi` 在 PATH | `~/.pi/agent/settings.json` 的 `pi.extensions` 数组追加 host-pi 的 `src/index.ts`（jiti 直跑 TS，无需构建） | 新会话 |
-| **zcode** | `~/.zcode/cli/config.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-zcode>/dist/hook-cli.js` / `session-start.js`（需先 `pnpm build` 产出 dist，缺了 init 会拒绝并提示） | 新会话；**hooks 无热重载，必须新开 ZCode 会话** |
+| **zcode** | `~/.zcode/cli/config.json` 存在 | 该文件 `hooks.events.PreToolUse` / `hooks.events.SessionStart` 追加 `node <host-zcode>/dist/hook-cli.js` / `session-start.js`，并确保 `hooks.enabled: true`（配置文件 hooks 默认禁用；v0.3.0 误写在平铺 `hooks.PreToolUse` 等键下的条目会被 init/remove 自动清理——ZCode 对未知键会拒绝整个配置文件）（需先 `pnpm build` 产出 dist，缺了 init 会拒绝并提示） | 新会话；**hooks 无热重载，必须新开 ZCode 会话** |
 
 检测按「与」语义：标志文件单独命中即可，否则需要目录 + 可执行同时命中——只装了同名可执行文件不算，避免写进不存在的宿主。
 
