@@ -9,7 +9,7 @@ One decision engine, five thin host adapters:
 - **`@auto-guard/host-pi`** — Pi Coding Agent extension (`tool_call` / `user_bash`, four-state ask).
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin (one process per call, disk session state, decision history).
 - **`@auto-guard/host-claude`** — Claude Code PreToolUse hook adapter (settings.json hooks, NotebookEdit coverage, native confirmation box).
-- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask) — see [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md).
+- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md).
 - **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
 
 All five hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
@@ -142,6 +142,8 @@ Known coverage caveat (opencode, ADR-0011): your own permission rules that `allo
 - The plugin watches `permission.asked` events and spawns `node` per decision; the verdict maps allow→once, deny→reject, ask→no reply (native TUI handles once / always / reject).
 - Coverage caveat: permission rules that `allow` a pattern bypass the guard entirely — picking **always** in the TUI adds such a rule for the session; the guard's coverage equals the host's ask surface.
 - `auto-guard remove` keeps the inserted `"*": "ask"` rules (ownership cannot be distinguished) — delete them by hand for a fully clean uninstall.
+- **Semantic difference vs claude / zcode**: their PreToolUse hooks run outside the permission system, so full-access modes (bypassPermissions / full access) still get full-coverage review. OpenCode has no such channel — the guard lives **inside** the permission system, and the `"*": "ask"` rules are the guard's entry point. Do **not** change them to `allow`: no ask rules means no `permission.asked` events, and the guard goes blind (effectively uninstalled).
+- **Version anchor & maintenance stance**: this adapter was delivered against opencode 1.18.19 — at that version the `permission.ask` plugin hook had type definitions but was never dispatched by the host ([issue #7006](https://github.com/anomalyco/opencode/issues/7006); its implementation is kept for forward compatibility), and the actual channel, the `permission.asked` event, has an undocumented shape. **This project does not track newer opencode releases.** If an opencode upgrade breaks the guard (no review prompts / events stop firing), roll back or patch the adapter yourself. Forking it — or having an AI rework it against [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md) and the [new-host guide](docs/new-host.md) — is explicitly welcome; the integration logic is small and concentrated in `src/plugin.ts`.
 
 ## Install
 

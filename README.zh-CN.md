@@ -9,7 +9,7 @@
 - **`@auto-guard/host-pi`** — Pi Coding Agent 扩展（`tool_call` / `user_bash`，四态 ask）。
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook 插件（一次一进程、磁盘会话态、决策历史）。
 - **`@auto-guard/host-claude`** — Claude Code PreToolUse hook 适配层（settings.json hooks、NotebookEdit 覆盖、原生确认框）。
-- **`@auto-guard/host-opencode`** — OpenCode 权限系统适配层（插件监听 `permission.asked` 事件、每次裁决 spawn `node`、原生 TUI ask）——见 [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md)。
+- **`@auto-guard/host-opencode`** — OpenCode 权限系统适配层（插件监听 `permission.asked` 事件、每次裁决 spawn `node`、原生 TUI ask；守卫面 = 宿主 ask 面，非全量审查，详见[适配现状](#auto-guardhost-opencode--opencode-权限系统适配层)）——见 [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md)。
 - **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与安装器。
 
 五个宿主跑同一条管线、同一套默认值、同一套规则文件；不同的只是集成外壳（见[宿主适配层](#宿主适配层)）。
@@ -139,6 +139,8 @@
 - 插件监听 `permission.asked` 事件，每次裁决 spawn `node`；裁决映射 allow→once、deny→reject、ask→不答复（原生 TUI 负责一次 / 本会话总是 / 拒绝）。
 - 覆盖面说明：permission allow 规则放行的调用完全绕过守卫——TUI 选「本会话总是」即写入此类规则；守卫覆盖面等于宿主的 ask 面。
 - `auto-guard remove` 保留插入的 `"*": "ask"` 规则（无法区分归属）——彻底清理需手工删除。
+- **与 claude / zcode 的语义差异**：那两个宿主的 PreToolUse hook 独立于权限系统，宿主开完全放行（bypassPermissions / 完全访问）后守卫仍全量审查；opencode 没有这种通道，守卫挂在权限系统**内部**——`"*": "ask"` 就是守卫入口，**不要把它改成 allow**：没有 ask 规则就没有 `permission.asked` 事件，守卫全盲，等于没装。
+- **版本锚定与维护立场**：适配按 opencode 1.18.19 实测交付——当时 `permission.ask` 插件 hook 只有类型定义、宿主从不派发（[issue #7006](https://github.com/anomalyco/opencode/issues/7006)，其实现保留作前向兼容），实际通道 `permission.asked` 事件形状未文档化。**本项目不跟踪 opencode 的后续版本**：升级 opencode 后若守卫失效（不弹审查 / 事件不触发），请回退版本或自行修配。欢迎 fork 或让 AI 按 [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md) 与[接入指南](docs/new-host.md)改造适配层——改造成本不高，入口逻辑都收敛在 `src/plugin.ts`。
 
 ## 安装
 
