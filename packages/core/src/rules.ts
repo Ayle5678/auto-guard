@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { normalizeCommand, splitShellCommand } from './command.ts'
-import type { CommandCategory, PatternRule, RulesFile, StaticAllowGuard } from './types.ts'
+import type { CommandCategory, DirectoryDeleteGuard, PatternRule, RulesFile, StaticAllowGuard } from './types.ts'
 
 export const RULES_ROOT = 'defaults'
 export const DEFAULT_RULES_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', RULES_ROOT, 'rules.json')
@@ -61,6 +61,7 @@ export function mergeMissingRuleFields(defaults: RulesFile, user: RulesFile): bo
     'staticAllow',
     'hardDeny',
     'directoryDelete',
+    'directoryDeleteGuards',
     'userConfirmed',
     'cacheable',
     'alwaysReview',
@@ -163,6 +164,37 @@ export function staticAllowGuardHit(command: string, rules: RulesFile): StaticAl
   return rules.staticAllowGuards.find((guard) => matchStaticAllowGuard(command, guard))
 }
 
+/**
+ * True when a recursive-delete guard applies to a command (ADR-0012): anchored
+ * `when` + the recursive flag in any spelling. Short flag clusters decompose
+ * per letter (`-fr`, `-rF`, `-f -r` all carry `r`); long flags stay whole-word
+ * (`--recursive`, `--recursive=x`), so `--force` is never read as a cluster.
+ */
+export function matchDirectoryDeleteGuard(command: string, guard: DirectoryDeleteGuard): boolean {
+  if (!matchPattern(command, guard.when)) return false
+  const shortFlags = new Set(guard.shortFlags.map((flag) => flag.toLowerCase()))
+  const longFlags = new Set(guard.longFlags.map((flag) => `--${flag.toLowerCase()}`))
+  return commandTokens(command).some((token) => {
+    const normalizedToken = token.toLowerCase()
+    if (normalizedToken.startsWith('--')) {
+      const equalsIndex = normalizedToken.indexOf('=')
+      const name = equalsIndex > 0 ? normalizedToken.slice(0, equalsIndex) : normalizedToken
+      return longFlags.has(name)
+    }
+    if (normalizedToken.startsWith('-') && normalizedToken.length > 1) {
+      for (const letter of normalizedToken.slice(1)) {
+        if (shortFlags.has(letter)) return true
+      }
+    }
+    return false
+  })
+}
+
+/** Return the first recursive-delete guard a command trips. */
+export function directoryDeleteGuardHit(command: string, rules: RulesFile): DirectoryDeleteGuard | undefined {
+  return rules.directoryDeleteGuards.find((guard) => matchDirectoryDeleteGuard(command, guard))
+}
+
 function globToSearchRegExp(pattern: string): RegExp {
   // Same escaping as globToRegExp but without anchoring, so the pattern can be
   // found anywhere in a command — including inside quoted strings.
@@ -204,6 +236,12 @@ function classifySimple(command: string, rules: RulesFile): Classification {
 
   const directoryDelete = matchRule(normalized, rules.directoryDelete)
   if (directoryDelete) return { category: 'directory-delete', rule: directoryDelete }
+
+  // Recursive-delete invariant (ADR-0012): any spelling of a recursive flag
+  // behind a guard anchor is a directory delete, even when no enum pattern
+  // matches. Sits after the enum list and before always-review — stricter
+  // categories first; classifySimple's existing order is otherwise untouched.
+  if (directoryDeleteGuardHit(normalized, rules)) return { category: 'directory-delete' }
 
   const alwaysReview = matchRule(normalized, rules.alwaysReview)
   if (alwaysReview) return { category: 'always-review', rule: alwaysReview }

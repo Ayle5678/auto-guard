@@ -76,11 +76,29 @@ export interface StaticAllowGuard {
   reason?: string
 }
 
+/**
+ * Recursive-delete invariant guard (ADR-0012): when the anchor matches, a
+ * command carrying the flag in ANY spelling is a directory delete. Short flag
+ * clusters decompose per letter (`-fr` ⇒ f, r); long flags match whole-word
+ * (`--recursive`, `--recursive=x`).
+ */
+export interface DirectoryDeleteGuard {
+  /** Glob-style anchor, e.g. `rm *`; only matching commands are scanned. */
+  when: string
+  /** Single-letter short flags, e.g. `["r"]` — cluster letters are compared case-insensitively, so one entry covers `-r` and `-R`. */
+  shortFlags: string[]
+  /** Long flag names without the leading `--`, e.g. `["recursive"]`. */
+  longFlags: string[]
+  /** Human readable description of why this guard exists. */
+  reason?: string
+}
+
 export interface RulesFile {
   version: 1
   staticAllow: PatternRule[]
   hardDeny: PatternRule[]
   directoryDelete: PatternRule[]
+  directoryDeleteGuards: DirectoryDeleteGuard[]
   userConfirmed: PatternRule[]
   cacheable: PatternRule[]
   alwaysReview: PatternRule[]

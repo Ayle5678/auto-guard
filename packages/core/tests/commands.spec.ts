@@ -37,6 +37,7 @@ function makeRules(): RulesFile {
     staticAllow: [],
     hardDeny: [],
     directoryDelete: [],
+    directoryDeleteGuards: [],
     userConfirmed: [],
     cacheable: [],
     alwaysReview: [],

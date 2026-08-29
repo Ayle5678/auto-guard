@@ -7,8 +7,10 @@ import {
   classifyCommand,
   commandTokens,
   containsDangerousPattern,
+  directoryDeleteGuardHit,
   ensureDir,
   loadRules,
+  matchDirectoryDeleteGuard,
   matchPattern,
   matchStaticAllowGuard,
   provisionDefaultRulesFile,
@@ -240,6 +242,62 @@ describe('rules: compound matching', () => {
   })
 })
 
+describe('rules: recursive delete invariant guard', () => {
+  const rules = fixture()
+
+  it('classifies every recursive-flag spelling as directory-delete', () => {
+    for (const cmd of [
+      'rm -r x',
+      'rm -R x',
+      'rm -rf x',
+      'rm -fr x',
+      'rm -f -r x',
+      'rm -rF x',
+      'rm --recursive x',
+      'rm --recursive=maybe x',
+    ]) {
+      expect(classifyCommand(cmd, rules).category, cmd).toBe('directory-delete')
+    }
+  })
+
+  it('leaves plain file removal and non-rm commands alone', () => {
+    for (const cmd of ['rm x', 'rm -i x', 'git branch -r', 'echo "rm -r x"']) {
+      expect(classifyCommand(cmd, rules).category, cmd).not.toBe('directory-delete')
+    }
+  })
+
+  it('decomposes short flag clusters but matches long flags whole-word', () => {
+    const guard = rules.directoryDeleteGuards[0]
+    // A cluster containing r hits (staticAllowGuards precedent: `-describe` ≠ `-d`,
+    // but a recursive letter anywhere in the cluster is the invariant).
+    expect(matchDirectoryDeleteGuard('rm -urn x', guard)).toBe(true)
+    expect(matchDirectoryDeleteGuard('rm -rF x', guard)).toBe(true)
+    // Long flags never decompose: --force carries no recursive letter anyway.
+    expect(matchDirectoryDeleteGuard('rm --force x', guard)).toBe(false)
+    expect(matchDirectoryDeleteGuard('rm --recursive x', guard)).toBe(true)
+    expect(matchDirectoryDeleteGuard('rm --recursive=always x', guard)).toBe(true)
+    // The `when` anchor keeps other commands carrying -r out of the flow.
+    expect(matchDirectoryDeleteGuard('git branch -r', guard)).toBe(false)
+    expect(matchDirectoryDeleteGuard('echo "rm -r x"', guard)).toBe(false)
+  })
+
+  it('finds the first applicable guard in the rules file', () => {
+    expect(directoryDeleteGuardHit('rm -f -r x', rules)?.when).toBe('rm *')
+    expect(directoryDeleteGuardHit('rm x', rules)).toBeUndefined()
+  })
+
+  it('keeps the classifier precedence: hard-deny first, guard before always-review', () => {
+    expect(classifyCommand('rm -rf /', rules).category).toBe('hard-deny')
+    const guardCatchesWhatEnumsMiss = { ...rules, alwaysReview: [...rules.alwaysReview, { pattern: 'rm -f -r *', reason: 'later line of defense' }] }
+    expect(classifyCommand('rm -f -r x', guardCatchesWhatEnumsMiss).category).toBe('directory-delete')
+  })
+
+  it('propagates the guard through compounds and pipelines', () => {
+    expect(classifyCommand('ls && rm -r x', rules).category).toBe('directory-delete')
+    expect(classifyCommand('echo x | rm -fr ./dist', rules).category).toBe('directory-delete')
+  })
+})
+
 describe('rules: static allow guards', () => {
   const rules = fixture()
 
@@ -335,7 +393,7 @@ describe('rules: provisioning and self-heal', () => {
     const userPath = join(dir, 'rules.json')
     const defaultPath = join(dir, 'defaults.json')
     provisionDefaultRulesFile(defaultPath)
-    const empty: RulesFile = { version: 1, staticAllow: [], hardDeny: [], directoryDelete: [], userConfirmed: [], cacheable: [], alwaysReview: [], staticAllowGuards: [], sensitivePaths: [] }
+    const empty: RulesFile = { version: 1, staticAllow: [], hardDeny: [], directoryDelete: [], directoryDeleteGuards: [], userConfirmed: [], cacheable: [], alwaysReview: [], staticAllowGuards: [], sensitivePaths: [] }
     writeFileSync(userPath, JSON.stringify(empty))
     const loaded = loadRules(userPath, defaultPath)
     expect(loaded.staticAllow).toHaveLength(0)
@@ -346,7 +404,7 @@ describe('rules: provisioning and self-heal', () => {
     const userPath = join(dir, 'rules.json')
     const defaultPath = join(dir, 'defaults.json')
     provisionDefaultRulesFile(defaultPath)
-    const old: Omit<RulesFile, 'directoryDelete'> = {
+    const old: Omit<RulesFile, 'directoryDelete' | 'directoryDeleteGuards'> = {
       version: 1,
       staticAllow: [],
       hardDeny: [],
@@ -365,6 +423,42 @@ describe('rules: provisioning and self-heal', () => {
     expect(written.staticAllow).toHaveLength(0)
   })
 
+  it('ships the recursive delete guard in the factory defaults copy', () => {
+    const dir = tmp()
+    const defaultPath = join(dir, 'defaults.json')
+    provisionDefaultRulesFile(defaultPath)
+    const defaults = JSON.parse(readFileSync(defaultPath, 'utf8')) as RulesFile
+    expect(defaults.directoryDeleteGuards.length).toBeGreaterThan(0)
+    expect(defaults.directoryDeleteGuards[0]?.when).toBe('rm *')
+  })
+
+  it('backfills the recursive delete guard into an older config root', () => {
+    const dir = tmp()
+    const userPath = join(dir, 'rules.json')
+    const defaultPath = join(dir, 'defaults.json')
+    provisionDefaultRulesFile(defaultPath)
+    const oldDefaults: Omit<RulesFile, 'directoryDeleteGuards'> = {
+      version: 1,
+      staticAllow: [],
+      hardDeny: [],
+      directoryDelete: [],
+      userConfirmed: [],
+      cacheable: [],
+      alwaysReview: [],
+      staticAllowGuards: [],
+      sensitivePaths: [],
+    }
+    writeFileSync(defaultPath, JSON.stringify(oldDefaults))
+    writeFileSync(userPath, JSON.stringify({ version: 1 } as unknown as RulesFile))
+
+    const loaded = loadRules(userPath, defaultPath)
+    expect(loaded.directoryDeleteGuards.length).toBeGreaterThan(0)
+    const writtenDefaults = JSON.parse(readFileSync(defaultPath, 'utf8')) as RulesFile
+    expect(writtenDefaults.directoryDeleteGuards.length).toBeGreaterThan(0)
+    const writtenUser = JSON.parse(readFileSync(userPath, 'utf8')) as RulesFile
+    expect(writtenUser.directoryDeleteGuards.length).toBeGreaterThan(0)
+  })
+
   it('merges missing staticAllowGuards into an older user rules file and writes them back', () => {
     const dir = tmp()
     const userPath = join(dir, 'rules.json')
@@ -375,6 +469,7 @@ describe('rules: provisioning and self-heal', () => {
       staticAllow: [],
       hardDeny: [],
       directoryDelete: [],
+      directoryDeleteGuards: [],
       userConfirmed: [],
       cacheable: [],
       alwaysReview: [],
@@ -397,6 +492,7 @@ describe('rules: provisioning and self-heal', () => {
       staticAllow: [],
       hardDeny: [],
       directoryDelete: [],
+      directoryDeleteGuards: [],
       userConfirmed: [],
       cacheable: [],
       alwaysReview: [],
@@ -421,6 +517,7 @@ describe('rules: provisioning and self-heal', () => {
       staticAllow: [{ pattern: 'my-custom-allow', reason: 'from ~/.pi defaults' }],
       hardDeny: [],
       directoryDelete: [],
+      directoryDeleteGuards: [],
       userConfirmed: [],
       cacheable: [],
       alwaysReview: [],

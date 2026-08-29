@@ -546,6 +546,14 @@
       "reason": "Recursive delete needs agent reason and high review"
     }
   ],
+  "directoryDeleteGuards": [
+    {
+      "when": "rm *",
+      "shortFlags": ["r"],
+      "longFlags": ["recursive"],
+      "reason": "Recursive delete needs agent reason and high review"
+    }
+  ],
   "userConfirmed": [
     {
       "pattern": "git push",

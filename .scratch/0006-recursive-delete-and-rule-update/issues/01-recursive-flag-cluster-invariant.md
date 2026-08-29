@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 命中样例全绿：`rm -r x`、`rm -R x`、`rm -rf x`、`rm -fr x`、`rm -f -r x`、`rm -rF x`、`rm --recursive x`、`rm --recursive=... x` 全部归类目录删除
-- [ ] 不命中样例全绿：`rm x`、`rm -i x`、`git branch -r`、`echo "rm -r x"` 不触发目录删除类别
-- [ ] 守卫语义测试覆盖聚簇分解边界（对齐 staticAllowGuards 先例的 `-describe` ≠ `-d` 风格：如 `rm -urn x` 命中、`rm --force x` 不命中）
-- [ ] GuardService 端到端：`rm -f -r ./dir` 首次返回 deny + needsReason，持久缓存无该命令条目（先红后绿）
-- [ ] 分类器既有类别判定顺序与全部现有分类用例不回归
-- [ ] 出厂默认携带新字段；加载链对缺该字段的旧配置根自动补齐
+- [x] 命中样例全绿：`rm -r x`、`rm -R x`、`rm -rf x`、`rm -fr x`、`rm -f -r x`、`rm -rF x`、`rm --recursive x`、`rm --recursive=... x` 全部归类目录删除
+- [x] 不命中样例全绿：`rm x`、`rm -i x`、`git branch -r`、`echo "rm -r x"` 不触发目录删除类别
+- [x] 守卫语义测试覆盖聚簇分解边界（对齐 staticAllowGuards 先例的 `-describe` ≠ `-d` 风格：如 `rm -urn x` 命中、`rm --force x` 不命中）
+- [x] GuardService 端到端：`rm -f -r ./dir` 首次返回 deny + needsReason，持久缓存无该命令条目（先红后绿）
+- [x] 分类器既有类别判定顺序与全部现有分类用例不回归
+- [x] 出厂默认携带新字段；加载链对缺该字段的旧配置根自动补齐

@@ -1008,6 +1008,21 @@ describe('GuardService: directory delete review flow', () => {
     }
   })
 
+  it('routes recursive-flag arrangements the enums miss into the reason flow, uncached and unreviewed', async () => {
+    const { service, persistentCache, dir } = setup()
+    try {
+      const llm = (service as unknown as { llmReviewer: StubReviewer }).llmReviewer
+      const d = await service.decide(shell('rm -f -r ./dist'))
+      // First contact: one deterministic denial asking for [删除理由] — no LLM
+      // review, and nothing reaches the 30-day persistent cache.
+      expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(llm.calls).toHaveLength(0)
+      expect(persistentCache.get(buildWorkspaceKey('/workspace/a', 'rm -f -r ./dist'))).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('still denies when the retry carries no deletion reason', async () => {
     const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
     const { service, dir } = setup({ llm })

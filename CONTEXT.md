@@ -49,8 +49,11 @@ _Avoid_: 无人值守模式
 ## 规则
 
 **规则文件（Rules File）**:
-八类规则的 JSON 文件：staticAllow、hardDeny、directoryDelete、userConfirmed、cacheable、alwaysReview、staticAllowGuards、sensitivePaths。pattern 为大小写不敏感的 glob。
+九类规则的 JSON 文件：staticAllow、hardDeny、directoryDelete、directoryDeleteGuards、userConfirmed、cacheable、alwaysReview、staticAllowGuards、sensitivePaths。pattern 为大小写不敏感的 glob。
 _Avoid_: 规则库、黑白名单（泛指时）
+
+**递归删除守卫（directoryDeleteGuards）**:
+目录删除的不变式判定（ADR-0012）：`when` 锚定 glob + 递归 flag 描述（短 flag 聚簇按字母分解、长 flag 整词），命中即归 directory-delete 类别。与按拼写枚举的 directoryDelete 条目互补，枚举只作止血保留。
 
 **静态白名单（static-allow）**:
 毫秒级、不经 LLM 直接放行的命令模式（只读、版本查询、git 只读）。
