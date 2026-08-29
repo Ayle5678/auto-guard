@@ -1,6 +1,6 @@
 # auto-guard
 
-统一的多宿主命令审查守卫（auto-guard）——一个核心裁决引擎 + 每宿主薄适配层 + 安装器。合并自三个同源前代项目：`dsh-auto-guard`（DeepSeek Harness 插件）、`pi-auto-guard`（Pi 扩展）、`zcode-auto-guard`（ZCode PreToolUse hook 插件）。
+缓存式自动命令审查工具（auto-guard，Cached Auto Command Review）——一个核心裁决引擎 + 每宿主薄适配层 + 安装器。合并自三个同源前代项目：`dsh-auto-guard`（DeepSeek Harness 插件）、`pi-auto-guard`（Pi 扩展）、`zcode-auto-guard`（ZCode PreToolUse hook 插件）。
 
 ## Agent skills
 

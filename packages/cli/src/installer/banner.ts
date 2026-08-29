@@ -10,7 +10,8 @@
  * / CI / 测试下完全不输出，安装器的结构化输出保持可解析。
  */
 import { createRequire } from 'node:module'
-import { message, type Lang } from './i18n.ts'
+import { message } from './i18n.ts'
+import { HOST_IDS } from './profiles.ts'
 
 /** 逐行渐变（256 色），自上而下：亮青 → 蓝 → 紫。 */
 const GRADIENT = ['51', '45', '39', '33', '27', '21', '93'] as const
@@ -108,25 +109,23 @@ function cliVersion(): string {
   }
 }
 
-/** `bilingual`：语言未定（交互 init 的语言提问之前）时，tagline 双语并列。 */
-export type BannerLang = Lang | 'bilingual'
+/** 宿主清单行：从 HOST_IDS 派生，新增宿主自动跟上（不再手写、不会过时）。 */
+const hostList = (): string => `（适配 ${HOST_IDS.join(' / ')}）`
 
-const HOST_LIST = '（dsh / pi / zcode）'
-
-const guardName = (lang: BannerLang): string => {
-  if (lang !== 'bilingual') return message(lang, 'bannerGuardName')
-  const en = message('en', 'bannerGuardName')
-  return `${message('zh', 'bannerGuardName')} / ${en.charAt(0).toUpperCase()}${en.slice(1)}`
-}
-
-/** 纯函数：返回带头图的行数组（含 ANSI 码；noColor 时不加色）。tagline 跟随语言或双语。 */
-export function renderBanner(noColor = false, lang: BannerLang = 'zh'): string[] {
+/**
+ * 纯函数：返回带头图的行数组（含 ANSI 码；noColor 时不加色）。tagline 固定四行：
+ * 包名版本 / 中文名 / 英文名 / 宿主清单 —— 名字两行天然双语，不随语言切换。
+ */
+export function renderBanner(noColor = false): string[] {
   const rows: string[] = ['']
   for (let r = 0; r < GLYPH_H + 1; r++) {
     rows.push(WORDS.map((word) => word.map((ch) => renderGridRow(LETTER_GRIDS[ch]!, r, noColor)).join(LETTER_GAP)).join(WORD_GAP).replace(/\s+$/, ''))
   }
-  const tagline = `  auto-guard v${cliVersion()} — ${guardName(lang)}${HOST_LIST}`
-  rows.push(noColor ? tagline : `  \u001b[2mauto-guard v${cliVersion()} — ${guardName(lang)}${HOST_LIST}\u001b[0m`, '')
+  const taglineLines = [`auto-guard v${cliVersion()}`, message('zh', 'bannerGuardName'), message('en', 'bannerGuardName'), hostList()]
+  for (const line of taglineLines) {
+    rows.push(noColor ? `  ${line}` : `  \u001b[2m${line}\u001b[0m`)
+  }
+  rows.push('')
   return rows
 }
 
@@ -135,8 +134,6 @@ export interface BannerOptions {
   enabled?: boolean
   /** NO_COLOR 场景退化显示（测试注入；缺省读环境变量）。 */
   noColor?: boolean
-  /** tagline 语言（缺省 zh；'bilingual' 用于语言提问之前）。 */
-  lang?: BannerLang
   /** 输出目标（测试注入；缺省 process.stdout）。 */
   write?: (text: string) => void
 }
@@ -147,5 +144,5 @@ export function showBanner(options: BannerOptions = {}): void {
   if (!enabled) return
   const noColor = options.noColor ?? Boolean(process.env.NO_COLOR)
   const write = options.write ?? ((text: string) => process.stdout.write(text))
-  write(`${renderBanner(noColor, options.lang ?? 'zh').join('\n')}\n`)
+  write(`${renderBanner(noColor).join('\n')}\n`)
 }

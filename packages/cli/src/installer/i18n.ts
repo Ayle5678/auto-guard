@@ -99,7 +99,7 @@ const ZH = {
   removedKeepPermission: '；permission 中插入的 "*" 规则保留（无法区分归属，如需清除请手工删除）',
   permissionAskInserted: '+ permission.{tool}.* = "{action}"（插入首位，既有规则保持优先）',
   permissionAskGlobalSkip: '~ permission.{tool} 已是全局动作 {value}，跳过（该工具不经守卫）',
-  bannerGuardName: '多宿主命令审查守卫',
+  bannerGuardName: '缓存式自动命令审查',
   statusMessageReviewing: '🛡️ auto-guard 安全审查中…',
   statusMessageSessionInit: '🛡️ auto-guard 会话初始化',
 } as const
@@ -189,7 +189,7 @@ const EN: Record<MessageKey, string> = {
   removedKeepPermission: ' (the "*" rules inserted under permission are kept — ownership cannot be distinguished; remove them by hand if needed)',
   permissionAskInserted: '+ permission.{tool}.* = "{action}" (inserted first; existing rules keep priority)',
   permissionAskGlobalSkip: '~ permission.{tool} is already a global action {value}; skipped (this tool bypasses the guard)',
-  bannerGuardName: 'multi-host command review guard',
+  bannerGuardName: 'Cached Auto Command Review',
   statusMessageReviewing: '🛡️ auto-guard reviewing…',
   statusMessageSessionInit: '🛡️ auto-guard session init',
 }

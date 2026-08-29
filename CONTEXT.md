@@ -1,6 +1,6 @@
 # auto-guard
 
-AI 编码 agent 的命令审查守卫：在宿主工具执行命令或读写文件之前，用规则、记忆与 LLM 裁决自动给出 allow / deny / ask 的安全网。一个核心裁决引擎服务多个宿主（DSH、Pi、ZCode、Claude Code、OpenCode），每宿主一层薄适配。本文件是全域唯一术语表；三前代项目（dsh-auto-guard / pi-auto-guard / zcode-auto-guard）的术语表由本文吸收取代。
+AI 编码 agent 的缓存式自动命令审查工具（Cached Auto Command Review）：在宿主工具执行命令或读写文件之前，用规则、记忆与 LLM 裁决自动给出 allow / deny / ask 的安全网。一个核心裁决引擎服务多个宿主（DSH、Pi、ZCode、Claude Code、OpenCode），每宿主一层薄适配。本文件是全域唯一术语表；三前代项目（dsh-auto-guard / pi-auto-guard / zcode-auto-guard）的术语表由本文吸收取代。
 
 ## 宿主与适配
 

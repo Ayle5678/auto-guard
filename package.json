@@ -2,7 +2,7 @@
   "name": "auto-guard",
   "version": "0.3.0",
   "private": true,
-  "description": "Unified multi-host command review guard: one decision engine + thin host adapters + installer.",
+  "description": "Cached auto command review (缓存式自动命令审查): one decision engine + thin host adapters + installer.",
   "license": "MIT",
   "type": "module",
   "engines": {

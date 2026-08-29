@@ -20,7 +20,7 @@ describe('init banner', () => {
   it('renders seven solid block-letter rows with double-line extrusion and a version tagline', () => {
     const plain = renderBanner(true)
     const content = plain.filter((r) => r.trim() !== '')
-    expect(content.length).toBe(9) // 7 letter rows + 1 extrusion row + tagline
+    expect(content.length).toBe(12) // 7 letter rows + 1 extrusion row + 4 tagline lines
     expect(plain[1]).toContain('████╗')
     expect(plain[4]).toContain('████████║') // A crossbar with right edge
     expect(plain[8]).toContain('╚═╝') // closed stroke feet
@@ -37,7 +37,9 @@ describe('init banner', () => {
     const guardCol = plain.slice(1, 9).map((r) => r.slice(48, 50))
     // G col0: empty top row, solid stroke rows, underside foot `╚═`, empty extrusion row.
     expect(guardCol).toEqual(['  ', '██', '██', '██', '██', '██', '╚═', '  '])
-    expect(plain.join('\n')).toContain('多宿主命令审查守卫')
+    expect(plain.join('\n')).toContain('缓存式自动命令审查')
+    expect(plain.join('\n')).toContain('Cached Auto Command Review')
+    expect(plain.join('\n')).toContain('（适配 dsh / pi / zcode / claude / opencode）')
     expect(plain.join('\n')).toContain('auto-guard v')
   })
 
@@ -49,7 +51,7 @@ describe('init banner', () => {
     const all = colored.join('\n')
     expect(all).not.toContain('\u001b[38;5;196m') // no rainbow red
     expect(all).not.toContain('\u001b[38;5;240m') // no grey shadow pass
-    expect(all).toContain('多宿主命令审查守卫')
+    expect(all).toContain('缓存式自动命令审查')
   })
 
   it('noColor variant strips every ANSI escape', () => {
@@ -59,14 +61,11 @@ describe('init banner', () => {
     expect(text).toContain('auto-guard v')
   })
 
-  it('tagline follows the requested language (default zh); bilingual before the prompt', () => {
-    expect(renderBanner(true).join('\n')).toContain('多宿主命令审查守卫')
-    expect(renderBanner(true, 'zh').join('\n')).toContain('多宿主命令审查守卫')
-    const en = renderBanner(true, 'en').join('\n')
-    expect(en).toContain('review guard')
-    expect(en).not.toContain('多宿主')
-    const bi = renderBanner(true, 'bilingual').join('\n')
-    expect(bi).toContain('多宿主命令审查守卫 / Multi-host command review guard')
+  it('tagline is fixed bilingual: zh and en name lines plus the five-host list', () => {
+    const text = renderBanner(true).join('\n')
+    expect(text).toContain('缓存式自动命令审查')
+    expect(text).toContain('Cached Auto Command Review')
+    expect(text).toContain('（适配 dsh / pi / zcode / claude / opencode）')
   })
 
   it('interactive init shows the banner before the language prompt; unpinned tagline is bilingual', async () => {
@@ -85,7 +84,8 @@ describe('init banner', () => {
     const result = await runCli(['init'], { installer: deps })
     expect(result.code).toBe(2) // nothing detected under the fake home
     expect(events[0]).toContain('██')
-    expect(events[0]).toContain('多宿主命令审查守卫 / Multi-host command review guard')
+    expect(events[0]).toContain('缓存式自动命令审查')
+    expect(events[0]).toContain('Cached Auto Command Review')
     expect(events[1]).toContain('Select language')
   })
 

@@ -12,7 +12,7 @@
 
 ## Consequences
 
-- 头图永远第一屏：交互 init 的 tagline 在语言未知时双语并列（`多宿主命令审查守卫 / Multi-host command review guard`），语言固定（flag/env）或已选后按该语言渲染；语言提问本身也固定双语（此刻语言未知）。
+- 头图永远第一屏：tagline 名字固定中英双行并列（`缓存式自动命令审查 / Cached Auto Command Review`），不随语言渲染变化（初版曾按语言渲染，0.3.x 改名时固定为双行）；语言提问本身也固定双语（此刻语言未知）。
 - 纯函数模块（`plan` / `remove` / `detect` / `interactive`）通过 options 接收 `lang`（缺省 `zh`），文案仍是各自函数的产出——目录只管翻译，不管流程。
 - profile 的 `sessionNote` 从中文字面量改为消息键（`validateProfile` 校验键存在），新增语言 = 新增一份目录，不动 profile 数据。
 - 「无效 `--lang`」报错在语言未知之前发生，固定双语一行。

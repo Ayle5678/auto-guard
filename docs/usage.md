@@ -1,6 +1,6 @@
 # auto-guard 使用手册
 
-auto-guard 是多宿主命令审查守卫：在你的 AI 编码 agent 执行命令或读写文件**之前**，按静态规则、缓存、学习规则、审计历史和可选 LLM 审查给出 **allow / deny / ask** 裁决。本手册覆盖全部命令行用法；概念与架构见 [README](../README.zh-CN.md)，装不上/不生效见[故障排查](troubleshooting.md)。
+auto-guard 是缓存式自动命令审查工具（Cached Auto Command Review）：在你的 AI 编码 agent 执行命令或读写文件**之前**，按静态规则、缓存、学习规则、审计历史和可选 LLM 审查给出 **allow / deny / ask** 裁决。本手册覆盖全部命令行用法；概念与架构见 [README](../README.zh-CN.md)，装不上/不生效见[故障排查](troubleshooting.md)。
 
 ---
 
@@ -38,14 +38,14 @@ auto-guard init
 
 流程六步：
 
-0. **头图**：交互终端下先打印青蓝紫渐变块状大字；此刻语言未定，tagline 为双语（`多宿主命令审查守卫 / Multi-host command review guard`）。
+0. **头图**：交互终端下先打印青蓝紫渐变块状大字；tagline 固定四行——包名版本、中文名、英文名、宿主清单（名字两行天然双语，不随语言切换）。
 1. **选语言**：双语提问「请选择语言 / Select language」，输入 `1` 中文（默认，回车即选）、`2` English；之后的所有提示跟随所选语言。脚本 / CI 可用 `--lang` 或环境变量 `AUTO_GUARD_LANG` 跳过提问（见 2.2 / 2.5）。
 2. **扫描**：按各宿主特征（目录 / 标志文件 / PATH 上的可执行文件）检测本机已装的宿主。
 3. **勾选**：复选框列表，已检测到的默认勾选；输入序号可切换，回车确认。手动勾选未检测到的宿主时会显示写入目标并要求二次确认（防误装）。
 4. **预览 + 写入**：每宿主展示将执行的步骤和 diff 摘要 → 确认 → 备份原文件为 `*.auto-guard.bak` → 写入 → 读回校验。
 5. **汇总**：装了什么、如何验证、如何卸载。
 
-交互示例（dsh 与 zcode 已装、pi 未装；TTY 下先进头图，tagline 双语，随后问语言）：
+交互示例（dsh 与 zcode 已装、其余未装；TTY 下先进头图，tagline 固定中英双行，随后问语言）：
 
 ```
   ████╗     ██╗   ██╗   ██████╗     ████╗         ██████╗   ██╗   ██╗     ████╗     ██████╗     ██████╗
@@ -56,7 +56,10 @@ auto-guard init
 ██║   ██║   ██║   ██║     ██║     ██║   ██║     ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║
 ██║   ██║   ╚═████╔═╝     ██║     ╚═████╔═╝     ╚═████╔═╝   ╚═████╔═╝   ██║   ██║   ██║   ██║   ██████╔═╝
 ╚═╝   ╚═╝     ╚═══╝       ╚═╝       ╚═══╝         ╚═══╝       ╚═══╝     ╚═╝   ╚═╝   ╚═╝   ╚═╝   ╚═════╝
-  auto-guard v0.3.0 — 多宿主命令审查守卫 / Multi-host command review guard（dsh / pi / zcode）
+  auto-guard v0.3.0
+  缓存式自动命令审查
+  Cached Auto Command Review
+  （适配 dsh / pi / zcode / claude / opencode）
 
 请选择语言 / Select language:
   1. 中文 (Chinese)
@@ -66,7 +69,9 @@ auto-guard init
 检测到以下宿主，选择要接入的（已检测到的默认勾选）：
   [x] 1. DeepSeek Harness （存在 ~/.dsh；找到可执行文件 dsh）
   [ ] 2. Pi Coding Agent （未检测到）
-  [x] 3. ZCode （存在 ~/.zcode/cli/config.json）
+  [x] 3. ZCode （存在 ~/.zcode/cli/config.json；存在 ~/.zcode）
+  [ ] 4. Claude Code （未检测到）
+  [ ] 5. OpenCode （未检测到）
 回车确认默认勾选，或输入序号切换（如 1,3）：
 ⏎
 [DeepSeek Harness] 将执行：

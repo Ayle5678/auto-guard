@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { machineConfigPath, readMachineLang, writeMachineLang } from '@auto-guard/core'
-import { showBanner, type BannerLang } from './banner.ts'
+import { showBanner } from './banner.ts'
 import { detectHosts } from './detect.ts'
 import { envLang, invalidLangMessage, message, normalizeLang, type Lang, type MessageKey } from './i18n.ts'
 import { isConfirmed, promptHostSelection, promptLanguage } from './interactive.ts'
@@ -190,12 +190,11 @@ async function runInit(flags: InstallerFlags, deps: InstallerDeps): Promise<Inst
   const machineLang = readMachineLang(machineConfigPath(home))
   const interactiveAsk = Boolean(tty && readLine) && !flags.lang && !envLang() && !machineLang
 
-  // The banner leads: it is the first thing any run shows. Before the
-  // language prompt resolves, its tagline is bilingual; once pinned or
-  // resolved, it renders in that language.
+  // The banner leads: it is the first thing any run shows. Its tagline is
+  // fixed bilingual (zh + en name lines), so it renders identically before
+  // and after the language prompt resolves.
   const pinned = flags.lang ?? envLang()
-  const bannerLang: BannerLang = pinned ?? machineLang ?? (interactiveAsk ? 'bilingual' : 'zh')
-  showBanner({ enabled: flags.banner ?? deps.banner, lang: bannerLang, write: deps.writeOut })
+  showBanner({ enabled: flags.banner ?? deps.banner, write: deps.writeOut })
 
   let lang: Lang
   if (pinned) {
