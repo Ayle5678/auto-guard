@@ -66,3 +66,16 @@
 
 **Q17 "细节按最新"的具体清单？**
 ➡️ 自答：timeoutMs 3000→**8000**（zcode）；审计 SQLCipher（dsh 0.2.0）；学习规则 **cacheable-only** 加固与加载期去重（dsh/pi 0.1.3+）；管道叶子确定性放行、shell 敏感路径守卫（dsh 0005）；决策历史 + guard recent + hitDetail（zcode HEAD）；加密 set-key 三步向导（zcode）；headless 移除 dsh 遗留 headlessMode 字段以外的分歧；通知默认 allow=page / deny=ask=context。
+
+## Round 6 — 递归删除与规则升级（2026-08-29 事后补，Qoder 实测发现裸 rm -r 缺口）
+
+**Q18 裸 `rm -r`（无 -f）为什么绕过了目录删除复核？怎么修？**
+➡️ 自答：`directoryDelete` 默认只枚举了 `rm -rf *` / `rm -fr *` 等拼写，裸 `rm -r` 不匹配任何类别落 `unknown` → LLM low-risk 放行 → 写 30 天持久缓存，重放免审（缓存文件实测坐实）。止血：`directoryDelete` 与 `alwaysReview` 补 `rm -r *` / `rm --recursive *`（glob 大小写不敏感连带 `-R`），回归测试钉死「裸 rm -r 走理由流、不写持久缓存」。长期判定语义转**不变式**：rm + 任意拼写递归 flag ⇒ directory-delete，落地为 staticAllowGuards 式 when+flag 机制加**短 flag 聚簇分解**（`-rf` 按字母分解含 `r` 即命中），数据仍住 rules.json（ADR-0012）。
+拒绝项：继续纯枚举（`rm -f -r`、`rm -rF` 排列发散，已经漏过一次）。
+
+**Q19 递归删除判定要不要上 AST / shell 解析器？**
+➡️ 自答：**不要**。core 零 npm 运行时依赖（ADR-0002）不容解析器；这是词汇判定（命令词挂没挂递归 flag）不是句法判定，AST 后仍要遍历取同样的 token 事实；解析失败照样要 LLM 兜底；shell 分词/展开使解析树 ≠ 执行语义（`X='-rf'; rm $X dir`），那类本就归变量替换检测 → LLM。结构危险场景的既有出路（引号感知拆分、替换检测、送 LLM）已是正确粒度。
+
+**Q20 新出厂规则如何到达存量安装？运行时自动合并吗？**
+➡️ 自答：**不自动合并，维持「用户字段整体胜出 + 只补缺失顶层字段」**，它是 ADR-0008 显式写入的一致推论（静默改写用户规则违背显式性，且无墓碑防「故意删除的模式复活」——注意 rules.json 常是全量数组而非稀疏覆盖，本次实测坐实）。升级走 init 显式步骤：检测出厂默认含本地缺失模式 → diff 预览 → 确认后幂等追加 + 去重 + `*.auto-guard.bak` 备份（ADR-0013）。本次三宿主六份文件的手工同步就是该流程的首次人工执行。
+拒绝项：加载期自动追加（魔法 + 墓碑语义）；「重装即升级」的说法（播种对已存在文件是 no-op，说法与行为不符）。

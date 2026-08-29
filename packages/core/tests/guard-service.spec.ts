@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildSessionKey, PersistentCache, SessionLruCache } from '../src/cache.ts'
+import { buildSessionKey, buildWorkspaceKey, PersistentCache, SessionLruCache } from '../src/cache.ts'
 import { FileTracker } from '../src/file-tracker.ts'
 import { GuardService, prepareDeletionMarker } from '../src/guard-service.ts'
 import { loadRules } from '../src/rules.ts'
@@ -990,6 +990,19 @@ describe('GuardService: directory delete review flow', () => {
       const d = await service.decide(shell('cmd /c rd /s /q .\\dir'))
       expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
       expect(llm.calls).toHaveLength(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('routes bare rm -r into the reason flow instead of the cacheable unknown path', async () => {
+    const { service, persistentCache, dir } = setup()
+    try {
+      const d = await service.decide(shell('rm -r .tmp-ag-test/delete-me'))
+      expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete', needsReason: true })
+      expect(
+        persistentCache.get(buildWorkspaceKey('/workspace/a', 'rm -r .tmp-ag-test/delete-me')),
+      ).toBeUndefined()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

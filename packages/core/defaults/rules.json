@@ -536,6 +536,14 @@
     {
       "pattern": "rm -fr *",
       "reason": "Recursive delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rm -r *",
+      "reason": "Recursive delete needs agent reason and high review"
+    },
+    {
+      "pattern": "rm --recursive *",
+      "reason": "Recursive delete needs agent reason and high review"
     }
   ],
   "userConfirmed": [
@@ -565,6 +573,14 @@
   "alwaysReview": [
     {
       "pattern": "rm -rf *",
+      "reason": "Recursive delete always needs review"
+    },
+    {
+      "pattern": "rm -r *",
+      "reason": "Recursive delete always needs review"
+    },
+    {
+      "pattern": "rm --recursive *",
       "reason": "Recursive delete always needs review"
     },
     {

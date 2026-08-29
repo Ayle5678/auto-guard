@@ -137,6 +137,13 @@ describe('rules: classification', () => {
     expect(classifyCommand('Remove-Item -Recurse -Force .\\dir', rules).category).toBe('directory-delete')
     expect(classifyCommand('[System.IO.Directory]::Delete("C:\\dir", $true)', rules).category).toBe('directory-delete')
     expect(classifyCommand('rm -rf ./dist', rules).category).toBe('directory-delete')
+    // Bare recursive rm (no -f) deletes directories just as surely; it must
+    // reach the reason flow instead of the cacheable unknown path.
+    expect(classifyCommand('rm -r .tmp-ag-test/delete-me', rules).category).toBe('directory-delete')
+    expect(classifyCommand('rm -R ./dist', rules).category).toBe('directory-delete')
+    expect(classifyCommand('rm --recursive ./dist', rules).category).toBe('directory-delete')
+    // Plain file removal is not a directory delete.
+    expect(classifyCommand('rm notes.txt', rules).category).not.toBe('directory-delete')
   })
 
   it('classifies dynamic execution and dependency installs as always-review', () => {
