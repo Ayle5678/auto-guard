@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
+    "review-loop": "node packages/conformance/review-loop.mjs",
     "smoke": "node scripts/smoke/smoke-zcode.mjs && node scripts/smoke/smoke-pi.mjs && node scripts/smoke/smoke-dsh.mjs && node scripts/smoke/smoke-claude.mjs && node scripts/smoke/smoke-opencode.mjs && node scripts/smoke/smoke-qoder.mjs && node scripts/smoke/smoke-lang.mjs"
   }
 }
