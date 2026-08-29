@@ -11,6 +11,7 @@ const paths: PackagePaths = {
   dsh: { packageDir: 'C:/pkg/host-dsh' },
   claude: { distHookCli: 'C:/pkg/host-claude/dist/hook-cli.js', distSessionStart: 'C:/pkg/host-claude/dist/session-start.js' },
   opencode: { distPluginDir: 'C:/pkg/host-opencode/dist' },
+  qoder: { distHookCli: 'C:/pkg/host-qoder/dist/hook-cli.js', distSessionStart: 'C:/pkg/host-qoder/dist/session-start.js' },
 }
 
 describe('buildInitPlan as a pure function (spec 0002 Testing Decisions)', () => {

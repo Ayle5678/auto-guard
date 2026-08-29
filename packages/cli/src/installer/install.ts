@@ -69,6 +69,10 @@ export function resolvePackagePaths(): PackagePaths {
     // opencode loads the plugin from the dist directory (index.js entry);
     // the directory also carries hook-cli.js spawned per decision (ADR-0011).
     opencode: { distPluginDir: join(dir('@auto-guard/host-opencode'), 'dist') },
+    qoder: {
+      distHookCli: join(dir('@auto-guard/host-qoder'), 'dist', 'hook-cli.js'),
+      distSessionStart: join(dir('@auto-guard/host-qoder'), 'dist', 'session-start.js'),
+    },
   }
 }
 

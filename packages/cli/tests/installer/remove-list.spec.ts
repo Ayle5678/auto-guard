@@ -33,6 +33,10 @@ function installerDeps(home: string): InstallerDeps {
         distSessionStart: join(home, 'pkg', 'host-claude', 'dist', 'session-start.js'),
       },
       opencode: { distPluginDir: join(home, 'pkg', 'host-opencode', 'dist') },
+      qoder: {
+        distHookCli: join(home, 'pkg', 'host-qoder', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-qoder', 'dist', 'session-start.js'),
+      },
     },
   }
 }
@@ -197,6 +201,31 @@ describe('auto-guard remove (ticket 04)', () => {
     expect(existsSync(`${settingsPath}.auto-guard.bak`)).toBe(true)
 
     const remove = await runCli(['remove', '--host', 'claude'], { installer: deps })
+    expect(remove.code).toBe(0)
+    expect(readFileSync(settingsPath, 'utf8')).toBe(original)
+  })
+
+  it('qoder init → remove round-trips settings.json with user hooks preserved', async () => {
+    const home = fakeHome()
+    const deps = { ...installerDeps(home), hasExecutable: (exe: string) => exe === 'qoder' }
+    mkdirSync(join(home, '.qoder'), { recursive: true })
+    // requiredTokens must point at existing built artifacts.
+    mkdirSync(join(home, 'pkg', 'host-qoder', 'dist'), { recursive: true })
+    writeFileSync(join(home, 'pkg', 'host-qoder', 'dist', 'hook-cli.js'), '', 'utf8')
+    writeFileSync(join(home, 'pkg', 'host-qoder', 'dist', 'session-start.js'), '', 'utf8')
+    const original = '{"hooks":{"PreToolUse":[{"matcher":"Grep","hooks":[{"type":"command","command":"mine.sh"}]}]}}'
+    const settingsPath = join(home, '.qoder', 'settings.json')
+    writeFileSync(settingsPath, original, 'utf8')
+
+    const init = await runCli(['init', '--host', 'qoder', '--yes'], { installer: deps })
+    expect(init.code).toBe(0)
+    expect(init.output.join('\n')).toContain('新开 Qoder 会话')
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as { hooks: { PreToolUse: unknown[]; SessionStart: unknown[] } }
+    expect(written.hooks.PreToolUse).toHaveLength(2)
+    expect(written.hooks.SessionStart).toHaveLength(1)
+    expect(existsSync(`${settingsPath}.auto-guard.bak`)).toBe(true)
+
+    const remove = await runCli(['remove', '--host', 'qoder'], { installer: deps })
     expect(remove.code).toBe(0)
     expect(readFileSync(settingsPath, 'utf8')).toBe(original)
   })

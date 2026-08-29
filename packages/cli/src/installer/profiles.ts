@@ -13,9 +13,9 @@
  */
 import { isMessageKey, message, type Lang, type MessageKey } from './i18n.ts'
 
-export type HostId = 'dsh' | 'pi' | 'zcode' | 'claude' | 'opencode'
+export type HostId = 'dsh' | 'pi' | 'zcode' | 'claude' | 'opencode' | 'qoder'
 
-export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode', 'claude', 'opencode']
+export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder']
 
 /**
  * Entry templates: a fixed JSON string, or a per-language renderer (the
@@ -31,6 +31,7 @@ export interface PackagePaths {
   dsh: { packageDir: string }
   claude: { distHookCli: string; distSessionStart: string }
   opencode: { distPluginDir: string }
+  qoder: { distHookCli: string; distSessionStart: string }
 }
 
 export interface DetectionSpec {
@@ -126,6 +127,17 @@ const zcodeSessionStartTemplate = (statusMessage: string): string =>
 // commands run under Git Bash on Windows, so quoted forward-slash paths work.
 const CLAUDE_PRETOOLUSE_TEMPLATE = `{"matcher":"^(Bash|Read|Write|Edit|NotebookEdit)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CLAUDE_HOOK_CLI}\\"","timeout":90}]}`
 const CLAUDE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CLAUDE_SESSION_START}\\"","timeout":30}]}`
+
+// Qoder settings.json hook dialect (docs.qoder.com/extensions/hooks — the
+// Claude-compatible one, unlike the CLI's nested decision.behavior form): the
+// same "command" + timeout-SECONDS shape as Claude Code. Qoder names tools in
+// two sets that both reach hooks (short Claude-style names and long internal
+// names) plus the apply_patch edit alias; the matcher is the unanchored
+// pipe list Qoder's own shipped guardrail matcher uses, which matches both
+// pipe-split-exact and regex interpretations. International IDE only — the
+// CN build (~/.qoder-cn) and the CLI entry point are out of scope (spec 0005).
+const QODER_PRETOOLUSE_TEMPLATE = `{"matcher":"Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_HOOK_CLI}\\"","timeout":90}]}`
+const QODER_SESSIONSTART_TEMPLATE = `{"matcher":"startup|resume","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_SESSION_START}\\"","timeout":30}]}`
 
 export const PROFILES: readonly HostProfile[] = [
   {
@@ -224,6 +236,22 @@ export const PROFILES: readonly HostProfile[] = [
       ],
     },
   },
+  {
+    id: 'qoder',
+    label: 'Qoder',
+    detection: { dirs: ['.qoder'], files: ['.qoder/settings.json'], executables: ['qoder'] },
+    sessionNote: 'sessionNoteQoderHooksNoHotReload',
+    postInstallNotes: ['qoderVerifyHint'],
+    action: {
+      kind: 'json-merge',
+      file: '~/.qoder/settings.json',
+      requiredTokens: ['${AUTO_GUARD_QODER_HOOK_CLI}', '${AUTO_GUARD_QODER_SESSION_START}'],
+      ops: [
+        { kind: 'array-append', arrayPath: ['hooks', 'PreToolUse'], template: QODER_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-qoder/dist/hook-cli.js' },
+        { kind: 'array-append', arrayPath: ['hooks', 'SessionStart'], template: QODER_SESSIONSTART_TEMPLATE, markerSuffix: '/host-qoder/dist/session-start.js' },
+      ],
+    },
+  },
 ]
 
 export function profileById(id: HostId): HostProfile | undefined {
@@ -301,6 +329,8 @@ const TOKENS: Record<string, TokenSpec> = {
   '${AUTO_GUARD_CLAUDE_HOOK_CLI}': { resolve: (paths) => paths.claude.distHookCli, json: true },
   '${AUTO_GUARD_CLAUDE_SESSION_START}': { resolve: (paths) => paths.claude.distSessionStart, json: true },
   '${AUTO_GUARD_OPENCODE_PLUGIN}': { resolve: (paths) => paths.opencode.distPluginDir, json: true },
+  '${AUTO_GUARD_QODER_HOOK_CLI}': { resolve: (paths) => paths.qoder.distHookCli, json: true },
+  '${AUTO_GUARD_QODER_SESSION_START}': { resolve: (paths) => paths.qoder.distSessionStart, json: true },
 }
 
 /** Substitute ${TOKEN} placeholders; JSON-embedded values are escaped so native Windows paths survive JSON.parse. */

@@ -1,17 +1,19 @@
 /**
  * Cross-host conformance suite (SPEC 0001 user story 2, ticket 11; extended
- * to five hosts by spec 0004 ticket 05).
+ * to five hosts by spec 0004 ticket 05, to six by spec 0005).
  *
  * The same GuardRequest scenarios run through bootstraps that mirror how
  * each host adapter composes the core — pi/dsh with in-memory session state,
- * zcode/claude/opencode with the disk-backed implementation — must produce
- * *equivalent* decisions (kind + risk + source). Protocol translation itself
- * (deny JSON vs PreToolDecision vs {status,reason}) is asserted per adapter
- * in the host packages' own specs; this suite pins the shared semantics.
+ * zcode/claude/opencode/qoder with the disk-backed implementation — must
+ * produce *equivalent* decisions (kind + risk + source). Protocol translation
+ * itself (deny JSON vs PreToolDecision vs {status,reason}) is asserted per
+ * adapter in the host packages' own specs; this suite pins the shared
+ * semantics.
  *
  * Fail-closed matrix: no key, reviewer timeout, malformed LLM output must
  * yield the same deny-with-reviewerFailed outcome on all bootstraps; the
- * claude/opencode protocol ladders pin where each failure lands for the user.
+ * claude/opencode/qoder protocol ladders pin where each failure lands for the
+ * user.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -48,6 +50,8 @@ import { toGuardRequest as dshToGuardRequest } from 'auto-guard/src/adapter.ts'
 import { toGuardRequest as zcodeToGuardRequest, normalizeHookInput as zcodeNormalize } from '@auto-guard/host-zcode/src/zcode-adapter.ts'
 import { toGuardRequest as claudeToGuardRequest, normalizeHookInput as claudeNormalize } from '@auto-guard/host-claude/src/claude-adapter.ts'
 import { serializeHookOutput as claudeSerialize } from '@auto-guard/host-claude/src/hook-output.ts'
+import { toGuardRequest as qoderToGuardRequest, normalizeHookInput as qoderNormalize } from '@auto-guard/host-qoder/src/qoder-adapter.ts'
+import { serializeHookOutput as qoderSerialize } from '@auto-guard/host-qoder/src/hook-output.ts'
 import {
   toGuardRequest as opencodeToGuardRequest,
   payloadFromAsked,
@@ -116,6 +120,7 @@ function bootstraps(): Bootstrap[] {
     { name: 'zcode-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
     { name: 'claude-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
     { name: 'opencode-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
+    { name: 'qoder-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
   ]
 }
 
@@ -235,11 +240,11 @@ describe('shared reviewer contract across hosts', () => {
   })
 })
 
-describe('adapter translation equivalence: one logical call, five dialects, one GuardRequest (ticket 05)', () => {
+describe('adapter translation equivalence: one logical call, six dialects (qoder twice — short + long names), one GuardRequest (ticket 05 / spec 0005)', () => {
   const WS = 'D:/work/demo'
   const SES = 'ses_conf'
 
-  it('bash git status translates identically on all five adapters', () => {
+  it('bash git status translates identically on all adapters', () => {
     const expected: GuardRequest = { tool: 'bash', command: 'git status', session: SES, workspace: WS }
     const pi = piToGuardRequest({ tool: 'bash', command: 'git status', session: SES, workspace: WS })
     const dshSignal = new AbortController().signal
@@ -251,14 +256,18 @@ describe('adapter translation equivalence: one logical call, five dialects, one 
       WS,
     )!
     const opencode = opencodeToGuardRequest(opencodeNormalize(JSON.parse(JSON.stringify(opencodePayload))), WS)
-    for (const [host, request] of Object.entries({ pi, dsh, zcode, claude, opencode })) {
+    // Qoder speaks the claude dialect but names the terminal tool both ways;
+    // both spellings must land on the same bash request.
+    const qoderShort = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'Bash', tool_input: { command: 'git status' } }), WS)
+    const qoderLong = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'run_in_terminal', tool_input: { command: 'git status' } }), WS)
+    for (const [host, request] of Object.entries({ pi, dsh, zcode, claude, opencode, qoderShort, qoderLong })) {
       const extraction = request as { kind: string; request?: GuardRequest }
       expect(extraction.kind ?? 'guardable', host).toBe('guardable')
       expect(extraction.request ?? (request as GuardRequest), host).toMatchObject(expected)
     }
   })
 
-  it('a sensitive .env write translates identically on all five adapters', () => {
+  it('a sensitive .env write translates identically on all adapters', () => {
     const expected: GuardRequest = { tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
     const pi = piToGuardRequest({ tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS })
     const dsh = dshToGuardRequest({ name: 'write', arguments: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' }, signal: new AbortController().signal, agent: { session: { id: SES, header: { cwd: WS } } } })
@@ -270,12 +279,15 @@ describe('adapter translation equivalence: one logical call, five dialects, one 
     )!
     // opencode's edit permission covers the write path; the guard sees edit.
     const opencode = opencodeToGuardRequest(opencodeNormalize(JSON.parse(JSON.stringify(opencodePayload))), WS)
+    // Qoder's long internal name for the write path must translate the same.
+    const qoder = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'create_file', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
     const asRequest = (r: unknown): GuardRequest => (r as { request?: GuardRequest }).request ?? (r as GuardRequest)
     expect(asRequest(pi)).toMatchObject({ ...expected, tool: 'write' })
     expect(asRequest(dsh)).toMatchObject(expected)
     expect(asRequest(zcode)).toMatchObject(expected)
     expect(asRequest(claude)).toMatchObject(expected)
     expect(asRequest(opencode)).toMatchObject({ ...expected, tool: 'edit' })
+    expect(asRequest(qoder)).toMatchObject(expected)
   })
 })
 
@@ -285,6 +297,25 @@ describe('fail-closed matrix: where each failure lands for the user on claude/op
     expect(extraction.kind).toBe('unreviewable')
     const json = JSON.parse(claudeSerialize({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
     expect(json.hookSpecificOutput.permissionDecision).toBe('ask')
+  })
+
+  it('qoder: unparseable guarded payload → unreviewable → permissionDecision ask (spec 0005)', () => {
+    const extraction = qoderToGuardRequest(qoderNormalize({ tool_name: 'create_file', tool_input: {} }))
+    expect(extraction.kind).toBe('unreviewable')
+    const json = JSON.parse(qoderSerialize({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
+    expect(json.hookSpecificOutput.permissionDecision).toBe('ask')
+  })
+
+  it('qoder and claude serialize the same decision to byte-identical stdout JSON (ticket 03)', () => {
+    // The two hosts speak the same Claude-compatible dialect; the wire shape
+    // must stay identical for allow (silence), deny and ask alike.
+    for (const action of [
+      { action: 'allow' as const },
+      { action: 'deny' as const, reason: '命中黑名单 [黑名单]: rm -rf /' },
+      { action: 'ask' as const, reason: '保守起见需要人工确认' },
+    ]) {
+      expect(qoderSerialize(action)).toBe(claudeSerialize(action))
+    }
   })
 
   it('opencode: unparseable guarded payload → ask verdict → NO reply → native TUI', () => {

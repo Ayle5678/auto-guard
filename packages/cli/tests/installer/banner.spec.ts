@@ -39,7 +39,7 @@ describe('init banner', () => {
     expect(guardCol).toEqual(['  ', '██', '██', '██', '██', '██', '╚═', '  '])
     expect(plain.join('\n')).toContain('缓存式自动命令审查')
     expect(plain.join('\n')).toContain('Cached Auto Command Review')
-    expect(plain.join('\n')).toContain('（适配 dsh / pi / zcode / claude / opencode）')
+    expect(plain.join('\n')).toContain('（适配 dsh / pi / zcode / claude / opencode / qoder）')
     expect(plain.join('\n')).toContain('auto-guard v')
   })
 
@@ -61,11 +61,11 @@ describe('init banner', () => {
     expect(text).toContain('auto-guard v')
   })
 
-  it('tagline is fixed bilingual: zh and en name lines plus the five-host list', () => {
+  it('tagline is fixed bilingual: zh and en name lines plus the six-host list', () => {
     const text = renderBanner(true).join('\n')
     expect(text).toContain('缓存式自动命令审查')
     expect(text).toContain('Cached Auto Command Review')
-    expect(text).toContain('（适配 dsh / pi / zcode / claude / opencode）')
+    expect(text).toContain('（适配 dsh / pi / zcode / claude / opencode / qoder）')
   })
 
   it('interactive init shows the banner before the language prompt; unpinned tagline is bilingual', async () => {

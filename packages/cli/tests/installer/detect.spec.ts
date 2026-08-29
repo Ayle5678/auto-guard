@@ -17,9 +17,31 @@ afterEach(() => {
 describe('host detector (ticket 01)', () => {
   it('reports nothing detected on an empty HOME', () => {
     const results = detectHosts({ home: fakeHome(), hasExecutable: () => false })
-    expect(results.map((r) => r.detected)).toEqual([false, false, false, false, false])
+    expect(results.map((r) => r.detected)).toEqual([false, false, false, false, false, false])
     const any = results.every((r) => r.confidence === 'none')
     expect(any).toBe(true)
+  })
+
+  it('detects qoder via ~/.qoder/settings.json alone and treats a bare ~/.qoder as medium', () => {
+    const fileHome = fakeHome()
+    mkdirSync(join(fileHome, '.qoder'), { recursive: true })
+    writeFileSync(join(fileHome, '.qoder', 'settings.json'), '{}', 'utf8')
+    const fileResults = detectHosts({ home: fileHome, hasExecutable: () => false })
+    const qoderByFile = fileResults.find((r) => r.profile.id === 'qoder')!
+    expect(qoderByFile.detected).toBe(true)
+    expect(qoderByFile.confidence).toBe('high')
+
+    const dirHome = fakeHome()
+    mkdirSync(join(dirHome, '.qoder'), { recursive: true })
+    const dirResults = detectHosts({ home: dirHome, hasExecutable: () => false })
+    const qoderByDir = dirResults.find((r) => r.profile.id === 'qoder')!
+    expect(qoderByDir.detected).toBe(false)
+    expect(qoderByDir.confidence).toBe('medium')
+
+    const exeResults = detectHosts({ home: dirHome, hasExecutable: (exe) => exe === 'qoder' })
+    const qoderByDirAndExe = exeResults.find((r) => r.profile.id === 'qoder')!
+    expect(qoderByDirAndExe.detected).toBe(true)
+    expect(qoderByDirAndExe.confidence).toBe('high')
   })
 
   it('detects claude via ~/.claude/settings.json alone and opencode via opencode.json', () => {

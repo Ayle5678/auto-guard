@@ -34,6 +34,10 @@ function installerDeps(home: string): InstallerDeps & { paths: Required<Installe
         distSessionStart: join(home, 'pkg', 'host-claude', 'dist', 'session-start.js'),
       },
       opencode: { distPluginDir: join(home, 'pkg', 'host-opencode', 'dist') },
+      qoder: {
+        distHookCli: join(home, 'pkg', 'host-qoder', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-qoder', 'dist', 'session-start.js'),
+      },
     },
   }
 }

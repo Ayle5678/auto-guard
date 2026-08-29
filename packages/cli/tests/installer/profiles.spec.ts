@@ -7,12 +7,13 @@ const fullPaths = (): PackagePaths => ({
   dsh: { packageDir: 'C:/x/packages/host-dsh' },
   claude: { distHookCli: 'C:/x/packages/host-claude/dist/hook-cli.js', distSessionStart: 'C:/x/packages/host-claude/dist/session-start.js' },
   opencode: { distPluginDir: 'C:/x/packages/host-opencode/dist' },
+  qoder: { distHookCli: 'C:/x/packages/host-qoder/dist/hook-cli.js', distSessionStart: 'C:/x/packages/host-qoder/dist/session-start.js' },
 })
 
 describe('host profiles (ADR-0008)', () => {
-  it('declares exactly dsh / pi / zcode / claude / opencode', () => {
-    expect(HOST_IDS).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode'])
-    expect(PROFILES.map((p) => p.id)).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode'])
+  it('declares exactly dsh / pi / zcode / claude / opencode / qoder', () => {
+    expect(HOST_IDS).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder'])
+    expect(PROFILES.map((p) => p.id)).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder'])
   })
 
   it('all shipped profiles pass schema validation', () => {
@@ -30,7 +31,7 @@ describe('host profiles (ADR-0008)', () => {
 
   it('rejects unknown host ids and structurally broken actions', () => {
     const unknown = { ...profileById('pi')!, id: 'nope' } as unknown as (typeof PROFILES)[number]
-    expect(validateProfile(unknown)[0]).toMatch(/^id 必须是 dsh\|pi\|zcode\|claude\|opencode 之一$/)
+    expect(validateProfile(unknown)[0]).toMatch(/^id 必须是 dsh\|pi\|zcode\|claude\|opencode\|qoder 之一$/)
     const commandWithoutArgs = { kind: 'command', executable: '', installArgs: [], removeArgs: [], listArgs: [], pluginId: '' }
     const brokenCommand = { ...profileById('pi')!, action: commandWithoutArgs } as unknown as (typeof PROFILES)[number]
     expect(validateProfile(brokenCommand)).toContain('command 动作缺少 executable')
@@ -83,6 +84,31 @@ describe('host profiles (ADR-0008)', () => {
     expect(typeof preToolUse.hooks[0]!.timeout).toBe('number')
     const sessionStart = JSON.parse(renderTemplate(claudeTemplate(ops[1]!), paths)) as { matcher: string }
     expect(sessionStart.matcher).toBe('^(startup|resume)$')
+  })
+
+  it('qoder profile mirrors claude but speaks the Qoder settings dialect', () => {
+    const qoder = profileById('qoder')!
+    expect(qoder.action.kind).toBe('json-merge')
+    if (qoder.action.kind !== 'json-merge') throw new Error('expected json-merge')
+    expect(qoder.action.file).toBe('~/.qoder/settings.json')
+    const ops = qoder.action.ops.filter((op): op is Extract<typeof op, { kind: 'array-append' }> => op.kind === 'array-append')
+    expect(ops.map((op) => op.arrayPath.join('.'))).toEqual(['hooks.PreToolUse', 'hooks.SessionStart'])
+    expect(qoder.action.requiredTokens).toEqual(['${AUTO_GUARD_QODER_HOOK_CLI}', '${AUTO_GUARD_QODER_SESSION_START}'])
+    const paths = fullPaths()
+    const qoderTemplate = (op: (typeof ops)[number]): string => (typeof op.template === 'function' ? op.template('zh') : op.template)
+    const preToolUse = JSON.parse(renderTemplate(qoderTemplate(ops[0]!), paths)) as {
+      matcher: string
+      hooks: Array<{ type: string; command: string; timeout: number }>
+    }
+    // The unanchored pipe list covers both Qoder naming sets plus apply_patch;
+    // it matches whether Qoder treats matchers as pipe-split exact or regex.
+    expect(preToolUse.matcher).toBe('Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace')
+    expect(preToolUse.hooks[0]!.type).toBe('command')
+    expect(preToolUse.hooks[0]!.command).toBe(`node "${paths.qoder.distHookCli}"`)
+    expect(preToolUse.hooks[0]!.timeout).toBe(90) // LLM latency budget, mirroring claude
+    const sessionStart = JSON.parse(renderTemplate(qoderTemplate(ops[1]!), paths)) as { matcher: string; hooks: Array<{ timeout: number }> }
+    expect(sessionStart.matcher).toBe('startup|resume')
+    expect(sessionStart.hooks[0]!.timeout).toBe(30)
   })
 
   it('opencode profile appends the plugin path and asks on bash/edit/read', () => {

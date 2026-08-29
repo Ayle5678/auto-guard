@@ -2,7 +2,7 @@
 
 A **command-review safety net for AI coding agents**. Before the host executes a command or reads/writes a file, auto-guard decides **allow / deny / ask** using layered static rules, caches, learned rules, audit history and a one-shot LLM review (DeepSeek by default). It is meant to sit on top of full-access mode: dangerous commands are blocked, routine ones pass in milliseconds, and only genuinely uncertain cases reach the LLM or a human.
 
-One decision engine, five thin host adapters:
+One decision engine, six thin host adapters:
 
 - **`@auto-guard/core`** — zero-host-dependency engine: decision pipeline, rules, caches, key hydration, audit, history, learned rules, management operations. Only Node built-ins (ADR-0002).
 - **`auto-guard` (packages/host-dsh)** — DeepSeek Harness plugin (`tools/pre-execute`, permission-preset switch, SQLCipher audit, settings UI + Typert remote).
@@ -10,9 +10,10 @@ One decision engine, five thin host adapters:
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin (one process per call, disk session state, decision history).
 - **`@auto-guard/host-claude`** — Claude Code PreToolUse hook adapter (settings.json hooks, NotebookEdit coverage, native confirmation box).
 - **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md).
+- **`@auto-guard/host-qoder`** — Qoder (international IDE) PreToolUse hook adapter (Claude-compatible hook protocol, dual tool-naming mapping, native confirmation box).
 - **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
 
-All five hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
+All six hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
 
 ## Why
 
@@ -82,20 +83,20 @@ Each decision carries a source tag you can see in notifications: `[Allowlist]`, 
 
 ## Host adapters
 
-Each adapter only translates host events into `GuardRequest` and decisions back into the host's decision protocol; all adjudication lives in core. Each host has its own config root — `~/.dsh/auto-guard/`, `~/.pi/auto-guard/`, `~/.zcode/auto-guard/`, `~/.claude/auto-guard/`, `~/.config/opencode/auto-guard/` — with zero sharing between hosts and zero migration on upgrade.
+Each adapter only translates host events into `GuardRequest` and decisions back into the host's decision protocol; all adjudication lives in core. Each host has its own config root — `~/.dsh/auto-guard/`, `~/.pi/auto-guard/`, `~/.zcode/auto-guard/`, `~/.claude/auto-guard/`, `~/.config/opencode/auto-guard/`, `~/.qoder/auto-guard/` — with zero sharing between hosts and zero migration on upgrade.
 
-| Dimension | host-dsh | host-pi | host-zcode | host-claude | host-opencode |
-|---|---|---|---|---|---|
-| Integration event | `tools/pre-execute` + monotonic guard | `tool_call` + `user_bash` | PreToolUse hook (one process per call) + SessionStart | PreToolUse hook + SessionStart (settings.json, `type: "command"`) | permission system: installer writes `bash/edit/read → "*": "ask"` rules; plugin answers `permission.asked` events |
-| Decision protocol | PreToolDecision deny/ask + `next()` | `{block, reason}` / input rewrite | stdout JSON `permissionDecision`; allow = silence | stdout JSON `permissionDecision`; allow = silence | spawned CLI verdict `{status}` → `client.permission.reply` (allow→once, deny→reject, ask→no reply) |
-| Ask style | host one-shot approval | four-state dialog | delegated to native permission prompt | delegated to native confirmation box | delegated to native TUI (once / always / reject) |
-| On/off switch | permission preset (`auto-guard`) — the only switch | `/guard on\|off` + `config.enabled` | `config.enabled` (`/guard off` always wins) | `config.enabled` (`guard off` always wins) | `config.enabled` (`guard off` always wins) |
-| Session state | memory | memory | disk (`sessions/<sid>/`) | disk (`sessions/<sid>/`) | disk (`sessions/<sid>/`) |
-| Notifications | page events / context inject | `ctx.ui.notify` / `sendMessage` | pull-based decision history (`guard recent`) | pull-based decision history (`guard recent`) | pull-based decision history (`guard recent`) |
-| Config root | `~/.dsh/auto-guard/` | `~/.pi/auto-guard/` | `~/.zcode/auto-guard/` | `~/.claude/auto-guard/` | `~/.config/opencode/auto-guard/` |
-| Command surface | settings UI + Typert remote (no slash commands) | `/guard` `/guard-set` `/guard-examine` `/guard-optimize` | `commands/*.md` teaching the model to call the CLI | none (installer + `node …/dist/cli.js guard …`) | none (installer + `node …/dist/cli.js guard …`) |
-| Packaging | dsh plugin (client.js + typert + cordis.patch.yml) | pi extensions (jiti runs TS directly) | plugin manifest + hooks.json + prebuilt dist | installer writes `~/.claude/settings.json` hooks (nothing else shipped) | installer appends `plugin` entry (dist dir) + permission rules |
-| Audit store | SQLCipher (full-db encryption) | SQLCipher (falls back to Light) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) |
+| Dimension | host-dsh | host-pi | host-zcode | host-claude | host-opencode | host-qoder |
+|---|---|---|---|---|---|---|
+| Integration event | `tools/pre-execute` + monotonic guard | `tool_call` + `user_bash` | PreToolUse hook (one process per call) + SessionStart | PreToolUse hook + SessionStart (settings.json, `type: "command"`) | permission system: installer writes `bash/edit/read → "*": "ask"` rules; plugin answers `permission.asked` events | PreToolUse hook + SessionStart (settings.json, `type: "command"`) |
+| Decision protocol | PreToolDecision deny/ask + `next()` | `{block, reason}` / input rewrite | stdout JSON `permissionDecision`; allow = silence | stdout JSON `permissionDecision`; allow = silence | spawned CLI verdict `{status}` → `client.permission.reply` (allow→once, deny→reject, ask→no reply) | stdout JSON `permissionDecision`; allow = silence |
+| Ask style | host one-shot approval | four-state dialog | delegated to native permission prompt | delegated to native confirmation box | delegated to native TUI (once / always / reject) | delegated to native confirmation box |
+| On/off switch | permission preset (`auto-guard`) — the only switch | `/guard on\|off` + `config.enabled` | `config.enabled` (`/guard off` always wins) | `config.enabled` (`guard off` always wins) | `config.enabled` (`guard off` always wins) | `config.enabled` (`guard off` always wins) |
+| Session state | memory | memory | disk (`sessions/<sid>/`) | disk (`sessions/<sid>/`) | disk (`sessions/<sid>/`) | disk (`sessions/<sid>/`) |
+| Notifications | page events / context inject | `ctx.ui.notify` / `sendMessage` | pull-based decision history (`guard recent`) | pull-based decision history (`guard recent`) | pull-based decision history (`guard recent`) | pull-based decision history (`guard recent`) |
+| Config root | `~/.dsh/auto-guard/` | `~/.pi/auto-guard/` | `~/.zcode/auto-guard/` | `~/.claude/auto-guard/` | `~/.config/opencode/auto-guard/` | `~/.qoder/auto-guard/` |
+| Command surface | settings UI + Typert remote (no slash commands) | `/guard` `/guard-set` `/guard-examine` `/guard-optimize` | `commands/*.md` teaching the model to call the CLI | none (installer + `node …/dist/cli.js guard …`) | none (installer + `node …/dist/cli.js guard …`) | none (installer + `node …/dist/cli.js guard …`) |
+| Packaging | dsh plugin (client.js + typert + cordis.patch.yml) | pi extensions (jiti runs TS directly) | plugin manifest + hooks.json + prebuilt dist | installer writes `~/.claude/settings.json` hooks (nothing else shipped) | installer appends `plugin` entry (dist dir) + permission rules | installer writes `~/.qoder/settings.json` hooks (nothing else shipped) |
+| Audit store | SQLCipher (full-db encryption) | SQLCipher (falls back to Light) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) |
 
 Known coverage caveat (opencode, ADR-0011): your own permission rules that `allow` a pattern bypass the guard entirely, and picking **always** in the TUI adds such a rule for the session — the guard's coverage equals the host's ask surface.
 
@@ -136,6 +137,13 @@ Known coverage caveat (opencode, ADR-0011): your own permission rules that `allo
 - No slash-command surface; management goes through `node <host-claude>/dist/cli.js guard …`.
 - ⚠ Switcher tools (cc-switch / clawd) rewrite `~/.claude/settings.json` wholesale and can wipe the hooks — re-run `auto-guard init --host claude` to restore.
 
+### `@auto-guard/host-qoder` — Qoder PreToolUse hook adapter
+
+- Mirrors the claude adapter's one-process-per-call model: session state on disk under `~/.qoder/auto-guard/sessions/<sid>/`, verdict as stdout JSON `permissionDecision` (allow is silence); ask is delegated to Qoder's native confirmation box.
+- Targets the **international Qoder IDE only** (`~/.qoder/`); the CN build (`~/.qoder-cn/`) and the Qoder CLI entry point are out of scope and unverified. Hooks are registered in user-level `~/.qoder/settings.json` (`type: "command"` + timeout in seconds — the same dialect as Claude Code); that config file is shared across Qoder entry points, so the CLI may also run the guard if it supports the same events — an accepted side effect, not an adapted surface.
+- Both tool-naming sets are covered: short names `Bash|Read|Write|Edit`, long internal names `run_in_terminal|read_file|create_file|search_replace`, plus the `apply_patch` alias; the matcher is the unanchored pipe list Qoder's own shipped guardrail matcher uses. The `delete_file` tool is not guarded in v1 — `rm`/`del` through bash already is.
+- Hooks have no hot reload — start a new Qoder session after installing. No slash-command surface; management goes through `node <host-qoder>/dist/cli.js guard …`.
+
 ### `@auto-guard/host-opencode` — OpenCode permission-system adapter
 
 - Integrates through opencode's permission system (ADR-0011): the installer writes `"*": "ask"` rules at the FIRST position of `bash` / `edit` / `read` under `permission` (object syntax is last-matching-rule-wins, so user rules keep priority), and appends the dist dir to `plugin`.
@@ -156,7 +164,7 @@ auto-guard init        # detects installed hosts, checkbox multi-select, writes 
 
 Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English). The choice is persisted to the machine default (`~/.auto-guard/config.json`) immediately — later inits never re-ask and `remove` keeps it. The whole product is bilingual (installer, management CLI, engine messages, host-session prompts, LLM decision reasons); resolution everywhere: `AUTO_GUARD_LANG` env → per-host `set lang <zh|en>` → machine default → zh fallback. The `[删除理由]` marker is protocol and stays Chinese.
 
-Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent (a block-letter banner with a top-to-bottom cyan→blue→violet gradient and an ANSI-Shadow-style double-line extrusion heads the run on interactive terminals; `NO_COLOR` degrades it to plain text). Start a new session in each installed host afterwards (ZCode / Claude Code hooks have no hot reload) and check `auto-guard guard status`, which renders a status overview of every installed host. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
+Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent (a block-letter banner with a top-to-bottom cyan→blue→violet gradient and an ANSI-Shadow-style double-line extrusion heads the run on interactive terminals; `NO_COLOR` degrades it to plain text). Start a new session in each installed host afterwards (ZCode / Claude Code / Qoder hooks have no hot reload) and check `auto-guard guard status`, which renders a status overview of every installed host. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
 
 > **⚠ Claude Code users**: tools like **cc-switch / clawd** rewrite `~/.claude/settings.json` wholesale and can wipe the hooks. If the guard goes silent, check that file first, then re-run `auto-guard init --host claude` to restore. Run `node <host-claude>/dist/cli.js guard ping` to verify the hook is alive.
 
@@ -167,7 +175,7 @@ Each host's native channel stays fully supported and coexists with the installer
 - **ZCode**: install the plugin (manifest + hooks live in `packages/host-zcode`); `dist/` is prebuilt.
 - **Pi**: register the extension (`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`).
 - **DSH**: install the plugin (`packages/host-dsh`); the `auto-guard` permission preset turns the guard on.
-- **Claude Code / OpenCode**: installer-only by design (settings.json merge / `plugin` entry + permission rules). Hermes and Qoder were investigated and deferred — see `.scratch/0004-host-claude-opencode/research/`.
+- **Claude Code / OpenCode / Qoder**: installer-only by design (settings.json merge / `plugin` entry + permission rules). Hermes was investigated and deferred — see `.scratch/0004-host-claude-opencode/research/`; the Qoder protocol deep-dive lives in `.scratch/0005-host-qoder/research/`.
 
 Adding a host means one profile plus one adapter package — no installer changes ([guide](docs/new-host.md)).
 

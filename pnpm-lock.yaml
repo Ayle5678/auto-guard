@@ -22,6 +22,9 @@ importers:
       '@auto-guard/host-pi':
         specifier: workspace:*
         version: link:../host-pi
+      '@auto-guard/host-qoder':
+        specifier: workspace:*
+        version: link:../host-qoder
       '@auto-guard/host-zcode':
         specifier: workspace:*
         version: link:../host-zcode
@@ -53,6 +56,9 @@ importers:
       '@auto-guard/host-pi':
         specifier: workspace:*
         version: link:../host-pi
+      '@auto-guard/host-qoder':
+        specifier: workspace:*
+        version: link:../host-qoder
       '@auto-guard/host-zcode':
         specifier: workspace:*
         version: link:../host-zcode
@@ -137,6 +143,22 @@ importers:
         version: 3.2.7(@types/node@24.13.3)
 
   packages/host-pi:
+    dependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/host-qoder:
     dependencies:
       '@auto-guard/core':
         specifier: workspace:*
