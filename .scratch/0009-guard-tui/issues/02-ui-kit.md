@@ -16,10 +16,14 @@ What to build:
 - 全部纯函数 + vitest 快照/断言（含中文与英文混排对齐用例）。
 
 Blocked by: 01
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 中英文混排行在等宽终端严格对齐（宽度函数覆盖 CJK 基本区 + 全角标点 + 常见 emoji）
-- [ ] `NO_COLOR=1` 下渲染输出不含任何 SGR 序列且布局不变
-- [ ] confirm/inlineInput/spinner 各有交互状态机单测（输入 → 状态 → 渲染断言）
-- [ ] `pnpm -r test` 全绿
+- [x] 中英文混排行在等宽终端严格对齐（宽度函数覆盖 CJK 基本区 + 全角标点 + 常见 emoji）
+- [x] `NO_COLOR=1` 下渲染输出不含任何 SGR 序列且布局不变
+- [x] confirm/inlineInput/spinner 各有交互状态机单测（输入 → 状态 → 渲染断言）
+- [x] `pnpm -r test` 全绿
+
+## Comments
+
+- 2026-08-30: 完成。src/ui/text.ts（CJK 宽度/截断/换行）+ src/ui/theme.ts（NO_COLOR 退化）+ src/ui/kit.ts（powerline 头/页签/面板/列表/勾选框/确认框/内联输入掩码/滚动条/footer/spinner）。断言覆盖 tests/text.spec.ts、tests/kit.spec.ts、tests/term.spec.ts；spinner 经 footer busy 路径渲染。

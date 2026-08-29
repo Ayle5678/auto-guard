@@ -1,6 +1,7 @@
 # Unified CLI (`auto-guard`)
 
 > 完整中文使用手册（含安装器交互流程与示例输出）：[usage.md](usage.md)。
+> 全屏交互版：`@auto-guard/tui`（`auto-guard-tui`，SPEC 0009）——同一命令面的 TUI 控制台，见 [usage.md §6](usage.md#6-tui-控制台auto-guard-tui)。
 
 The management CLI is a thin terminal shell over the shared core operations layer. All subcommands work identically against any host's config root. The installer (SPEC 0002, `init` / `list` / `remove`) runs before config-root resolution so it works on machines where no auto-guard config exists yet.
 

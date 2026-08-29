@@ -83,13 +83,14 @@
 
 ## 验收
 
-- [ ] 上述命令面清单中**每个命令**都能从 TUI 完成（专属控件 或 `:` 命令模式），并有回执（退出码 + 输出）进日志屏
+- [x] 上述命令面清单中**每个命令**都能从 TUI 完成（专属控件 或 `:` 命令模式），并有回执（退出码 + 输出）进日志屏
 - [ ] 非 TTY 启动被拒（exit 2 + 提示）；q / Ctrl+C / Esc-Esc 均能干净退出并恢复终端
-- [ ] set-key 向导：掩码输入、Enter 保留现值、非法输入拒绝、保存后 `show-key` 可见、日志只有脱敏回显
-- [ ] 安装器：预览 → 确认 → apply 全程 TUI 内完成；remove 有确认；`list` 状态可见
-- [ ] 中英文界面全屏切换无错位（CJK 宽度对齐）
-- [ ] `pnpm -r typecheck` / `pnpm -r test` / `pnpm smoke` 全绿（新增 tui 包进 workspace）
-- [ ] resize 终端不花屏（SIGWINCH + 轮询双保险）
+  - 已验证：非 TTY 拒绝（smoke 实测 exit 2）、restore 幂等（单测）、q/Ctrl+C 退出路径（reducer 单测）；**待真终端人工确认**
+- [x] set-key 向导：掩码输入、Enter 保留现值、非法输入拒绝、保存后 `show-key` 可见、日志只有脱敏回显
+- [x] 安装器：预览 → 确认 → apply 全程 TUI 内完成；remove 有确认；`list` 状态可见
+- [x] 中英文界面全屏切换无错位（CJK 宽度对齐；渲染帧量化自检零超宽）
+- [x] `pnpm -r typecheck` / `pnpm -r test` / `pnpm smoke` 全绿（新增 tui 包进 workspace）
+- [ ] resize 终端不花屏（SIGWINCH + 轮询双保险）（机制已实现 + 帧高度变化全量重绘单测；**待真终端拖拽实测**）
 
 ## 票据
 

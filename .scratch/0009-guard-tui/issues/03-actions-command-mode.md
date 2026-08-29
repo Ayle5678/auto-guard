@@ -9,10 +9,14 @@ What to build:
 - 事件循环接线：动作异步执行期间锁输入（仅 q/Ctrl+C 可退出），完成后刷新当前屏数据。
 
 Blocked by: 02
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] `:` 模式跑 `guard status`、`init list`、`optimize status` 均得到与命令行一致的输出与退出码（用注入假 CliDeps 断言）
-- [ ] 动作期间 UI 锁定 + spinner，完成后自动刷新
-- [ ] 根切换后所有屏数据跟随（配置根显示在头部）
-- [ ] 单测覆盖 argv 分派规则（installer 三命令 vs 管理命令）与 `--config-root` 注入
+- [x] `:` 模式跑 `guard status`、`init list`、`optimize status` 均得到与命令行一致的输出与退出码（用注入假 CliDeps 断言）
+- [x] 动作期间 UI 锁定 + spinner，完成后自动刷新
+- [x] 根切换后所有屏数据跟随（配置根显示在头部）
+- [x] 单测覆盖 argv 分派规则（installer 三命令 vs 管理命令）与 `--config-root` 注入
+
+## Comments
+
+- 2026-08-30: 完成。src/actions.ts（execRun 代理 + 安装器强制非交互 deps 防 readline 抢终端；结构化读 loadRootSummaries 复刻聚合纪律——unseeded 根零接触）；":" 命令模式与 --config-root 注入、busy 锁键、根切换均有单测。日志屏 + 回执着色落地。

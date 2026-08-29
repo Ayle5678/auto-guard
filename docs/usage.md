@@ -407,3 +407,33 @@ auto-guard remove --host zcode
 - [CLI 指南](cli.md)：管理命令速查表（英文）
 - [ADR-0008](adr/0008-installer-profiles-explicit-and-reversible.md)：安装器设计决策
 - [ADR-0011](adr/0011-opencode-permission-ask-delegation.md)：opencode 权限系统委托（含 1.18.x 事件通道实现期修订）
+
+---
+
+## 6. TUI 控制台（auto-guard-tui）
+
+> SPEC 0009 / ADR-0014。参考 ccstatusline 的体验标准（全屏、powerline 头、实时预览、危险操作守卫式确认），但零依赖手写 ANSI 渲染，不引入 Ink/React。
+
+如果你的宿主没有 DSH 那样的设置页（zcode / claude / opencode / qoder / pi），这是你的图形化管理台；DSH 用户想用同样可以。
+
+```bash
+# 本仓库开发树
+node packages/tui/dist/tui.js        # 先 pnpm build
+node packages/tui/src/tui.ts         # Node 23+ 免构建直跑
+
+# 安装为 bin 后
+auto-guard-tui
+```
+
+**八屏布局**：总览（每宿主状态卡 + 选根 + ping）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（show-key、三步 set-key 向导掩码输入、set-api、语言、历史层）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
+
+**关键约定**：
+
+- 所有动作经 `runCli` / `runInstallerCommand` 执行——回执与命令行逐字一致（单一语义来源）；
+- `:` 进入命令模式：任意 CLI argv 直通执行（如 `: guard report 30`、`: init list`），这是全命令面的保底通道；
+- 危险操作（clear-all / clear-key / rollback / remove / 安装 apply）必须过确认框，Esc 取消；
+- set-key 三步向导：base → model → key（掩码），Enter 保留现值；key 永不落 argv、不进日志；
+- 双语界面，语言跟随四层解析（`AUTO_GUARD_LANG` > 当前根 `config.lang` > 机器默认 > zh）；`set lang` 即切即生效；
+- 键位：`↑↓/jk` 移动 · `1-8` 切屏 · `Enter` 执行 · `Space` 勾选 · `:` 命令 · `r` 刷新 · `g/G` 滚动 · `q`/`Ctrl+C` 退出（自动恢复终端）。
+
+**限制**：需要真 TTY 与 VT 转义（Windows Terminal / Git Bash / ConEmu / mintty / 常见 SSH 都满足）；非 TTY 或 `TERM=dumb` 启动即拒绝（exit 2，提示改用 CLI）；未检测到的宿主不能在 TUI 里强装（CLI 的 `--host` 路径本身拒绝未检测宿主，fail-closed）。

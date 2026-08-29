@@ -5,6 +5,17 @@
   "license": "MIT",
   "type": "module",
   "main": "src/auto-guard.ts",
+  "exports": {
+    ".": "./src/auto-guard.ts",
+    "./shell": "./src/shell.ts",
+    "./status-store": "./src/status-store.ts",
+    "./installer": "./src/installer/install.ts",
+    "./installer/detect": "./src/installer/detect.ts",
+    "./installer/integration": "./src/installer/integration.ts",
+    "./installer/plan": "./src/installer/plan.ts",
+    "./installer/rule-update": "./src/installer/rule-update.ts",
+    "./installer/profiles": "./src/installer/profiles.ts"
+  },
   "bin": {
     "auto-guard": "src/auto-guard.ts"
   },

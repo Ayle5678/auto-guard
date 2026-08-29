@@ -8,10 +8,16 @@ What to build:
 - 非 TTY / `TERM=dumb` 拒绝启动：打印等价 CLI 提示，exit 2。
 
 Blocked by: 无
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] `node packages/tui/dist/tui.js` 在真终端显示占位帧，q / Ctrl+C 干净退出，终端状态完全恢复（光标、回显、主屏缓冲）
-- [ ] 非 TTY（`echo | node …`）exit 2 + 提示；`TERM=dumb` 同
-- [ ] 重绘无闪烁路径可观测（同帧不重画）；resize 后布局自适应新宽度
-- [ ] reducer 与 keys 纯函数单测；`pnpm -r typecheck` 全绿
+- [x] `node packages/tui/dist/tui.js` 在真终端显示占位帧，q / Ctrl+C 干净退出，终端状态完全恢复（光标、回显、主屏缓冲）
+- [x] 非 TTY（`echo | node …`）exit 2 + 提示；`TERM=dumb` 同
+- [x] 重绘无闪烁路径可观测（同帧不重画）；resize 后布局自适应新宽度
+- [x] reducer 与 keys 纯函数单测；`pnpm -r typecheck` 全绿
+
+## Comments
+
+- 2026-08-30: 完成。`src/term.ts`（raw mode/alt screen/行 diff/resize 轮询/幂等 restore + exit 钩子）、`src/keys.ts`、`src/app.ts` 骨架；非 TTY 拒绝走 `scripts/smoke/smoke-tui.mjs`（exit 2 实测）。真终端交互（q 退出恢复、resize 实拖）转人工清单（handoff）。
+
+- 2026-08-30: 完成。src/term.ts（raw mode/alt screen/行 diff/resize 轮询/幂等 restore + exit 钩子）、src/keys.ts、src/app.ts 骨架；非 TTY 拒绝走 scripts/smoke/smoke-tui.mjs（exit 2 实测）。真终端交互（q 退出恢复、resize 实拖）转人工清单（handoff）。

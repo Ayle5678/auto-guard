@@ -7,10 +7,14 @@ What to build:
 - CONTEXT.md 词条已在 spec 阶段落盘（TUI 控制台 / 帧渲染器 / 命令模式），本票核对引用一致。
 
 Blocked by: 03
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] `AUTO_GUARD_LANG=en` / 机器默认 / 根 config 三条路径语言正确，`set lang` 即时跟随
-- [ ] 帮助屏命令对照表覆盖 spec 命令面清单全部条目
-- [ ] 文档四处更新且与实际 bin/路径一致
-- [ ] 目录单测（key 完整性：zh/en 键集相等）
+- [x] `AUTO_GUARD_LANG=en` / 机器默认 / 根 config 三条路径语言正确，`set lang` 即时跟随
+- [x] 帮助屏命令对照表覆盖 spec 命令面清单全部条目
+- [x] 文档四处更新且与实际 bin/路径一致
+- [x] 目录单测（key 完整性：zh/en 键集相等）
+
+## Comments
+
+- 2026-08-30: 完成。src/i18n.ts 双语目录（键集由 TS 强制对齐）；语言解析复用 core 四层（单测覆盖 env/config/machine-zh 兜底）；帮助屏键位表 + 全命令对照表；README/README.zh-CN/docs/cli.md/docs/usage.md §6 已接线。

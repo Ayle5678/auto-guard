@@ -12,6 +12,7 @@
 - **`@auto-guard/host-opencode`** — OpenCode 权限系统适配层（插件监听 `permission.asked` 事件、每次裁决 spawn `node`、原生 TUI ask；守卫面 = 宿主 ask 面，非全量审查，详见[适配现状](#auto-guardhost-opencode--opencode-权限系统适配层)）——见 [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md)。
 - **`@auto-guard/host-qoder`** — Qoder（国际版 IDE）PreToolUse hook 适配层（Claude 兼容 hook 协议、工具双命名映射、原生确认框）。
 - **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与安装器。
+- **`@auto-guard/tui`** — 全屏交互管理控制台（`auto-guard-tui`，SPEC 0009 / ADR-0014）：零依赖手写 ANSI TUI，覆盖全部命令面（安装器 + guard/set/examine/optimize），另设 `:` 命令模式直通任意 CLI 命令。为没有设置 UI 的宿主（zcode/claude/opencode/qoder/pi）而生，DSH 用户同样可用。所有动作经 `runCli`/`runInstallerCommand` 执行（语义单一来源）；非 TTY 启动拒绝（exit 2）。
 
 六个宿主跑同一条管线、同一套默认值、同一套规则文件；不同的只是集成外壳（见[宿主适配层](#宿主适配层)）。
 

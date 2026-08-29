@@ -13,11 +13,15 @@ What to build:
 - 向导全程掩码；key 永不进入日志屏与 footer。
 
 Blocked by: 03
-Status: ready-for-agent
+Status: done
 
 Acceptance:
-- [ ] 向导三条非法路径（坏 base / 短 key / 含空白 key）与取消路径（Esc）都拒绝且不落盘
-- [ ] 成功路径后 `show-key` 面板立即可见存储状态，config 的 apiBase/model 同步更新
-- [ ] 确认框覆盖 clear-all / clear-key / rollback；Esc 全部可取消
-- [ ] `lang` 切换后整屏语言即时一致（含 footer 回执语言）
-- [ ] 单测：向导状态机 + 校验 + 保存调用（注入假 saveApiKey/applySetApi）
+- [x] 向导三条非法路径（坏 base / 短 key / 含空白 key）与取消路径（Esc）都拒绝且不落盘
+- [x] 成功路径后 `show-key` 面板立即可见存储状态，config 的 apiBase/model 同步更新
+- [x] 确认框覆盖 clear-all / clear-key / rollback；Esc 全部可取消
+- [x] `lang` 切换后整屏语言即时一致（含 footer 回执语言）
+- [x] 单测：向导状态机 + 校验 + 保存调用（注入假 saveApiKey/applySetApi）
+
+## Comments
+
+- 2026-08-30: 完成。三屏动作 + 确认框（clear-all/clear-key/rollback）；三步向导（Enter 保留现值、掩码、非法 base/key 拒绝、Esc 取消、review 显示 maskKey 脱码）；saveWizard 落盘 e2e 单测（加密 key + 端点变更持久化）；set lang 即切即生效（run-done → refresh → roots 事件重解析语言）。
