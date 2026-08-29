@@ -152,7 +152,7 @@ auto-guard init        # detects installed hosts, checkbox multi-select, writes 
 # … or non-interactive: auto-guard init --host pi,zcode --yes
 ```
 
-Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English); scripts pin the language with `--lang en` or `AUTO_GUARD_LANG=en` (unpinned non-interactive output stays Chinese).
+Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English). The choice is persisted to the machine default (`~/.auto-guard/config.json`) immediately — later inits never re-ask and `remove` keeps it. The whole product is bilingual (installer, management CLI, engine messages, host-session prompts, LLM decision reasons); resolution everywhere: `AUTO_GUARD_LANG` env → per-host `set lang <zh|en>` → machine default → zh fallback. The `[删除理由]` marker is protocol and stays Chinese.
 
 Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent (a block-letter banner with a top-to-bottom cyan→blue→violet gradient and an ANSI-Shadow-style double-line extrusion heads the run on interactive terminals; `NO_COLOR` degrades it to plain text). Start a new session in each installed host afterwards (ZCode / Claude Code hooks have no hot reload) and check `auto-guard guard status`, which renders a status overview of every installed host. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
 
@@ -186,6 +186,7 @@ Single superset schema; every host seeds the same keys into its own config root 
 | Key | Default | Notes |
 |---|---|---|
 | `enabled` | `true` | master switch (pi/zcode); dsh uses the permission preset instead |
+| `lang` | *(unset)* | output language (`set lang zh\|en`); unset = machine default, then zh |
 | `apiBase` | `https://api.deepseek.com` | OpenAI-compatible review endpoint (dsh: empty = provider route) |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | env var wins over stored keys |
 | `model` / `fallbackModel` | `deepseek-v4-flash` | review model, fallback model |

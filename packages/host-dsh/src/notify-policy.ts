@@ -4,8 +4,9 @@
  * builds the DSH-specific delivery shapes: page-only command/run + command/done
  * events and context-route notice messages.
  */
-import { notifyRoute as coreNotifyRoute, pageNoticeText, sourceTag, type Decision, type DecisionKind, type GuardConfig, type NotifyRoute } from '@auto-guard/core'
+import { notifyRoute as coreNotifyRoute, pageNoticeText, sourceTag, type Decision, type DecisionKind, type GuardConfig, type Lang, type NotifyRoute } from '@auto-guard/core'
 import { createNoticeMessage, type NoticeMessage } from './notice-message.ts'
+import { dshMessage } from './messages.ts'
 
 export { notifyRoute } from '@auto-guard/core'
 
@@ -28,13 +29,13 @@ export interface PageNoticeEvents {
 }
 
 /** Single-line page text for a page-only notification (core wording). */
-export function pageNotice(decision: Decision): string {
-  return pageNoticeText(decision)
+export function pageNotice(decision: Decision, lang: Lang = 'zh'): string {
+  return pageNoticeText(decision, lang)
 }
 
 /** Log-only command/run + command/done payloads for a page-only notification. */
-export function createPageNoticeEvents(decision: Decision, commandId: string): PageNoticeEvents {
-  const text = pageNoticeText(decision)
+export function createPageNoticeEvents(decision: Decision, commandId: string, lang: Lang = 'zh'): PageNoticeEvents {
+  const text = pageNoticeText(decision, lang)
   return {
     run: {
       commandId,
@@ -50,16 +51,15 @@ export function createPageNoticeEvents(decision: Decision, commandId: string): P
   }
 }
 
-const CONTEXT_LABELS: Record<DecisionKind, string> = {
-  allow: '✅ 放行',
-  deny: '⛔ 拦截',
-  ask: '❓ 询问',
+/** Label for one decision kind on the context route, in the given language. */
+function contextLabel(kind: DecisionKind, lang: Lang): string {
+  return dshMessage(lang, kind === 'allow' ? 'contextAllow' : kind === 'deny' ? 'contextDeny' : 'contextAsk')
 }
 
 /** Context-route notice message, preserving the current user-visible text. */
-export function createContextNotice(decision: Decision): NoticeMessage {
-  const source = decision.source === 'passthrough' || decision.source === 'error' ? '' : ` [${sourceTag(decision.source)}]`
+export function createContextNotice(decision: Decision, lang: Lang = 'zh'): NoticeMessage {
+  const source = decision.source === 'passthrough' || decision.source === 'error' ? '' : ` [${sourceTag(decision.source, lang)}]`
   const risk = decision.risk ? ` (risk: ${decision.risk})` : ''
-  const reason = `: ${decision.reason ?? '由 DSH Auto Guard 决定'}`
-  return createNoticeMessage(`${CONTEXT_LABELS[decision.kind]}${source}${risk}${reason}`, `DSH Auto Guard: ${decision.kind} (${decision.source})`)
+  const reason = `: ${decision.reason ?? dshMessage(lang, 'contextFallbackReason')}`
+  return createNoticeMessage(`${contextLabel(decision.kind, lang)}${source}${risk}${reason}`, `DSH Auto Guard: ${decision.kind} (${decision.source})`)
 }

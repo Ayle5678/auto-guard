@@ -10,14 +10,17 @@ import { createNoticeMessage } from './notice-message.ts'
 import {
   parseReviewJson,
   reviewTimeoutBudget,
-  REVIEW_SYSTEM_PROMPT,
+  reviewSystemPrompt,
+  langOf,
   type GuardConfig,
+  type Lang,
   type LlmReviewRequest,
   type LlmReviewResult,
   type LlmReviewer,
   type PingResult,
   type ReviewOutcome,
 } from '@auto-guard/core'
+import { dshMessage } from './messages.ts'
 
 /** True when a direct OpenAI-compatible endpoint is configured. */
 function hasDirectEndpoint(config: GuardConfig): boolean {
@@ -56,18 +59,21 @@ interface Route {
 export class DshLlmReviewer implements LlmReviewer {
   private readonly ctx: Context
   private readonly config: GuardConfig
+  private readonly lang: Lang
   /** Result of the last {@link review} call (success or failure), kept for in-process diagnostics. */
   lastReview: ReviewOutcome | undefined
 
-  constructor(ctx: Context, config: GuardConfig) {
+  constructor(ctx: Context, config: GuardConfig, lang?: Lang) {
     this.ctx = ctx
     this.config = config
+    // Explicit lang wins (the caller may have resolved the machine-default layer).
+    this.lang = lang ?? langOf(config)
   }
 
   /** Lightweight connectivity check against a configured direct endpoint. */
   async ping(): Promise<PingResult> {
     if (!hasDirectEndpoint(this.config)) {
-      return { ok: false, error: '未配置直连审查端点' }
+      return { ok: false, error: dshMessage(this.lang, 'pingNoDirectEndpoint') }
     }
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
     if (!apiKey) return { ok: false, error: `missing ${this.config.apiKeyEnv}` }
@@ -198,7 +204,7 @@ export class DshLlmReviewer implements LlmReviewer {
       const body: Record<string, unknown> = {
         model,
         messages: [
-          { role: 'system', content: REVIEW_SYSTEM_PROMPT },
+          { role: 'system', content: reviewSystemPrompt(this.lang) },
           { role: 'user', content: userMessage },
         ],
         temperature: 0,
@@ -249,7 +255,7 @@ export class DshLlmReviewer implements LlmReviewer {
       provider: route.provider,
       model: route.model,
       messages: [userMessage],
-      system: REVIEW_SYSTEM_PROMPT,
+      system: reviewSystemPrompt(this.lang),
       ...(route.reasoningEffort !== undefined ? { reasoningEffort: route.reasoningEffort as GenerateOptions['reasoningEffort'] } : {}),
       signal: request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal,
     }

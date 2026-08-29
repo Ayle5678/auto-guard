@@ -71,7 +71,9 @@ describe('host profiles (ADR-0008)', () => {
     expect(claude.action.requiredTokens).toEqual(['${AUTO_GUARD_CLAUDE_HOOK_CLI}', '${AUTO_GUARD_CLAUDE_SESSION_START}'])
     expect(claude.postInstallNotes?.length).toBeGreaterThanOrEqual(2)
     const paths = fullPaths()
-    const preToolUse = JSON.parse(renderTemplate(ops[0]!.template, paths)) as {
+    // Claude entries are fixed strings; the zcode-only language renderer is not used here.
+    const claudeTemplate = (op: (typeof ops)[number]): string => (typeof op.template === 'function' ? op.template('zh') : op.template)
+    const preToolUse = JSON.parse(renderTemplate(claudeTemplate(ops[0]!), paths)) as {
       matcher: string
       hooks: Array<{ type: string; command: string; timeout: number }>
     }
@@ -79,7 +81,7 @@ describe('host profiles (ADR-0008)', () => {
     expect(preToolUse.hooks[0]!.type).toBe('command')
     expect(preToolUse.hooks[0]!.command).toBe(`node "${paths.claude.distHookCli}"`)
     expect(typeof preToolUse.hooks[0]!.timeout).toBe('number')
-    const sessionStart = JSON.parse(renderTemplate(ops[1]!.template, paths)) as { matcher: string }
+    const sessionStart = JSON.parse(renderTemplate(claudeTemplate(ops[1]!), paths)) as { matcher: string }
     expect(sessionStart.matcher).toBe('^(startup|resume)$')
   })
 
@@ -92,7 +94,8 @@ describe('host profiles (ADR-0008)', () => {
     if (pluginOp.kind !== 'array-append') throw new Error('expected array-append')
     expect(pluginOp.arrayPath).toEqual(['plugin'])
     expect(pluginOp.markerSuffix).toBe('/host-opencode/dist')
-    expect(JSON.parse(renderTemplate(pluginOp.template, fullPaths()))).toBe('C:/x/packages/host-opencode/dist')
+    const pluginTemplate = typeof pluginOp.template === 'function' ? pluginOp.template('zh') : pluginOp.template
+    expect(JSON.parse(renderTemplate(pluginTemplate, fullPaths()))).toBe('C:/x/packages/host-opencode/dist')
     const permissionOp = opencode.action.ops[1]!
     if (permissionOp.kind !== 'permission-ask-rules') throw new Error('expected permission-ask-rules')
     expect(permissionOp.tools).toEqual(['bash', 'edit', 'read'])
@@ -105,9 +108,13 @@ describe('host profiles (ADR-0008)', () => {
       if (profile.action.kind === 'json-merge') {
         for (const op of profile.action.ops) {
           if (op.kind !== 'array-append') continue
-          const rendered = renderTemplate(op.template, paths)
-          expect(rendered).not.toMatch(/\$\{[A-Z_]+\}/)
-          expect(() => JSON.parse(rendered)).not.toThrow()
+          // Function templates must render valid, token-free JSON in every language.
+          for (const lang of ['zh', 'en'] as const) {
+            const template = typeof op.template === 'function' ? op.template(lang) : op.template
+            const rendered = renderTemplate(template, paths)
+            expect(rendered).not.toMatch(/\$\{[A-Z_]+\}/)
+            expect(() => JSON.parse(rendered)).not.toThrow()
+          }
         }
       }
     }
@@ -116,9 +123,10 @@ describe('host profiles (ADR-0008)', () => {
   it('zcode PreToolUse template mirrors the shipped hooks.json shape', () => {
     const zcode = profileById('zcode')!
     if (zcode.action.kind !== 'json-merge') throw new Error('expected json-merge')
-    const op = zcode.action.ops[0]!
-    if (op.kind !== 'array-append') throw new Error('expected array-append')
-    const rendered = JSON.parse(renderTemplate(op.template, {
+    const op0 = zcode.action.ops[0]!
+    if (op0.kind !== 'array-append') throw new Error('expected array-append')
+    const template = typeof op0.template === 'function' ? op0.template('zh') : op0.template
+    const rendered = JSON.parse(renderTemplate(template, {
       ...fullPaths(),
       pi: { srcIndex: '' },
       zcode: { distHookCli: '/opt/ag/host-zcode/dist/hook-cli.js', distSessionStart: '' },

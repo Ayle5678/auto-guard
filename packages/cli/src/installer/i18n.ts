@@ -1,14 +1,20 @@
 /**
  * Installer bilingual message catalog (zh / en).
  *
- * One flat dictionary per language, keyed identically; `message()` interpolates
- * `{name}` placeholders. No i18n library — the installer surface is ~50 short
- * lines and stays review-able as data. Language resolution order lives in
- * install.ts: `--lang` flag > `AUTO_GUARD_LANG` env > interactive bilingual
- * prompt (init only) > `zh`. The `zh` fallback keeps piped/CI output and every
- * existing consumer byte-stable; scripts opt into English explicitly.
+ * One flat dictionary per language, keyed identically; the lookup mechanics
+ * (`Lang`, `normalizeLang`, `envLang`, catalog factory) live in core and are
+ * re-exported here (ADR-0011). No i18n library — the installer surface is ~50
+ * short lines and stays review-able as data. Language resolution order lives
+ * in install.ts: `--lang` flag > `AUTO_GUARD_LANG` env > machine default >
+ * interactive bilingual prompt (init only) > `zh`. The `zh` fallback keeps
+ * piped/CI output and every existing consumer byte-stable; scripts opt into
+ * English explicitly.
  */
-export type Lang = 'zh' | 'en'
+import { defineCatalog, type Lang } from '@auto-guard/core'
+
+export type { Lang }
+
+export { envLang, normalizeLang } from '@auto-guard/core'
 
 const ZH = {
   usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode] [--yes] [--home <path>] [--lang <zh|en>]',
@@ -94,6 +100,8 @@ const ZH = {
   permissionAskInserted: '+ permission.{tool}.* = "{action}"（插入首位，既有规则保持优先）',
   permissionAskGlobalSkip: '~ permission.{tool} 已是全局动作 {value}，跳过（该工具不经守卫）',
   bannerGuardName: '多宿主命令审查守卫',
+  statusMessageReviewing: '🛡️ auto-guard 安全审查中…',
+  statusMessageSessionInit: '🛡️ auto-guard 会话初始化',
 } as const
 
 export type MessageKey = keyof typeof ZH
@@ -182,30 +190,19 @@ const EN: Record<MessageKey, string> = {
   permissionAskInserted: '+ permission.{tool}.* = "{action}" (inserted first; existing rules keep priority)',
   permissionAskGlobalSkip: '~ permission.{tool} is already a global action {value}; skipped (this tool bypasses the guard)',
   bannerGuardName: 'multi-host command review guard',
+  statusMessageReviewing: '🛡️ auto-guard reviewing…',
+  statusMessageSessionInit: '🛡️ auto-guard session init',
 }
 
-/** Interpolate one message; unknown placeholders pass through untouched. */
+const catalog = defineCatalog(ZH, EN)
+
+/** Interpolate one installer message; unknown placeholders pass through untouched. */
 export function message(lang: Lang, key: MessageKey, params: Record<string, string | number> = {}): string {
-  const template = (lang === 'en' ? EN : ZH)[key]
-  return template.replace(/\{(\w+)\}/g, (raw, name: string) => (name in params ? String(params[name]) : raw))
+  return catalog.message(lang, key, params)
 }
 
 export function isMessageKey(value: string): value is MessageKey {
   return value in ZH
-}
-
-/** Accept `zh` / `zh-CN` / `en` / `en-US` (case-insensitive); anything else is invalid. */
-export function normalizeLang(value: string | undefined): Lang | undefined {
-  const v = value?.trim().toLowerCase()
-  if (!v) return undefined
-  if (v.startsWith('zh')) return 'zh'
-  if (v.startsWith('en')) return 'en'
-  return undefined
-}
-
-/** `AUTO_GUARD_LANG` env override, shared with the management CLI commands. */
-export function envLang(): Lang | undefined {
-  return normalizeLang(process.env.AUTO_GUARD_LANG)
 }
 
 /** Emitted before any language is known, so it is fixed bilingual. */

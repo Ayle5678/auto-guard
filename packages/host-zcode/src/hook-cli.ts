@@ -12,11 +12,12 @@
  * surface as an `ask` so the human decides, and `/guard off` (enabled:false
  * in config.json) still bypasses everything even when the guard itself is sick.
  */
-import { prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis } from '@auto-guard/core'
-import type { Decision, GuardRequest, RulesFile } from '@auto-guard/core'
+import { prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang } from '@auto-guard/core'
+import type { Decision, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
 import { appendDecisionHistory, bootstrap, isDisabledByConfig, recordAudit, writeStatus, type GuardRuntime } from './bootstrap.ts'
 import { AUTO_GUARD_DIR } from './config.ts'
 import { decisionReasonText, hitDetail, serializeHookOutput, withDeletionHint, type HookAction } from './hook-output.ts'
+import { zcMessage } from './messages.ts'
 import { normalizeHookInput, toGuardRequest } from './zcode-adapter.ts'
 import { workspaceFromEnv } from './bootstrap.ts'
 import { pruneSessions, sessionsRoot } from '@auto-guard/core'
@@ -54,10 +55,19 @@ type FinalOutcome = HookAction & {
 }
 
 /**
+ * Language for the fail-closed paths that run before the runtime exists:
+ * env > config.lang (unreadable yet) > machine default > zh (ADR-0011). Once
+ * the runtime is up, its own once-per-process `runtime.lang` takes over.
+ */
+function hookLang(): Lang {
+  return resolveProcessLang(undefined)
+}
+
+/**
  * Translate the service decision the way pi-auto-guard's evaluate() did,
  * minus its interactive UI: ZCode's native prompt replaces the ask dialogs.
  */
-async function evaluate(runtime: GuardRuntime, rawCommandRequest: GuardRequest): Promise<FinalOutcome> {
+async function evaluate(runtime: GuardRuntime, rawCommandRequest: GuardRequest, lang: Lang): Promise<FinalOutcome> {
   // Headless directory-delete retries carry `[删除理由] <reason>` inside the
   // command; strip it before deciding so the marker never executes.
   const prepared = prepareDeletionMarker(rawCommandRequest)
@@ -66,24 +76,24 @@ async function evaluate(runtime: GuardRuntime, rawCommandRequest: GuardRequest):
   // First directory-delete hit: deny once so the AGENT retries with a
   // `[删除理由] <reason>` marker; the LLM then reviews that reason.
   if (decision.source === 'directory-delete' && decision.needsReason) {
-    return { action: 'deny', reason: withDeletionHint(decisionReasonText(decision)), meta: pickMeta(decision, prepared.request, runtime.rules) }
+    return { action: 'deny', reason: withDeletionHint(decisionReasonText(decision, lang), lang), meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
   }
 
   // Directory-delete non-allow outcomes (LLM ask/deny or reviewer failure)
   // all get final say by the human — surfaced as ZCode's native prompt.
   if (decision.source === 'directory-delete' && decision.kind !== 'allow') {
-    const flavor = decision.reviewerFailed ? '审查器故障，本次未过审' : 'LLM 未通过本次删除'
-    const reason = `🛡️ auto-guard [删除复核] ${flavor}：${decision.reason ?? '未提供详情'}。是否仍要执行，请在确认框中决定。`
-    return { action: 'ask', reason, meta: pickMeta(decision, prepared.request, runtime.rules) }
+    const flavor = zcMessage(lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+    const reason = zcMessage(lang, 'deleteAskReason', { flavor, reason: decision.reason ?? zcMessage(lang, 'deleteNoDetail') })
+    return { action: 'ask', reason, meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
   }
 
   if (decision.kind === 'allow' || decision.kind === 'deny' || decision.kind === 'ask') {
-    return mapPlainDecision(decision, prepared.request, runtime.rules)
+    return mapPlainDecision(decision, prepared.request, runtime.rules, lang)
   }
-  return { action: 'deny', reason: decision.reason ?? '未知裁决，已拦截', meta: pickMeta(decision, prepared.request, runtime.rules) }
+  return { action: 'deny', reason: decision.reason ?? zcMessage(lang, 'unknownDecisionDenied'), meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
 }
 
-function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile) {
+function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile, lang: Lang = 'zh') {
   let pattern: string | undefined
   if (
     (decision.source === 'static-allow' || decision.source === 'user-confirmed') &&
@@ -98,21 +108,21 @@ function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile)
     source: decision.source,
     risk: decision.risk,
     reviewerFailed: decision.reviewerFailed === true ? true : undefined,
-    detail: hitDetail(decision, pattern),
+    detail: hitDetail(decision, pattern, lang),
   }
 }
 
 
 
-function mapPlainDecision(decision: Decision, request?: GuardRequest, rules?: RulesFile): FinalOutcome {
-  const text = decisionReasonText(decision)
+function mapPlainDecision(decision: Decision, request?: GuardRequest, rules?: RulesFile, lang: Lang = 'zh'): FinalOutcome {
+  const text = decisionReasonText(decision, lang)
   switch (decision.kind) {
     case 'allow':
-      return { action: 'allow', meta: pickMeta(decision, request, rules) }
+      return { action: 'allow', meta: pickMeta(decision, request, rules, lang) }
     case 'deny':
-      return { action: 'deny', reason: text, meta: pickMeta(decision, request, rules) }
+      return { action: 'deny', reason: text, meta: pickMeta(decision, request, rules, lang) }
     case 'ask':
-      return { action: 'ask', reason: text, meta: pickMeta(decision, request, rules) }
+      return { action: 'ask', reason: text, meta: pickMeta(decision, request, rules, lang) }
   }
 }
 
@@ -122,7 +132,7 @@ async function main(): Promise<void> {
     raw = JSON.parse(await readStdin())
   } catch {
     // Not a parseable hook payload — this should not happen from ZCode.
-    failClosedAsk('auto-guard：无法解析 hook 输入（stdin 不是合法 JSON），保守起见需要人工确认')
+    failClosedAsk(zcMessage(hookLang(), 'failStdinNotJson'))
     return
   }
   const input = normalizeHookInput(raw)
@@ -153,11 +163,12 @@ async function main(): Promise<void> {
       return
     }
   } catch (error) {
-    failClosedAsk(`auto-guard 初始化失败（检查 ~/.zcode/auto-guard/config.json）：${errorMessage(error)}；保守起见需要人工确认`)
+    failClosedAsk(zcMessage(hookLang(), 'failBootstrap', { error: errorMessage(error) }))
     return
   }
 
-  const extraction = toGuardRequest(input, workspaceFromEnv())
+  const lang = runtime.lang
+  const extraction = toGuardRequest(input, workspaceFromEnv(), lang)
 
   let outcome: FinalOutcome
   if (extraction.kind === 'passthrough') {
@@ -166,9 +177,9 @@ async function main(): Promise<void> {
     outcome = { action: 'ask', reason: extraction.reason }
   } else {
     try {
-      outcome = await evaluate(runtime, extraction.request)
+      outcome = await evaluate(runtime, extraction.request, lang)
     } catch (error) {
-      outcome = { action: 'ask', reason: `auto-guard 裁决过程异常：${errorMessage(error)}；保守起见需要人工确认` }
+      outcome = { action: 'ask', reason: zcMessage(lang, 'failDecide', { error: errorMessage(error) }) }
     }
   }
 
@@ -194,7 +205,7 @@ async function main(): Promise<void> {
       lastDecisionKind: outcome.meta?.kind ?? outcome.action,
       lastDecisionSource: outcome.meta?.source,
       lastRisk: outcome.meta?.risk,
-      lastDetail: outcome.meta?.detail ?? (outcome.action === 'allow' ? '直通/放行' : (outcome.reason ?? '').slice(0, 120)),
+      lastDetail: outcome.meta?.detail ?? (outcome.action === 'allow' ? zcMessage(lang, 'passthroughDetail') : (outcome.reason ?? '').slice(0, 120)),
       reviewerLastFailed: outcome.meta?.reviewerFailed,
     }
     writeStatus(entry)
@@ -251,7 +262,7 @@ function maybeSpawnAnalysis(runtime: GuardRuntime): void {
 
 main().catch((error) => {
   try {
-    failClosedAsk(`auto-guard 未捕获异常：${errorMessage(error)}；保守起见需要人工确认`)
+    failClosedAsk(zcMessage(hookLang(), 'failUncaught', { error: errorMessage(error) }))
   } catch {
     process.exit(0)
   }

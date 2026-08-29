@@ -20,7 +20,7 @@ auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode] [--yes] [--l
 
 Common flags: `--host <dsh,pi,zcode,claude,opencode>` (repeatable values in one list), `--yes`, `--banner` (force the init banner outside a TTY), `--home <path>` (override HOME, mainly for tests), `--lang <zh|en>` (installer output language). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
 
-Installer language: the installer speaks Chinese and English. Interactive `init` leads with the banner (its tagline is bilingual until the language is known) and then opens a bilingual "请选择语言 / Select language" prompt; scripts and CI pin the language with `--lang en` or the `AUTO_GUARD_LANG` env var. Resolution order: `--lang` → `AUTO_GUARD_LANG` → interactive prompt (init on a TTY) → `zh` (keeps piped/CI output stable).
+Language: the whole product (installer + management CLI + engine messages + host prompts) speaks Chinese and English. Resolution is the same four layers everywhere (ADR-0011): `AUTO_GUARD_LANG` env (one-shot override) → per-host `config.lang` (`auto-guard set lang en|zh`) → machine default `~/.auto-guard/config.json` → `zh` fallback. The installer chain additionally leads with `--lang` and ends with the interactive prompt: `--lang` → `AUTO_GUARD_LANG` → machine default → bilingual "请选择语言 / Select language" prompt (init on a TTY, only when no default is remembered) → `zh`. The prompt choice and `--lang` are both persisted to the machine default immediately — later inits never re-ask, `remove` keeps the preference. LLM decision reasons follow the setting; the `[删除理由]` marker is protocol and stays Chinese. ZCode hook spinner text (`statusMessage`) is written in the install-time language and changes only on reinstall.
 
 Idempotent: re-running `init` detects already-integrated entries and skips them; existing backups are never overwritten. ZCode and Claude Code hooks have no hot reload — start a new session in those hosts after installing.
 
@@ -34,12 +34,12 @@ auto-guard examine on  --config-root ~/.dsh/auto-guard  # audit for dsh
 export AUTO_GUARD_CONFIG_ROOT=~/.pi/auto-guard          # or pin the whole session
 ```
 
-`guard status` has two views: with an explicitly selected root it renders that root only; when the root is auto-detected it aggregates every installed host — seeded roots in full, installed-but-never-run hosts as an "unseeded" hint, absent hosts skipped. It is read-only and never creates config. All other management commands act on the single resolved root.
+`guard status` has two views: with an explicitly selected root it renders that root only; when the root is auto-detected it aggregates every installed host — seeded roots in full, installed-but-never-run hosts as an "unseeded" hint, absent hosts skipped. Both views show the effective language (`lang : en` — one line per root in the aggregate view, so per-host choices are visible). It is read-only and never creates config. All other management commands act on the single resolved root.
 
 | Group | Actions |
 |---|---|
 | `guard` | `on` `off` `status` `recent [n]` `stats` `ping` |
-| `set` | `set-key`（three-step TTY wizard, echo disabled）`show-key` `clear-key` `set-api base <url>` / `model <id>` / `reset` `history on\|off` `reload` |
+| `set` | `set-key`（three-step TTY wizard, echo disabled）`show-key` `clear-key` `set-api base <url>` / `model <id>` / `reset` `lang <zh\|en>`（per-host output language; receipt in the new language）`history on\|off` `reload` |
 | `examine` | `on` `off` `status` `clear-old`（30d）`clear-all` |
 | `optimize` | `status` `analyze` `list` `rollback` |
 

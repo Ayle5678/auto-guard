@@ -136,6 +136,12 @@ export type HeadlessMode = 'deny' | 'allow'
 export interface GuardConfig {
   /** Master switch toggled by `/guard on|off` and persisted to config.json; DSH uses the permission preset instead. */
   enabled: boolean
+  /**
+   * Output language for user-visible text (ADR-0011). Absent means "not set":
+   * resolution falls through to the machine default and the zh fallback.
+   * `set lang` persists it into this host's config root.
+   */
+  lang?: 'zh' | 'en'
   /** User override rules file. */
   rulesPath: string
   /** Seeded default rules file (first run copies the shipped defaults here). */

@@ -124,7 +124,8 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
     if (arr.some((el) => hasMarker(el, op.markerSuffix))) continue
     let element: unknown
     try {
-      element = JSON.parse(renderTemplate(op.template, options.paths))
+      const template = typeof op.template === 'function' ? op.template(lang) : op.template
+      element = JSON.parse(renderTemplate(template, options.paths))
     } catch (error) {
       plan.blocked = t('templateRenderFailed', { error: error instanceof Error ? error.message : String(error) })
       return plan
