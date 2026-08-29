@@ -31,6 +31,11 @@ function installerDeps(home: string): InstallerDeps {
         distSessionStart: join(home, 'pkg', 'host-zcode', 'dist', 'session-start.js'),
       },
       dsh: { packageDir: join(home, 'pkg', 'host-dsh') },
+      claude: {
+        distHookCli: join(home, 'pkg', 'host-claude', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-claude', 'dist', 'session-start.js'),
+      },
+      opencode: { distPluginDir: join(home, 'pkg', 'host-opencode', 'dist') },
     },
   }
 }

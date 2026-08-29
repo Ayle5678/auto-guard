@@ -2,23 +2,28 @@
  * Host profiles: the installer's data layer (ADR-0008).
  *
  * Each supported host is one declarative profile — detection evidence, the
- * file to touch and the content templates — so adding a fourth host means
- * adding a profile (plus its @auto-guard/host-* adapter), never installer
- * logic. Templates are JSON strings with ${TOKEN} placeholders resolved
- * against the discovered @auto-guard/host-* package locations; the installer
- * only ever touches files a profile declares.
+ * file to touch and the content templates — so adding a host usually means
+ * adding a profile (plus its @auto-guard/host-* adapter), not installer
+ * logic. The one exception so far is a host needing a new KIND of write
+ * (opencode's permission rules, ADR-0011): op kinds are closed here, and a
+ * new kind touches plan/integration/remove/validate together by design.
+ * Templates are JSON strings with ${TOKEN} placeholders resolved against the
+ * discovered @auto-guard/host-* package locations; the installer only ever
+ * touches files a profile declares.
  */
 import { isMessageKey, type MessageKey } from './i18n.ts'
 
-export type HostId = 'dsh' | 'pi' | 'zcode'
+export type HostId = 'dsh' | 'pi' | 'zcode' | 'claude' | 'opencode'
 
-export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode']
+export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode', 'claude', 'opencode']
 
 /** Resolved locations of the adapter packages the profiles integrate. */
 export interface PackagePaths {
   pi: { srcIndex: string }
   zcode: { distHookCli: string; distSessionStart: string }
   dsh: { packageDir: string }
+  claude: { distHookCli: string; distSessionStart: string }
+  opencode: { distPluginDir: string }
 }
 
 export interface DetectionSpec {
@@ -30,18 +35,39 @@ export interface DetectionSpec {
   executables: string[]
 }
 
+/** Append one JSON element to the array at `arrayPath` (created when missing). */
+export interface ArrayAppendOp {
+  kind: 'array-append'
+  /** Path of the target array inside the document, e.g. ['hooks', 'PreToolUse']. */
+  arrayPath: string[]
+  /** JSON template with ${TOKEN} placeholders. */
+  template: string
+  /** Normalized (`/`-separated) suffix identifying "this entry is ours". */
+  markerSuffix: string
+}
+
+/**
+ * Insert `"*": "ask"` at the FIRST position of each tool object under
+ * `permission` (ADR-0011): opencode's object syntax is last-matching-rule-
+ * wins, so our catch-all must precede user rules, which then take priority.
+ * Existing `"*"` keys are left untouched (idempotent no-op); remove never
+ * deletes them (ownership cannot be distinguished — documented behavior).
+ */
+export interface PermissionAskRulesOp {
+  kind: 'permission-ask-rules'
+  /** Permission keys to guard, e.g. ['bash', 'edit', 'read']. */
+  tools: string[]
+  action: 'ask'
+}
+
+export type MergeOp = ArrayAppendOp | PermissionAskRulesOp
+
 export interface JsonMergeAction {
   kind: 'json-merge'
   /** HOME-relative target file, e.g. `~/.pi/agent/settings.json`. */
   file: string
-  /** Elements appended to the array at `arrayPath` (created when missing). */
-  ops: Array<{
-    arrayPath: string[]
-    /** JSON template with ${TOKEN} placeholders. */
-    template: string
-    /** Normalized (`/`-separated) suffix identifying "this entry is ours". */
-    markerSuffix: string
-  }>
+  /** Ordered writes applied to the document (array appends / permission rules). */
+  ops: MergeOp[]
   /** Scalar assignments ensured before the ops run (e.g. ZCode's `hooks.enabled`, off by default). */
   ensure?: Array<{ path: string[]; value: unknown }>
   /** Arrays at these paths hold our entries from an older, wrong-location installer version; init/remove strip marker-matched elements and drop empties. */
@@ -68,11 +94,21 @@ export interface HostProfile {
   detection: DetectionSpec
   /** Init-summary note as an i18n key (hosts without hot reload say so here). */
   sessionNote: MessageKey
+  /** Extra init-summary lines as i18n keys (warnings, verification hints). */
+  postInstallNotes?: MessageKey[]
   action: JsonMergeAction | CommandAction
 }
 
 const ZCODE_PRETOOLUSE_TEMPLATE = `{"matcher":"^(Bash|Read|Write|Edit|ApplyPatch)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_HOOK_CLI}"],"timeoutMs":90000,"statusMessage":"🛡️ auto-guard 安全审查中…"}]}`
 const ZCODE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{"type":"process","command":"node","args":["\${AUTO_GUARD_ZCODE_SESSION_START}"],"timeoutMs":10000,"statusMessage":"🛡️ auto-guard 会话初始化"}]}`
+
+// Claude Code settings.json hook dialect (code.claude.com/docs/en/hooks):
+// handler type "command" with a single shell command string + timeout in
+// SECONDS (zcode's "process"+args dialect is not valid here). The matcher is
+// a JS regex because it contains non-alphanumeric characters; shell-form
+// commands run under Git Bash on Windows, so quoted forward-slash paths work.
+const CLAUDE_PRETOOLUSE_TEMPLATE = `{"matcher":"^(Bash|Read|Write|Edit|NotebookEdit)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CLAUDE_HOOK_CLI}\\"","timeout":90}]}`
+const CLAUDE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CLAUDE_SESSION_START}\\"","timeout":30}]}`
 
 export const PROFILES: readonly HostProfile[] = [
   {
@@ -106,6 +142,7 @@ export const PROFILES: readonly HostProfile[] = [
       file: '~/.pi/agent/settings.json',
       ops: [
         {
+          kind: 'array-append',
           arrayPath: ['pi', 'extensions'],
           template: '"${AUTO_GUARD_PI_INDEX}"',
           markerSuffix: '/host-pi/src/index.ts',
@@ -129,12 +166,44 @@ export const PROFILES: readonly HostProfile[] = [
       // fired and invalidated the whole file; legacyCleanup reclaims them.
       ensure: [{ path: ['hooks', 'enabled'], value: true }],
       ops: [
-        { arrayPath: ['hooks', 'events', 'PreToolUse'], template: ZCODE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-zcode/dist/hook-cli.js' },
-        { arrayPath: ['hooks', 'events', 'SessionStart'], template: ZCODE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-zcode/dist/session-start.js' },
+        { kind: 'array-append', arrayPath: ['hooks', 'events', 'PreToolUse'], template: ZCODE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-zcode/dist/hook-cli.js' },
+        { kind: 'array-append', arrayPath: ['hooks', 'events', 'SessionStart'], template: ZCODE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-zcode/dist/session-start.js' },
       ],
       legacyCleanup: [
         { path: ['hooks', 'PreToolUse'], markerSuffix: '/host-zcode/dist/hook-cli.js' },
         { path: ['hooks', 'SessionStart'], markerSuffix: '/host-zcode/dist/session-start.js' },
+      ],
+    },
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    detection: { dirs: ['.claude'], files: ['.claude/settings.json'], executables: ['claude'] },
+    sessionNote: 'sessionNoteClaudeHooksNoHotReload',
+    postInstallNotes: ['claudeVerifyHint', 'claudeSwitcherRisk'],
+    action: {
+      kind: 'json-merge',
+      file: '~/.claude/settings.json',
+      requiredTokens: ['${AUTO_GUARD_CLAUDE_HOOK_CLI}', '${AUTO_GUARD_CLAUDE_SESSION_START}'],
+      ops: [
+        { kind: 'array-append', arrayPath: ['hooks', 'PreToolUse'], template: CLAUDE_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-claude/dist/hook-cli.js' },
+        { kind: 'array-append', arrayPath: ['hooks', 'SessionStart'], template: CLAUDE_SESSIONSTART_TEMPLATE, markerSuffix: '/host-claude/dist/session-start.js' },
+      ],
+    },
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    detection: { dirs: ['.config/opencode'], files: ['.config/opencode/opencode.json'], executables: ['opencode'] },
+    sessionNote: 'sessionNoteOpencodePlugin',
+    postInstallNotes: ['opencodeKeepAskNote', 'opencodeSessionAlwaysNote'],
+    action: {
+      kind: 'json-merge',
+      file: '~/.config/opencode/opencode.json',
+      requiredTokens: ['${AUTO_GUARD_OPENCODE_PLUGIN}'],
+      ops: [
+        { kind: 'array-append', arrayPath: ['plugin'], template: '"${AUTO_GUARD_OPENCODE_PLUGIN}"', markerSuffix: '/host-opencode/dist' },
+        { kind: 'permission-ask-rules', tools: ['bash', 'edit', 'read'], action: 'ask' },
       ],
     },
   },
@@ -147,7 +216,7 @@ export function profileById(id: HostId): HostProfile | undefined {
 /** Schema check for one profile; returns human-readable errors (empty = valid). Kind-based, so new hosts validate without editing this. */
 export function validateProfile(profile: HostProfile): string[] {
   const errors: string[] = []
-  if (!HOST_IDS.includes(profile.id)) errors.push('id 必须是 dsh|pi|zcode 之一')
+  if (!HOST_IDS.includes(profile.id)) errors.push(`id 必须是 ${HOST_IDS.join('|')} 之一`)
   if (!profile.label) errors.push('label 不能为空')
   const d = profile.detection
   if (!d || (!d.dirs?.length && !d.files?.length && !d.executables?.length)) errors.push('detection 需要至少一项证据（dirs/files/executables）')
@@ -169,6 +238,11 @@ export function validateProfile(profile: HostProfile): string[] {
     if (!action.file.startsWith('~/')) errors.push('目标文件必须是 ~/ 相对路径')
     if (!action.ops.length) errors.push('至少需要一个写入 op')
     for (const op of action.ops) {
+      if (op.kind === 'permission-ask-rules') {
+        if (!op.tools.length) errors.push('permission-ask-rules 缺少 tools')
+        if (op.action !== 'ask') errors.push('permission-ask-rules 仅支持 action: ask')
+        continue
+      }
       if (!op.arrayPath.length) errors.push('op.arrayPath 不能为空')
       if (!op.template) errors.push('op.template 不能为空')
       if (!op.markerSuffix) errors.push('op.markerSuffix 不能为空')
@@ -180,7 +254,7 @@ export function validateProfile(profile: HostProfile): string[] {
     for (const item of action.legacyCleanup ?? []) {
       if (!item.path.length) errors.push('legacyCleanup.path 不能为空')
       if (!item.markerSuffix) errors.push('legacyCleanup.markerSuffix 不能为空')
-      if (action.ops.some((op) => op.arrayPath.join('.') === item.path.join('.'))) errors.push(`legacyCleanup 与 op.arrayPath 重叠：${item.path.join('.')}`)
+      if (action.ops.some((op) => op.kind === 'array-append' && op.arrayPath.join('.') === item.path.join('.'))) errors.push(`legacyCleanup 与 op.arrayPath 重叠：${item.path.join('.')}`)
     }
     for (const token of action.requiredTokens ?? []) {
       if (!TOKENS[token]) errors.push(`requiredTokens 含未知 token：${token}`)
@@ -207,6 +281,9 @@ const TOKENS: Record<string, TokenSpec> = {
   '${AUTO_GUARD_ZCODE_HOOK_CLI}': { resolve: (paths) => paths.zcode.distHookCli, json: true },
   '${AUTO_GUARD_ZCODE_SESSION_START}': { resolve: (paths) => paths.zcode.distSessionStart, json: true },
   '${AUTO_GUARD_DSH_DIR}': { resolve: (paths) => paths.dsh.packageDir, json: false },
+  '${AUTO_GUARD_CLAUDE_HOOK_CLI}': { resolve: (paths) => paths.claude.distHookCli, json: true },
+  '${AUTO_GUARD_CLAUDE_SESSION_START}': { resolve: (paths) => paths.claude.distSessionStart, json: true },
+  '${AUTO_GUARD_OPENCODE_PLUGIN}': { resolve: (paths) => paths.opencode.distPluginDir, json: true },
 }
 
 /** Substitute ${TOKEN} placeholders; JSON-embedded values are escaped so native Windows paths survive JSON.parse. */

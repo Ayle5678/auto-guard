@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@auto-guard/core": "workspace:*",
-    "auto-guard": "workspace:*",
+    "@auto-guard/host-claude": "workspace:*",
+    "@auto-guard/host-opencode": "workspace:*",
     "@auto-guard/host-pi": "workspace:*",
-    "@auto-guard/host-zcode": "workspace:*"
+    "@auto-guard/host-zcode": "workspace:*",
+    "auto-guard": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

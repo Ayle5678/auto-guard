@@ -1,18 +1,20 @@
 /**
- * Cross-host conformance suite (SPEC 0001 user story 2, ticket 11).
+ * Cross-host conformance suite (SPEC 0001 user story 2, ticket 11; extended
+ * to five hosts by spec 0004 ticket 05).
  *
- * The same GuardRequest scenarios run through three bootstraps that mirror how
+ * The same GuardRequest scenarios run through bootstraps that mirror how
  * each host adapter composes the core — pi/dsh with in-memory session state,
- * zcode with the disk-backed implementation — must produce *equivalent*
- * decisions (kind + risk + source). Protocol translation itself (deny JSON vs
- * PreToolDecision vs {block,reason}) is asserted per adapter in the host
- * packages' own specs; this suite pins the shared semantics.
+ * zcode/claude/opencode with the disk-backed implementation — must produce
+ * *equivalent* decisions (kind + risk + source). Protocol translation itself
+ * (deny JSON vs PreToolDecision vs {status,reason}) is asserted per adapter
+ * in the host packages' own specs; this suite pins the shared semantics.
  *
  * Fail-closed matrix: no key, reviewer timeout, malformed LLM output must
- * yield the same deny-with-reviewerFailed outcome on all three bootstraps.
+ * yield the same deny-with-reviewerFailed outcome on all bootstraps; the
+ * claude/opencode protocol ladders pin where each failure lands for the user.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -36,10 +38,24 @@ import {
   parseReviewJson,
   type DecisionSource,
   type GuardConfig,
+  type GuardRequest,
   type LlmReviewRequest,
   type LlmReviewer,
   type LlmReviewResult,
 } from '@auto-guard/core'
+import { toGuardRequest as piToGuardRequest } from '@auto-guard/host-pi/src/adapter.ts'
+import { toGuardRequest as dshToGuardRequest } from 'auto-guard/src/adapter.ts'
+import { toGuardRequest as zcodeToGuardRequest, normalizeHookInput as zcodeNormalize } from '@auto-guard/host-zcode/src/zcode-adapter.ts'
+import { toGuardRequest as claudeToGuardRequest, normalizeHookInput as claudeNormalize } from '@auto-guard/host-claude/src/claude-adapter.ts'
+import { serializeHookOutput as claudeSerialize } from '@auto-guard/host-claude/src/hook-output.ts'
+import {
+  toGuardRequest as opencodeToGuardRequest,
+  payloadFromAsked,
+  normalizeHookInput as opencodeNormalize,
+} from '@auto-guard/host-opencode/src/opencode-adapter.ts'
+import { parseVerdict, serializeVerdict, statusToReply } from '@auto-guard/host-opencode/src/hook-output.ts'
+import { handlePermissionAsked, SeenRequests } from '@auto-guard/host-opencode/src/plugin.ts'
+import type { PermissionAskedProperties } from '@auto-guard/host-opencode/src/opencode-plugin-types.ts'
 
 const dirs: string[] = []
 const openStores: Array<{ close(): void }> = []
@@ -97,6 +113,8 @@ function bootstraps(): Bootstrap[] {
     { name: 'pi-style bootstrap (memory state)', make: (dir, reviewer) => makeService(dir, reviewer, 'memory') },
     { name: 'dsh-style bootstrap (memory state)', make: (dir, reviewer) => makeService(dir, reviewer, 'memory') },
     { name: 'zcode-style bootstrap (disk state)', make: (dir, reviewer) => makeService(dir, reviewer, 'disk') },
+    { name: 'claude-style bootstrap (disk state)', make: (dir, reviewer) => makeService(dir, reviewer, 'disk') },
+    { name: 'opencode-style bootstrap (disk state)', make: (dir, reviewer) => makeService(dir, reviewer, 'disk') },
   ]
 }
 
@@ -213,5 +231,103 @@ describe('shared reviewer contract across hosts', () => {
 
   it('timeout budget and system prompt come from core only', () => {
     expect(typeof DeepSeekReviewer).toBe('function')
+  })
+})
+
+describe('adapter translation equivalence: one logical call, five dialects, one GuardRequest (ticket 05)', () => {
+  const WS = 'D:/work/demo'
+  const SES = 'ses_conf'
+
+  it('bash git status translates identically on all five adapters', () => {
+    const expected: GuardRequest = { tool: 'bash', command: 'git status', session: SES, workspace: WS }
+    const pi = piToGuardRequest({ tool: 'bash', command: 'git status', session: SES, workspace: WS })
+    const dshSignal = new AbortController().signal
+    const dsh = dshToGuardRequest({ name: 'bash', arguments: { command: 'git status' }, signal: dshSignal, agent: { session: { id: SES, header: { cwd: WS } } } })
+    const zcode = zcodeToGuardRequest(zcodeNormalize({ session_id: SES, tool_name: 'Bash', tool_input: { command: 'git status' } }), WS)
+    const claude = claudeToGuardRequest(claudeNormalize({ session_id: SES, tool_name: 'Bash', tool_input: { command: 'git status' } }), WS)
+    const opencodePayload = payloadFromAsked(
+      { id: 'p1', sessionID: SES, permission: 'bash', patterns: [], metadata: { command: 'git status' } },
+      WS,
+    )!
+    const opencode = opencodeToGuardRequest(opencodeNormalize(JSON.parse(JSON.stringify(opencodePayload))), WS)
+    for (const [host, request] of Object.entries({ pi, dsh, zcode, claude, opencode })) {
+      const extraction = request as { kind: string; request?: GuardRequest }
+      expect(extraction.kind ?? 'guardable', host).toBe('guardable')
+      expect(extraction.request ?? (request as GuardRequest), host).toMatchObject(expected)
+    }
+  })
+
+  it('a sensitive .env write translates identically on all five adapters', () => {
+    const expected: GuardRequest = { tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
+    const pi = piToGuardRequest({ tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS })
+    const dsh = dshToGuardRequest({ name: 'write', arguments: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' }, signal: new AbortController().signal, agent: { session: { id: SES, header: { cwd: WS } } } })
+    const zcode = zcodeToGuardRequest(zcodeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
+    const claude = claudeToGuardRequest(claudeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
+    const opencodePayload = payloadFromAsked(
+      { id: 'p2', sessionID: SES, permission: 'edit', patterns: ['.env'], metadata: { filepath: 'D:/work/demo/.env', diff: 'SECRET=1' } },
+      WS,
+    )!
+    // opencode's edit permission covers the write path; the guard sees edit.
+    const opencode = opencodeToGuardRequest(opencodeNormalize(JSON.parse(JSON.stringify(opencodePayload))), WS)
+    const asRequest = (r: unknown): GuardRequest => (r as { request?: GuardRequest }).request ?? (r as GuardRequest)
+    expect(asRequest(pi)).toMatchObject({ ...expected, tool: 'write' })
+    expect(asRequest(dsh)).toMatchObject(expected)
+    expect(asRequest(zcode)).toMatchObject(expected)
+    expect(asRequest(claude)).toMatchObject(expected)
+    expect(asRequest(opencode)).toMatchObject({ ...expected, tool: 'edit' })
+  })
+})
+
+describe('fail-closed matrix: where each failure lands for the user on claude/opencode (ticket 05)', () => {
+  it('claude: unparseable guarded payload → unreviewable → permissionDecision ask', () => {
+    const extraction = claudeToGuardRequest(claudeNormalize({ tool_name: 'Bash', tool_input: {} }))
+    expect(extraction.kind).toBe('unreviewable')
+    const json = JSON.parse(claudeSerialize({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
+    expect(json.hookSpecificOutput.permissionDecision).toBe('ask')
+  })
+
+  it('opencode: unparseable guarded payload → ask verdict → NO reply → native TUI', () => {
+    const payload = payloadFromAsked({ id: 'p3', sessionID: 's', permission: 'bash', patterns: [], metadata: {} }, 'D:/w')
+    const extraction = opencodeToGuardRequest(opencodeNormalize(payload))
+    expect(extraction.kind).toBe('unreviewable')
+    const verdict = parseVerdict(serializeVerdict({ status: 'ask', reason: 'unreadable' }))!
+    expect(statusToReply(verdict.status)).toBeUndefined()
+  })
+
+  it('opencode: guard process crash (spawn unavailable) → plugin never throws, never replies', async () => {
+    const asked: PermissionAskedProperties = { id: 'p4', sessionID: 's', permission: 'bash', patterns: [], metadata: { command: 'git status' } }
+    const replies: string[] = []
+    await expect(
+      handlePermissionAsked(asked, 'D:/w', { spawnHook: async () => undefined, reply: async (id) => void replies.push(id) }, new SeenRequests()),
+    ).resolves.toBeUndefined()
+    expect(replies).toEqual([])
+  })
+
+  it('opencode: replayed events (reconnect) answer at most once', async () => {
+    const asked: PermissionAskedProperties = { id: 'p5', sessionID: 's', permission: 'bash', patterns: [], metadata: { command: 'git status' } }
+    const replies: string[] = []
+    const seen = new SeenRequests()
+    const deps = { spawnHook: async () => ({ status: 'allow' as const }), reply: async (id: string) => void replies.push(id) }
+    await handlePermissionAsked(asked, 'D:/w', deps, seen)
+    await handlePermissionAsked(asked, 'D:/w', deps, seen)
+    expect(replies).toEqual(['p5'])
+  })
+
+  it('host-ask fallback: deny replies carry the guard reason as agent feedback', async () => {
+    const asked: PermissionAskedProperties = { id: 'p6', sessionID: 's', permission: 'bash', patterns: [], metadata: { command: 'rm -rf /' } }
+    const replies: Array<{ id: string; reply: string; message?: string }> = []
+    const deps = {
+      spawnHook: async () => ({ status: 'deny' as const, reason: '命中黑名单' }),
+      reply: async (id: string, reply: 'once' | 'reject', message?: string) => void replies.push({ id, reply, message }),
+    }
+    await handlePermissionAsked(asked, 'D:/w', deps, new SeenRequests())
+    expect(replies).toEqual([{ id: 'p6', reply: 'reject', message: '命中黑名单' }])
+  })
+
+  it('host-ask fallback: the "always" bypass lives in the host permission engine, not the guard', () => {
+    // opencode's last-matching-rule-wins means user rules placed after our
+    // "*" keep priority — pinned installer-side (cli plan.spec); the guard's
+    // own contract is only the no-reply-on-ask rule covered above.
+    expect(statusToReply('ask')).toBeUndefined()
   })
 })

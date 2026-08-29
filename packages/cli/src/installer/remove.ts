@@ -70,6 +70,9 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
   const record = read.doc
   let removed = 0
   for (const op of action.ops) {
+    // permission-ask-rules ops are never reverted: the inserted "*": "ask"
+    // cannot be attributed to us once mixed with user rules (ADR-0011 docs).
+    if (op.kind === 'permission-ask-rules') continue
     const arr = arrayAt(record, op.arrayPath, false)
     if (!arr) continue
     const kept = arr.filter((el) => !hasMarker(el, op.markerSuffix))
@@ -96,5 +99,7 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
   } catch (error) {
     return { status: 'failed', message: t('writeBackFailed', { error: error instanceof Error ? error.message : String(error) }) }
   }
-  return { status: 'removed', message: t('removedEntries', { file: action.file, count: removed }), files: [targetFile] }
+  const keepsPermissionRules = action.ops.some((op) => op.kind === 'permission-ask-rules')
+  const suffix = keepsPermissionRules ? t('removedKeepPermission') : ''
+  return { status: 'removed', message: `${t('removedEntries', { file: action.file, count: removed })}${suffix}`, files: [targetFile] }
 }

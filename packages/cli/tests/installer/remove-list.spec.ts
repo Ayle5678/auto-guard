@@ -28,6 +28,11 @@ function installerDeps(home: string): InstallerDeps {
         distSessionStart: join(home, 'pkg', 'host-zcode', 'dist', 'session-start.js'),
       },
       dsh: { packageDir: join(home, 'pkg', 'host-dsh') },
+      claude: {
+        distHookCli: join(home, 'pkg', 'host-claude', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-claude', 'dist', 'session-start.js'),
+      },
+      opencode: { distPluginDir: join(home, 'pkg', 'host-opencode', 'dist') },
     },
   }
 }
@@ -170,6 +175,67 @@ describe('auto-guard remove (ticket 04)', () => {
     const result = await runCli(['remove'], { installer: deps })
     expect(result.code).toBe(0)
     expect(result.output.join('\n')).toContain('auto-guard/ 保留')
+  })
+
+  it('claude init → remove round-trips settings.json with user hooks preserved', async () => {
+    const home = fakeHome()
+    const deps = { ...installerDeps(home), hasExecutable: (exe: string) => exe === 'claude' }
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    // requiredTokens must point at existing built artifacts.
+    mkdirSync(join(home, 'pkg', 'host-claude', 'dist'), { recursive: true })
+    writeFileSync(join(home, 'pkg', 'host-claude', 'dist', 'hook-cli.js'), '', 'utf8')
+    writeFileSync(join(home, 'pkg', 'host-claude', 'dist', 'session-start.js'), '', 'utf8')
+    const original = '{"model":"opus","hooks":{"PreToolUse":[{"matcher":"Grep","hooks":[{"type":"command","command":"mine.sh"}]}]}}'
+    const settingsPath = join(home, '.claude', 'settings.json')
+    writeFileSync(settingsPath, original, 'utf8')
+
+    const init = await runCli(['init', '--host', 'claude', '--yes'], { installer: deps })
+    expect(init.code).toBe(0)
+    expect(init.output.join('\n')).toContain('cc-switch')
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as { hooks: { PreToolUse: unknown[] } }
+    expect(written.hooks.PreToolUse).toHaveLength(2)
+    expect(existsSync(`${settingsPath}.auto-guard.bak`)).toBe(true)
+
+    const remove = await runCli(['remove', '--host', 'claude'], { installer: deps })
+    expect(remove.code).toBe(0)
+    expect(readFileSync(settingsPath, 'utf8')).toBe(original)
+  })
+
+  it('opencode init writes plugin + permission; remove restores the backup byte-for-byte', async () => {
+    const home = fakeHome()
+    const deps = { ...installerDeps(home), hasExecutable: (exe: string) => exe === 'opencode' }
+    mkdirSync(join(home, '.config', 'opencode'), { recursive: true })
+    mkdirSync(join(home, 'pkg', 'host-opencode', 'dist'), { recursive: true })
+    const original = '{"$schema":"x","plugin":[]}'
+    const configPath = join(home, '.config', 'opencode', 'opencode.json')
+    writeFileSync(configPath, original, 'utf8')
+
+    const init = await runCli(['init', '--host', 'opencode', '--yes'], { installer: deps })
+    expect(init.code).toBe(0)
+    const integrated = JSON.parse(readFileSync(configPath, 'utf8')) as { plugin: string[]; permission: Record<string, Record<string, string>> }
+    expect(integrated.plugin).toEqual([join(home, 'pkg', 'host-opencode', 'dist')])
+    expect(Object.keys(integrated.permission.bash!)[0]).toBe('*')
+
+    const remove = await runCli(['remove', '--host', 'opencode'], { installer: deps })
+    expect(remove.code).toBe(0)
+    expect(readFileSync(configPath, 'utf8')).toBe(original)
+  })
+
+  it('opencode structural remove (no backup) strips the plugin entry but keeps permission "*" rules', async () => {
+    const home = fakeHome()
+    const deps = { ...installerDeps(home), hasExecutable: (exe: string) => exe === 'opencode' }
+    const distDir = join(home, 'pkg', 'host-opencode', 'dist')
+    mkdirSync(join(home, '.config', 'opencode'), { recursive: true })
+    const configPath = join(home, '.config', 'opencode', 'opencode.json')
+    // Hand-installed shape: our plugin path present, no backup anywhere.
+    writeFileSync(configPath, JSON.stringify({ plugin: [distDir], permission: { bash: { '*': 'ask' }, edit: { '*': 'ask' }, read: { '*': 'ask' } } }), 'utf8')
+
+    const remove = await runCli(['remove', '--host', 'opencode'], { installer: deps })
+    expect(remove.code).toBe(0)
+    expect(remove.output.join('\n')).toContain('保留')
+    const after = JSON.parse(readFileSync(configPath, 'utf8')) as { plugin: string[]; permission: Record<string, unknown> }
+    expect(after.plugin).toEqual([])
+    expect(after.permission.bash).toEqual({ '*': 'ask' })
   })
 })
 

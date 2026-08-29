@@ -7,7 +7,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { arrayAt, defaultRunCommand, hasMarker, homePath, objectAt, type RunCommand } from './integration.ts'
+import { arrayAt, defaultRunCommand, hasMarker, homePath, isPlainObject, objectAt, type RunCommand } from './integration.ts'
 import { message, type Lang, type MessageKey } from './i18n.ts'
 import { renderTemplate, type HostProfile, type PackagePaths } from './profiles.ts'
 
@@ -84,6 +84,38 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
 
   let changed = false
   for (const op of action.ops) {
+    if (op.kind === 'permission-ask-rules') {
+      // ADR-0011: "*" must land FIRST in each tool object (last matching
+      // rule wins, user rules after it keep priority). A non-object value
+      // (global "allow"/"deny" string) is the user's own choice — never
+      // overwritten, surfaced as a note instead.
+      const permission = (doc.permission ?? {}) as Record<string, unknown>
+      if (!isPlainObject(doc.permission) && doc.permission !== undefined) {
+        plan.blocked = t('blockedNotObject', { file: action.file, path: 'permission' })
+        return plan
+      }
+      let permissionTouched = false
+      for (const tool of op.tools) {
+        const current = permission[tool]
+        if (current === undefined) {
+          permission[tool] = { '*': op.action }
+          plan.diff.push(`+ permission.${tool} = {"*": "${op.action}"}`)
+          changed = true
+          permissionTouched = true
+        } else if (current !== null && typeof current === 'object' && !Array.isArray(current)) {
+          const rules = current as Record<string, unknown>
+          if (rules['*'] !== undefined) continue // idempotent no-op
+          permission[tool] = { '*': op.action, ...rules }
+          plan.diff.push(t('permissionAskInserted', { tool, action: op.action }))
+          changed = true
+          permissionTouched = true
+        } else {
+          plan.diff.push(t('permissionAskGlobalSkip', { tool, value: JSON.stringify(current) }))
+        }
+      }
+      if (permissionTouched) doc.permission = permission
+      continue
+    }
     const arr = arrayAt(doc, op.arrayPath, true)
     if (!arr) {
       plan.blocked = t('blockedNotArray', { file: action.file, path: op.arrayPath.join('.') })

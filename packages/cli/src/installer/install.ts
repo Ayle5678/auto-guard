@@ -61,6 +61,13 @@ export function resolvePackagePaths(): PackagePaths {
     // The dsh adapter's manifest name is `auto-guard` (its dsh-native
     // identity in profile bundles lists), not its old scoped name.
     dsh: { packageDir: dir('auto-guard') },
+    claude: {
+      distHookCli: join(dir('@auto-guard/host-claude'), 'dist', 'hook-cli.js'),
+      distSessionStart: join(dir('@auto-guard/host-claude'), 'dist', 'session-start.js'),
+    },
+    // opencode loads the plugin from the dist directory (index.js entry);
+    // the directory also carries hook-cli.js spawned per decision (ADR-0011).
+    opencode: { distPluginDir: join(dir('@auto-guard/host-opencode'), 'dist') },
   }
 }
 
@@ -301,7 +308,9 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
     out.push('')
     out.push(t('installDone'))
     for (const id of installed) {
-      out.push(t('summaryEntry', { label: profileById(id)!.label, note: message(lang, profileById(id)!.sessionNote) }))
+      const profile = profileById(id)!
+      out.push(t('summaryEntry', { label: profile.label, note: message(lang, profile.sessionNote) }))
+      for (const note of profile.postInstallNotes ?? []) out.push(`    ${message(lang, note)}`)
     }
     out.push(t('verifyHint'))
     out.push(t('configHint'))

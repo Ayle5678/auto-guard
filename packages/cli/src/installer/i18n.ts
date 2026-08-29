@@ -11,7 +11,7 @@
 export type Lang = 'zh' | 'en'
 
 const ZH = {
-  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] [--home <path>] [--lang <zh|en>]',
+  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode] [--yes] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: '{name} 缺少参数值',
   unknownFlag: '未知参数：{name}（可用：--host --yes --banner --home --lang）',
   unknownHosts: '未知宿主：{hosts}（可用值：{valid}）',
@@ -30,7 +30,7 @@ const ZH = {
   summaryEntry: '  · {label}（{note}）',
   verifyHint: '验证：新开会话后运行 auto-guard guard status，或在宿主中执行一条命令观察审查提示',
   configHint: '配置：各宿主独立 —— auto-guard set set-key --config-root ~/.<host>/auto-guard（也可 examine on 开审计）',
-  uninstallHint: '卸载：auto-guard remove [--host dsh,pi,zcode]',
+  uninstallHint: '卸载：auto-guard remove [--host dsh,pi,zcode,claude,opencode]',
   seedingNote: '说明：守卫配置与数据在首次运行时播种到 ~/.<host>/auto-guard/，init 不创建这些文件',
   failuresSummary: '有 {count} 个宿主未完成：{hosts}',
   listDetectLine: '  检测: {value}',
@@ -84,13 +84,22 @@ const ZH = {
   evidenceExe: '找到可执行文件 {exe}',
   sessionNoteReload: '生效需新开会话',
   sessionNoteHooksNoHotReload: 'hooks 无热重载，必须新开 ZCode 会话',
+  sessionNoteClaudeHooksNoHotReload: 'hooks 无热重载，必须新开 Claude Code 会话',
+  sessionNoteOpencodePlugin: '插件随 opencode 启动加载，须新开 opencode 会话',
+  claudeVerifyHint: '验证：新会话运行 node <host-claude>/dist/cli.js guard ping，或执行一条命令观察审查提示',
+  claudeSwitcherRisk: '⚠ 已知风险：cc-switch / clawd 等切换器会整体覆写 ~/.claude/settings.json 抹掉 hooks——若守卫失效，先检查该文件，再重跑 auto-guard init --host claude 恢复',
+  opencodeKeepAskNote: '说明：permission 中插入的 "*" 规则在 remove 时保留（无法区分归属）；如需清除请手工删除各工具对象首位的 "*": "ask"',
+  opencodeSessionAlwaysNote: '说明：你在 opencode 权限框选「本会话总是」后，同模式调用经宿主放行、不再进守卫（ADR-0011）',
+  removedKeepPermission: '；permission 中插入的 "*" 规则保留（无法区分归属，如需清除请手工删除）',
+  permissionAskInserted: '+ permission.{tool}.* = "{action}"（插入首位，既有规则保持优先）',
+  permissionAskGlobalSkip: '~ permission.{tool} 已是全局动作 {value}，跳过（该工具不经守卫）',
   bannerGuardName: '多宿主命令审查守卫',
 } as const
 
 export type MessageKey = keyof typeof ZH
 
 const EN: Record<MessageKey, string> = {
-  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode] [--yes] [--home <path>] [--lang <zh|en>]',
+  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode] [--yes] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: 'missing value for {name}',
   unknownFlag: 'Unknown flag: {name} (available: --host --yes --banner --home --lang)',
   unknownHosts: 'Unknown host(s): {hosts} (valid values: {valid})',
@@ -109,7 +118,7 @@ const EN: Record<MessageKey, string> = {
   summaryEntry: '  · {label} ({note})',
   verifyHint: 'Verify: start a new session and run auto-guard guard status, or run any command in the host and watch for the review prompt',
   configHint: 'Configure: one root per host — auto-guard set set-key --config-root ~/.<host>/auto-guard (or run examine on to enable the audit log)',
-  uninstallHint: 'Uninstall: auto-guard remove [--host dsh,pi,zcode]',
+  uninstallHint: 'Uninstall: auto-guard remove [--host dsh,pi,zcode,claude,opencode]',
   seedingNote: 'Note: guard config and data are seeded into ~/.<host>/auto-guard/ on first run; init does not create them',
   failuresSummary: '{count} host(s) not finished: {hosts}',
   listDetectLine: '  Detected: {value}',
@@ -163,6 +172,15 @@ const EN: Record<MessageKey, string> = {
   evidenceExe: 'found executable {exe}',
   sessionNoteReload: 'takes effect in a new session',
   sessionNoteHooksNoHotReload: 'hooks have no hot reload — you must start a new ZCode session',
+  sessionNoteClaudeHooksNoHotReload: 'hooks have no hot reload — you must start a new Claude Code session',
+  sessionNoteOpencodePlugin: 'the plugin loads at opencode startup — start a new opencode session',
+  claudeVerifyHint: 'Verify: in a new session run node <host-claude>/dist/cli.js guard ping, or run a command and watch for the review prompt',
+  claudeSwitcherRisk: '⚠ Known risk: switchers such as cc-switch / clawd overwrite ~/.claude/settings.json wholesale and wipe the hooks — if the guard goes silent, check that file first, then re-run auto-guard init --host claude to restore',
+  opencodeKeepAskNote: 'Note: the "*" rules inserted under permission survive remove (ownership cannot be distinguished); delete the leading "*": "ask" by hand if you want them gone',
+  opencodeSessionAlwaysNote: 'Note: after picking "Always (this session)" in an opencode permission prompt, matching calls are allowed by the host and never reach the guard (ADR-0011)',
+  removedKeepPermission: ' (the "*" rules inserted under permission are kept — ownership cannot be distinguished; remove them by hand if needed)',
+  permissionAskInserted: '+ permission.{tool}.* = "{action}" (inserted first; existing rules keep priority)',
+  permissionAskGlobalSkip: '~ permission.{tool} is already a global action {value}; skipped (this tool bypasses the guard)',
   bannerGuardName: 'multi-host command review guard',
 }
 

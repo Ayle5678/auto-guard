@@ -13,6 +13,12 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-claude':
+        specifier: workspace:*
+        version: link:../host-claude
+      '@auto-guard/host-opencode':
+        specifier: workspace:*
+        version: link:../host-opencode
       '@auto-guard/host-pi':
         specifier: workspace:*
         version: link:../host-pi
@@ -38,6 +44,12 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-claude':
+        specifier: workspace:*
+        version: link:../host-claude
+      '@auto-guard/host-opencode':
+        specifier: workspace:*
+        version: link:../host-opencode
       '@auto-guard/host-pi':
         specifier: workspace:*
         version: link:../host-pi
@@ -73,6 +85,22 @@ importers:
         specifier: ^13.0.3
         version: 13.0.3
 
+  packages/host-claude:
+    dependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
   packages/host-dsh:
     dependencies:
       '@auto-guard/core':
@@ -81,6 +109,22 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/host-opencode:
+    dependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
