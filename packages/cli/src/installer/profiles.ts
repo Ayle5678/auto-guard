@@ -100,6 +100,8 @@ export interface HostProfile {
   id: HostId
   label: string
   detection: DetectionSpec
+  /** HOME-relative auto-guard config root, mirroring the adapter's AUTO_GUARD_DIR (ADR-0003); the explicit rule-update step scans it (ADR-0013). */
+  configRoot: string
   /** Init-summary note as an i18n key (hosts without hot reload say so here). */
   sessionNote: MessageKey
   /** Extra init-summary lines as i18n keys (warnings, verification hints). */
@@ -142,6 +144,7 @@ const QODER_SESSIONSTART_TEMPLATE = `{"matcher":"startup|resume","hooks":[{"type
 export const PROFILES: readonly HostProfile[] = [
   {
     id: 'dsh',
+    configRoot: '.dsh/auto-guard',
     label: 'DeepSeek Harness',
     detection: { dirs: ['.dsh'], files: [], executables: ['dsh'] },
     sessionNote: 'sessionNoteReload',
@@ -163,6 +166,7 @@ export const PROFILES: readonly HostProfile[] = [
   },
   {
     id: 'pi',
+    configRoot: '.pi/auto-guard',
     label: 'Pi Coding Agent',
     detection: { dirs: ['.pi'], files: [], executables: ['pi'] },
     sessionNote: 'sessionNoteReload',
@@ -181,6 +185,7 @@ export const PROFILES: readonly HostProfile[] = [
   },
   {
     id: 'zcode',
+    configRoot: '.zcode/auto-guard',
     label: 'ZCode',
     detection: { dirs: ['.zcode'], files: ['.zcode/cli/config.json'], executables: [] },
     sessionNote: 'sessionNoteHooksNoHotReload',
@@ -206,6 +211,7 @@ export const PROFILES: readonly HostProfile[] = [
   },
   {
     id: 'claude',
+    configRoot: '.claude/auto-guard',
     label: 'Claude Code',
     detection: { dirs: ['.claude'], files: ['.claude/settings.json'], executables: ['claude'] },
     sessionNote: 'sessionNoteClaudeHooksNoHotReload',
@@ -222,6 +228,7 @@ export const PROFILES: readonly HostProfile[] = [
   },
   {
     id: 'opencode',
+    configRoot: '.config/opencode/auto-guard',
     label: 'OpenCode',
     detection: { dirs: ['.config/opencode'], files: ['.config/opencode/opencode.json'], executables: ['opencode'] },
     sessionNote: 'sessionNoteOpencodePlugin',
@@ -238,6 +245,7 @@ export const PROFILES: readonly HostProfile[] = [
   },
   {
     id: 'qoder',
+    configRoot: '.qoder/auto-guard',
     label: 'Qoder',
     detection: { dirs: ['.qoder'], files: ['.qoder/settings.json'], executables: ['qoder'] },
     sessionNote: 'sessionNoteQoderHooksNoHotReload',
@@ -267,6 +275,7 @@ export function validateProfile(profile: HostProfile): string[] {
   if (!d || (!d.dirs?.length && !d.files?.length && !d.executables?.length)) errors.push('detection 需要至少一项证据（dirs/files/executables）')
   if (!profile.sessionNote) errors.push('sessionNote 不能为空')
   else if (!isMessageKey(profile.sessionNote)) errors.push(`sessionNote 必须是消息目录中的键：${profile.sessionNote}`)
+  if (!profile.configRoot) errors.push('configRoot 不能为空（~/ 相对的 auto-guard 配置根）')
   if (!profile.action) {
     errors.push('action 不能为空')
     return errors

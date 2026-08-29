@@ -24,6 +24,7 @@ import { envLang, invalidLangMessage, message, normalizeLang, type Lang, type Me
 import { isConfirmed, promptHostSelection, promptLanguage } from './interactive.ts'
 import { defaultRunCommand, integrationStatus, type RunCommand } from './integration.ts'
 import { applyHostPlan, buildInitPlan } from './plan.ts'
+import { applyRuleUpdate, buildRuleUpdatePlan } from './rule-update.ts'
 import { removeHost } from './remove.ts'
 import { HOST_IDS, profileById, resolveToken, type HostId, type HostProfile, type PackagePaths } from './profiles.ts'
 
@@ -85,6 +86,9 @@ interface InstallerFlags {
   banner?: boolean
   /** Output language; absent means "not pinned" (env / prompt / zh fallback decide). */
   lang?: Lang
+  /** Explicit rule-update choice (ADR-0013); both set is a parse error. */
+  updateRules?: boolean
+  skipRules?: boolean
 }
 
 /** Pre-scan argv for `--lang`/`--lang=x` so even parse errors speak the right language. */
@@ -123,6 +127,10 @@ export function parseInstallerArgs(argv: readonly string[], lang: Lang = 'zh'): 
         flags.hosts = value().split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
       } else if (name === '--yes' || name === '-y') {
         flags.yes = true
+      } else if (name === '--update-rules') {
+        flags.updateRules = true
+      } else if (name === '--skip-rules') {
+        flags.skipRules = true
       } else if (name === '--banner') {
         flags.banner = true
       } else if (name === '--home') {
@@ -142,6 +150,9 @@ export function parseInstallerArgs(argv: readonly string[], lang: Lang = 'zh'): 
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }
+  }
+  if (flags.updateRules && flags.skipRules) {
+    return { ok: false, message: t('rulesFlagConflict') }
   }
   return { ok: true, flags }
 }
@@ -340,8 +351,62 @@ async function runInitBody(flags: InstallerFlags, deps: InstallerDeps, ctx: Init
     out.push(t('uninstallHint'))
     out.push(t('seedingNote'))
   }
+  const ruleUpdateFailed = await runRuleUpdateStep(flags, ctx)
+
   if (failures.length) out.push(t('failuresSummary', { count: failures.length, hosts: failures.join(', ') }))
-  return { code: failures.length ? 2 : 0, output: out }
+  return { code: failures.length || ruleUpdateFailed ? 2 : 0, output: out }
+}
+
+/**
+ * Explicit factory-rule update step (ADR-0013): one prompt per init at most;
+ * decline and skip both leave every file untouched. Non-interactive runs must
+ * pick a side via --update-rules / --skip-rules or the step is a no-op hint.
+ * Returns true when the apply itself failed.
+ */
+async function runRuleUpdateStep(flags: InstallerFlags, ctx: InitContext): Promise<boolean> {
+  const { out, home, readLine, lang } = ctx
+  const t = (key: MessageKey, params: Record<string, string | number> = {}): string => message(lang, key, params)
+  if (flags.skipRules) {
+    out.push(t('rulesUpdateSkipped'))
+    return false
+  }
+  const plan = buildRuleUpdatePlan(home, { lang })
+  for (const blocked of plan.blocked) {
+    out.push(t('rulesUpdateFailed', { file: blocked.displayPath, error: blocked.reason }))
+  }
+  if (!plan.updates.length) {
+    out.push(t('rulesUpToDate'))
+    return false
+  }
+  const preview = (): void => {
+    out.push(t('rulesUpdateHeader', { count: plan.preview.length }))
+    for (const entry of plan.preview) {
+      out.push(t('rulesUpdateEntry', { field: entry.field, pattern: entry.pattern, reason: entry.reason ?? '' }))
+    }
+    out.push(t('rulesUpdateFiles', { files: plan.updates.map((update) => update.displayPath).join(lang === 'zh' ? '、' : ', ') }))
+  }
+  if (!flags.updateRules) {
+    if (!readLine) {
+      out.push(t('rulesUpdateNonInteractiveHint'))
+      return false
+    }
+    preview()
+    const answer = await readLine(t('rulesUpdateConfirm'))
+    if (!isConfirmed(answer)) {
+      out.push(t('rulesUpdateDeclined'))
+      return false
+    }
+  } else {
+    // Non-interactive accept still logs what was appended, for the record.
+    preview()
+  }
+  const outcome = applyRuleUpdate(plan.updates, { lang })
+  if (!outcome.ok) {
+    out.push(t('rulesUpdateFailed', { file: outcome.failedFile ?? '?', error: outcome.error ?? '' }))
+    return true
+  }
+  out.push(t('rulesUpdateDone', { files: outcome.written.length }))
+  return false
 }
 
 function runList(flags: InstallerFlags, deps: InstallerDeps): InstallerResult {

@@ -1,6 +1,6 @@
 # 0006 — 递归删除不变式判定 + init 显式规则更新
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

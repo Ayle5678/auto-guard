@@ -17,9 +17,9 @@ export type { Lang }
 export { envLang, normalizeLang } from '@auto-guard/core'
 
 const ZH = {
-  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--home <path>] [--lang <zh|en>]',
+  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: '{name} 缺少参数值',
-  unknownFlag: '未知参数：{name}（可用：--host --yes --banner --home --lang）',
+  unknownFlag: '未知参数：{name}（可用：--host --yes --banner --home --lang --update-rules --skip-rules）',
   unknownHosts: '未知宿主：{hosts}（可用值：{valid}）',
   hostNotDetected: '未检测到 {label}（{home} 下无宿主特征）：请先安装宿主，或在交互终端中运行 init 以手动确认',
   nonInteractiveHint: '当前环境非交互终端：请使用 --host <dsh|pi|zcode> 指定宿主并加 --yes，例如 auto-guard init --host pi,zcode --yes',
@@ -104,14 +104,25 @@ const ZH = {
   bannerGuardName: '缓存式自动命令审查',
   statusMessageReviewing: '🛡️ auto-guard 安全审查中…',
   statusMessageSessionInit: '🛡️ auto-guard 会话初始化',
+  rulesFlagConflict: '--update-rules 与 --skip-rules 只能二选一',
+  rulesUpdateHeader: '规则更新：出厂默认新增了 {count} 条本地缺失的模式：',
+  rulesUpdateEntry: '  + {field}: {pattern} — {reason}',
+  rulesUpdateFiles: '  · 将更新 {files}',
+  rulesUpdateConfirm: '追加这些规则？(y/N)：',
+  rulesUpdateDeclined: '已跳过规则更新（未确认，文件未改动）',
+  rulesUpdateSkipped: '已跳过规则更新（--skip-rules）',
+  rulesUpdateDone: '规则更新完成：已更新 {files} 个规则文件（写前备份 *.auto-guard.bak）',
+  rulesUpdateFailed: '规则更新失败（{file}）：{error}',
+  rulesUpToDate: '规则已是最新，无需更新',
+  rulesUpdateNonInteractiveHint: '非交互环境：规则更新请显式指定 --update-rules 或 --skip-rules（本次未改动）',
 } as const
 
 export type MessageKey = keyof typeof ZH
 
 const EN: Record<MessageKey, string> = {
-  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--home <path>] [--lang <zh|en>]',
+  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: 'missing value for {name}',
-  unknownFlag: 'Unknown flag: {name} (available: --host --yes --banner --home --lang)',
+  unknownFlag: 'Unknown flag: {name} (available: --host --yes --banner --home --lang --update-rules --skip-rules)',
   unknownHosts: 'Unknown host(s): {hosts} (valid values: {valid})',
   hostNotDetected: 'Host not detected: {label} (no host markers under {home}). Install the host first, or run init in an interactive terminal to confirm manually',
   nonInteractiveHint: 'This is not an interactive terminal: pass --host <dsh|pi|zcode> plus --yes, e.g. auto-guard init --host pi,zcode --yes',
@@ -196,6 +207,17 @@ const EN: Record<MessageKey, string> = {
   bannerGuardName: 'Cached Auto Command Review',
   statusMessageReviewing: '🛡️ auto-guard reviewing…',
   statusMessageSessionInit: '🛡️ auto-guard session init',
+  rulesFlagConflict: '--update-rules and --skip-rules are mutually exclusive',
+  rulesUpdateHeader: 'Rule update: the factory defaults added {count} pattern(s) missing locally:',
+  rulesUpdateEntry: '  + {field}: {pattern} — {reason}',
+  rulesUpdateFiles: '  · will update {files}',
+  rulesUpdateConfirm: 'Append these rules? (y/N): ',
+  rulesUpdateDeclined: 'Rule update skipped (not confirmed; files untouched)',
+  rulesUpdateSkipped: 'Rule update skipped (--skip-rules)',
+  rulesUpdateDone: 'Rule update complete: {files} rule file(s) updated (backed up to *.auto-guard.bak first)',
+  rulesUpdateFailed: 'Rule update failed ({file}): {error}',
+  rulesUpToDate: 'Rules are already up to date',
+  rulesUpdateNonInteractiveHint: 'Non-interactive environment: pass --update-rules or --skip-rules explicitly for the rule update (nothing changed this run)',
 }
 
 const catalog = defineCatalog(ZH, EN)
