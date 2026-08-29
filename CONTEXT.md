@@ -192,3 +192,21 @@ _Avoid_: 判词、说明
 **删除理由标记（delete-reason marker）**:
 目录删除被复核拒绝后，用户在原命令上附带的协议标记（`[删除理由] <理由>`），引擎按字面解析后交 LLM 复核。是协议不是文案，不参与双语。
 _Avoid_: 删除前缀、注释语法
+
+## 工具与界面
+
+**TUI 控制台（Guard TUI / auto-guard-tui）**:
+全屏交互管理控制台（`packages/tui`，SPEC 0009 / ADR-0014）：覆盖安装器与 guard/set/examine/optimize 全部命令面，主要服务宿主无设置 UI 的用户。零运行时依赖、手写 ANSI 渲染；所有动作经 `runCli`/`runInstallerCommand` 执行，语义与 CLI 单一事实源。
+_Avoid_: 设置界面（那是 DSH 宿主的）、GUI
+
+**帧渲染器（frame renderer）**:
+TUI 的唯一渲染出口：`render(state) → string[]`（styled 行数组）。驱动层做行级 diff 重绘；组件全是纯函数，可在无终端环境下测试。
+_Avoid_: 组件树、虚拟 DOM
+
+**命令模式（command mode）**:
+TUI 内按 `:` 呼出的任意命令通道：空格分割 argv，`init|list|remove` 走安装器、其余走管理 CLI（自动补当前 `--config-root`），回执进日志屏。全命令面的保底通道。
+_Avoid_: shell 模式、终端模拟
+
+**回执（receipt）**:
+一次命令执行的可见结果：命令 + 退出码 + 双语输出。进 footer（最近一条）与日志屏（流水）。退出码着色（0 绿 / 非 0 红）。
+_Avoid_: toast、通知

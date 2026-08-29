@@ -89,3 +89,37 @@
 **Q22 reviewer 测试的 seam 为何从 fetch 桩迁到本地 mock server？**
 ➡️ 自答：传输层换 node:http 后 `vi.stubGlobal('fetch')` 拦截不到任何东西，残留的桩会让测试真实出网（zcode 用例实测打到真 API 收 401 而失败）。本地 127.0.0.1 mock server 是诚实 seam——测试真正跑到新传输路径，且与崩溃本身的网络形态一致。迁移四个文件：core `llm.spec.ts`（新增 tests/helpers/chat-mock.ts）、`llm-lang.spec.ts`、host-pi `session-ui-lang.spec.ts`、host-zcode `zcode-cli-lang.spec.ts`。
 拒绝项：给 reviewer 加 transport 注入参数（为测试污染公共 API，且注入桩又回到"不跑真传输"的老路）。
+
+## Round 8 — Guard TUI 全屏控制台（2026-08-30，SPEC 0009 / ADR-0014）
+
+**Q23 参考物是 ccstatusline（React/Ink），为什么 TUI 不用 Ink 而手写 ANSI？**
+➡️ 自答：**零运行时依赖是本仓库的一贯纪律**（core 仅内置模块、cli 仅 workspace 依赖、安装器手写 readline 交互），一个安全网工具不应为一个 UI 引入 React 运行时与其供应链；双语界面必须自己做 CJK 宽度对齐（通用组件库也常做错，混排错位是「精美」的第一杀手）；且纯函数 `render(state) → string[]` 让整套 UI 可在无终端的 CI 里做断言测试。代价是自绘组件的一次性成本，用「组件层只有十来个纯函数」封顶；ccstatusline 借鉴的是它的**体验模式**（全屏、powerline 头、实时预览、危险操作守卫确认），不是它的技术栈。
+拒绝项：Ink/React（依赖纪律 + 供应链 + CJK 对齐 + 可测性四条全踩）；blessed（已停维、巨型 API、Windows 行为玄学）；Web/HTTUI（引入浏览器依赖，偏离终端工具定位）。
+
+**Q24 TUI 与既有命令语义的关系——重写一层还是代理一层？**
+➡️ 自答：**全部动作代理 `runCli` / `runInstallerCommand`，TUI 零重写**。管理命令 = `runCli([...argv, '--config-root', root])`，安装器 = `runInstallerCommand(['init','--host',…,'--yes',…])`。回执（退出码 + 双语输出）原样进日志屏。理由：语义只有一份，CLI 已有的注入化测试（CliDeps/InstallerDeps）直接成为 TUI 动作层的测试 seam；TUI 若重写开关/清理/回滚逻辑，第一个 bug 就是两份语义漂移。结构化读（状态卡、安装计划预览）才直接调 core/cli 读函数。
+拒绝项：TUI 内实现第二套操作逻辑（漂移税永久化）；TUI spawn 子进程跑 `auto-guard` bin（多一层进程 + Windows 退出码/编码坑，且丢注入测试能力）。
+
+**Q25 `set set-key` 在统一 CLI 里是无条件拒绝的（与 docs/cli.md 三步向导的说法不符），TUI 怎么办？**
+➡️ 自答：向导真身只在 host-zcode 旧 `cli.ts`（`setKeyInteractive`），统一 CLI 的 shell.ts 该分支**无条件**打印 needs-TTY 退出 2——建票时发现的文档-实现不一致。TUI **不修 cli 也不复用死路**，按向导语义自实现（base → model → 掩码 key，校验对齐：base 须 http(s)、key trim 后 ≥8 字符无空白，Enter 保留现值），保存走 core `saveApiKey` + `applySetApi`。差异记录进 SPEC 0009，统一 CLI 的修复另开后续票，不混入本特性。
+拒绝项：顺手修 cli（范围蠕变，TUI 分支动管理命令语义需独立评审）；TUI 也拒绝 set-key（那 TUI 就覆盖不了命令面清单）。
+
+**Q26 安装器的交互如何进 TUI？`--yes` 会不会绕过安全确认？**
+➡️ 自答：TUI 用 `detectHosts`/`buildInitPlan`/`buildRuleUpdatePlan` 自己渲染**等价预览**（备份步骤、写入目标、规则 diff 摘要、ADR-0013 的 update/skip 显式选择），用户在 TUI 确认框拍板后才执行 `init --host … --yes`——`--yes` 跳过的只是 CLI 行式确认，安全语义（预览→确认→备份强制）在 TUI 侧完整保留。remove 同理（仅已集成宿主可选 + 红框确认）。语言选择在机器无默认且 env 未设时先问一次并写机器默认（ADR-0011），之后不再问。
+拒绝项：把 readline 行式交互搬进 raw mode TUI（readline 与按键捕获互斥）；不做预览直接 `--yes`（丢失 SPEC 0002 的 diff-before-write 承诺）。
+
+**Q27 非 TTY / dumb 终端 / 管道下 TUI 的行为？**
+➡️ 自答：拒绝启动、打印等价 CLI 命令提示、exit 2——与安装器非 TTY 拒绝、fail-closed 纪律同构。`TERM=dumb` 同拒；`NO_COLOR` 不拒（无色但可用）。SSR/agent 场景本来就该走 CLI，TUI 是给人看的。
+拒绝项：降级为行式 UI（两套交互代码路径，维护面翻倍）；静默挂起等输入（管道下最恶劣的失败模式）。
+
+**Q28 Windows 终端矩阵与退出纪律？**
+➡️ 自答：要求 VT 转义支持（Windows Terminal / Git Bash / ConEmu / mintty / 常见 SSH 全部满足；老 conhost 需系统 VT 开启）。退出三恢复（主屏缓冲、光标可见、回显 + raw mode 复位）挂 `process.on('exit')` 兜底；进程退出沿用 `process.exitCode` 自然退出纪律——reviewer 传输层已是 one-shot `httpPostText`（Round 7），无 keep-alive 悬挂，安全。resize 用 SIGWINCH + 500ms 轮询双保险（Windows 下 SIGWINCH 覆盖不全）。
+拒绝项：`process.exit()` 硬退（Round 7 的教训；且跳过 exit 钩子会留下坏终端）；假设单次 SIGWINCH 足够（实测 Windows 终端拖拽resize 事件粒度不稳）。
+
+**Q29 为什么 `:` 命令模式是「全命令面保底」而不是锦上添花？**
+➡️ 自答：专属控件覆盖高频路径（开关、向导、清理、安装），但命令面会持续演化（未来新组新动作、新 flag）；`:` 模式把 argv 直通 runCli/runInstallerCommand，**任何 CLI 能做的事 TUI 都能做**，「覆盖 100% 命令面」从一次性验收变成结构性保证。代价只是要防密钥类命令进日志——runCli 输出本身已脱敏（maskKey），TUI 不额外回显 argv 中的秘密（set-key 向导不走 argv，天然安全）。
+拒绝项：为每个命令做专属控件（控件数量随命令面线性膨胀，v1 交付不了）；`:` 模式做成完整 shell（引号/管道语义是另一个项目）。
+
+**Q30 TUI 的语言跟谁走？总览聚合视图怎么处理多根多语言？**
+➡️ 自答：TUI 铬件语言按 ADR-0011 四层解析（env > 当前根 config.lang > 机器默认 > zh），切根即可能换语言（与 CLI 每次调用的解析一致）；总览屏是**读视图**，每张卡显示该根自己的语言行（与聚合 `guard status` 每根一行 `lang : en` 的既有行为一致），铬件语言跟当前选中根。`set lang` 动作后下一帧整屏跟随。
+拒绝项：TUI 独立语言设置（第五层出现，违反四层解析的唯一性）；聚合视图强制统一语言（丢失「每宿主可选不同语言」的既有事实）。
