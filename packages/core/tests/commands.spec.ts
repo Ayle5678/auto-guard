@@ -11,6 +11,7 @@ import {
   optimizeListLines,
   optimizeStatusLines,
   recentLines,
+  reportLines,
   rollbackLearnedRules,
   setEnabled,
   statusLines,
@@ -23,6 +24,7 @@ const PI_CAPABILITIES: HostCapabilities = { askStyle: 'four-state', headlessFall
 const DSH_CAPABILITIES: HostCapabilities = { askStyle: 'one-shot', headlessFallback: 'deny', hasUI: true, notifyChannels: { page: true, context: true }, userBash: false, sessionState: 'memory' }
 const ZCODE_CAPABILITIES: HostCapabilities = { askStyle: 'native', headlessFallback: 'host', hasUI: false, notifyChannels: { page: false, context: false }, userBash: false, sessionState: 'disk' }
 import { LightAuditStore } from '../src/audit.ts'
+import type { AuditWindowSummary } from '../src/audit.ts'
 import { emptyLearnedRules, writeLearnedRules } from '../src/learned-rules.ts'
 import type { RuntimeStatus } from '../src/decision-history.ts'
 import type { GuardConfig, RulesFile } from '../src/types.ts'
@@ -206,5 +208,48 @@ describe('host capabilities (ADR-0007)', () => {
 
   it('empty learned rules placeholder stays available for ops callers', () => {
     expect(emptyLearnedRules()).toEqual({ version: 1, cacheable: [] })
+  })
+})
+
+describe('commands: reportLines', () => {
+  const summary = (over: Partial<AuditWindowSummary> = {}): AuditWindowSummary => ({
+    dbTotal: 561,
+    total: 4,
+    allow: 2,
+    deny: 1,
+    ask: 1,
+    reviewerFailed: 1,
+    bySource: [
+      { source: 'llm', count: 3 },
+      { source: 'static-allow', count: 1 },
+    ],
+    ...over,
+  })
+
+  it('renders the window header, kind counts, LLM line and per-source counts', () => {
+    const lines = reportLines(summary(), 7)
+    const text = lines.join('\n')
+    expect(lines[0]).toContain('近 7 天')
+    expect(lines[0]).toContain('561')
+    expect(text).toContain('allow 2 · deny 1 · ask 1')
+    expect(text).toContain('LLM 审查 3 次')
+    expect(text).toContain('fail-closed 兜底 1 次')
+    expect(text).toContain('白名单')
+    // sources sorted by count descending: LLM line first, then per-source rows
+    expect(text.indexOf('白名单')).toBeGreaterThan(text.indexOf('按来源'))
+  })
+
+  it('speaks English when asked', () => {
+    const text = reportLines(summary(), 7, 'en').join('\n')
+    expect(text).toContain('last 7 day(s)')
+    expect(text).toContain('allow 2 · deny 1 · ask 1')
+    expect(text).toContain('allowlist')
+  })
+
+  it('window with no rows renders the empty line with the all-time total', () => {
+    const lines = reportLines(summary({ total: 0, allow: 0, deny: 0, ask: 0, reviewerFailed: 0, bySource: [] }), 7)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('近 7 天无审查记录')
+    expect(lines[0]).toContain('561')
   })
 })

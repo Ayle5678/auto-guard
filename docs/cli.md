@@ -24,7 +24,7 @@ Language: the whole product (installer + management CLI + engine messages + host
 
 Idempotent: re-running `init` detects already-integrated entries and skips them; existing backups are never overwritten. ZCode, Claude Code and Qoder hooks have no hot reload — start a new session in those hosts after installing.
 
-`--config-root` resolution order (management commands): flag → `AUTO_GUARD_CONFIG_ROOT` env → auto-detect (`~/.zcode` / `~/.pi` / `~/.dsh`, first existing).
+`--config-root` resolution order (management commands): flag → `AUTO_GUARD_CONFIG_ROOT` env → auto-detect (`~/.zcode` → `~/.claude` → `~/.config/opencode` → `~/.pi` → `~/.dsh`, first existing).
 
 Each host keeps its own config root (`~/.dsh|~/.pi|~/.zcode/auto-guard/`) — keys, audit and learned rules are per host. When several hosts are installed, auto-detect always lands on one of them, so configure the others explicitly:
 
@@ -38,7 +38,7 @@ export AUTO_GUARD_CONFIG_ROOT=~/.pi/auto-guard          # or pin the whole sessi
 
 | Group | Actions |
 |---|---|
-| `guard` | `on` `off` `status` `recent [n]` `stats` `ping` |
+| `guard` | `on` `off` `status` `recent [n]` `stats` `report [days]`（default 7：按裁决种类与决策来源统计近 N 天审计记录，需 examine on）`ping` |
 | `set` | `set-key`（three-step TTY wizard, echo disabled）`show-key` `clear-key` `set-api base <url>` / `model <id>` / `reset` `lang <zh\|en>`（per-host output language; receipt in the new language）`history on\|off` `reload` |
 | `examine` | `on` `off` `status` `clear-old`（30d）`clear-all` |
 | `optimize` | `status` `analyze` `list` `rollback` |

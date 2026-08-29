@@ -135,6 +135,34 @@ describe('cli: guard group over fake deps', () => {
     expect(ping.code).toBe(0)
     expect(ping.output.join('\n')).toContain('API 联通成功')
   })
+
+  it('report gates on examine and aggregates the audit window by kind and source', async () => {
+    const dir = root()
+    const off = await runCli(['--config-root', dir, 'guard', 'report'], deps)
+    expect(off.code).toBe(0)
+    expect(off.output.join('\n')).toContain('审查日志未开启')
+
+    // same db file for CLI calls and seeding (a closed store must not be reused)
+    const auditPath = join(mkTempForAudit(), 'audit.db')
+    const auditDeps: CliDeps = { ...deps, makeAudit: () => new LightAuditStore(auditPath) }
+    await runCli(['--config-root', dir, 'examine', 'on'], auditDeps)
+    const seed = new LightAuditStore(auditPath)
+    seed.insert({ source: 'tool_call', tool: 'bash', command: 'npm test', decision: { kind: 'allow', source: 'llm', risk: 'low' } })
+    seed.insert({ source: 'tool_call', tool: 'bash', command: 'git push', decision: { kind: 'allow', source: 'user-confirmed' } })
+    seed.insert({ source: 'tool_call', tool: 'bash', command: 'rm -rf /', decision: { kind: 'deny', source: 'hard-deny' } })
+    seed.close()
+
+    const report = await runCli(['--config-root', dir, 'guard', 'report'], auditDeps)
+    expect(report.code).toBe(0)
+    const text = report.output.join('\n')
+    expect(text).toContain('近 7 天命令审查报告')
+    expect(text).toContain('allow 2 · deny 1 · ask 0')
+    expect(text).toContain('LLM 审查 1 次')
+    expect(text).toContain('预授权')
+
+    const usage = await runCli(['--config-root', dir, 'guard', 'bogus'], deps)
+    expect(usage.output.join('\n')).toContain('report')
+  })
 })
 
 describe('cli: set + examine + optimize groups over fake deps', () => {

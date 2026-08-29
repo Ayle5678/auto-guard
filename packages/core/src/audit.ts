@@ -88,6 +88,59 @@ export const SCHEMA_DDL = `
 /** Encryption level reported by a store implementation. */
 export type AuditEncryptionLevel = 'sqlcipher' | 'field-aes-gcm' | 'none'
 
+/** One per-decision-source row count inside a report window. */
+export interface AuditSourceCount {
+  source: string
+  count: number
+}
+
+/**
+ * Aggregated verdict counts over a time window (`guard report [days]`).
+ * All numbers come from GROUP BY queries — no decryption needed because the
+ * aggregated columns (recorded_at / decision_kind / decision_source /
+ * reviewer_failed) are never encrypted.
+ */
+export interface AuditWindowSummary {
+  /** Rows in the whole database, window or not. */
+  dbTotal: number
+  /** Rows inside the window. */
+  total: number
+  allow: number
+  deny: number
+  ask: number
+  /** Rows where the reviewer itself failed and policy failed closed. */
+  reviewerFailed: number
+  /** Rows grouped by decision source, count descending (source name as tiebreak). */
+  bySource: AuditSourceCount[]
+}
+
+/** Raw grouped row shape both store implementations feed into {@link summarizeGroups}. */
+export interface AuditGroupRow {
+  decision_kind: string
+  decision_source: string
+  reviewer_failed: number
+  count: number
+}
+
+/** Fold grouped (kind, source, reviewerFailed) counts into a window summary; shared by both stores. */
+export function summarizeGroups(rows: readonly AuditGroupRow[], dbTotal: number): AuditWindowSummary {
+  const summary: AuditWindowSummary = { dbTotal, total: 0, allow: 0, deny: 0, ask: 0, reviewerFailed: 0, bySource: [] }
+  const bySource = new Map<string, number>()
+  for (const row of rows) {
+    const count = Number(row.count)
+    summary.total += count
+    if (row.decision_kind === 'allow') summary.allow += count
+    else if (row.decision_kind === 'deny') summary.deny += count
+    else if (row.decision_kind === 'ask') summary.ask += count
+    if (row.reviewer_failed) summary.reviewerFailed += count
+    bySource.set(row.decision_source, (bySource.get(row.decision_source) ?? 0) + count)
+  }
+  summary.bySource = [...bySource.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source))
+  return summary
+}
+
 /**
  * Host-agnostic surface both audit implementations satisfy. History and the
  * learned-rule analyzer depend only on this interface.
@@ -96,6 +149,8 @@ export interface AuditStore {
   insert(input: AuditRecordInput): void
   list(): AuditRow[]
   count(): number
+  /** Verdict counts over the last `days` days (kinds, sources, fail-closed), plus the all-time total. */
+  summarizeSince(days: number): AuditWindowSummary
   clearOld(days: number): number
   clearAll(): void
   close(): void
@@ -280,6 +335,23 @@ export class LightAuditStore implements AuditStore {
       return Number(row.count)
     } catch {
       return 0
+    }
+  }
+
+  summarizeSince(days: number): AuditWindowSummary {
+    const db = this.db
+    if (!db) return summarizeGroups([], 0)
+    try {
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      const dbTotal = this.count()
+      const rows = db
+        .prepare(
+          'SELECT decision_kind, decision_source, reviewer_failed, COUNT(*) AS count FROM audit_log WHERE recorded_at >= ? GROUP BY decision_kind, decision_source, reviewer_failed',
+        )
+        .all(cutoff) as unknown as AuditGroupRow[]
+      return summarizeGroups(rows, dbTotal)
+    } catch {
+      return summarizeGroups([], 0)
     }
   }
 

@@ -267,8 +267,26 @@ auto-guard guard status          # 多宿主状态总览（见下）
 auto-guard guard status --config-root ~/.zcode/auto-guard   # 只看一个宿主
 auto-guard guard recent 20       # 最近 20 条裁决历史（默认 10；zcode 宿主的拉取式通知源）
 auto-guard guard stats           # 审计库记录总数
+auto-guard guard report          # 近 7 天审查统计：按裁决种类与决策来源（LLM / 各规则层 / 各缓存层）
+auto-guard guard report 30       # 自定义窗口：近 30 天
 auto-guard guard ping            # DeepSeek API 连通性测试
 ```
+
+`guard report` 输出示例（需 `examine on`；审计库只存 shell 命令裁决，报告即全部裁决的构成）：
+
+```
+🛡️ 近 7 天命令审查报告（审计库共 561 条）
+共 87 条裁决：allow 70 · deny 9 · ask 8
+LLM 审查 12 次 · fail-closed 兜底 1 次
+按来源：
+  LLM      12
+  白名单    45
+  会话缓存   18
+  持久缓存   7
+  ...
+```
+
+`report` 的数字直接来自审计库 GROUP BY（`decision_kind` / `decision_source` / `reviewer_failed`），来源显示名与通知里的标签一致（`[LLM]`、`[白名单]`、`[会话缓存]`…）。
 
 `guard status` 的两种视图：
 

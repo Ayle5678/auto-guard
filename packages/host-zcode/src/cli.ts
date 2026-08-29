@@ -39,6 +39,7 @@ import {
   optimizeListLines,
   optimizeStatusLines,
   recentLines,
+  reportLines,
   rollbackLearnedRules,
   setEnabled,
   statusLines,
@@ -105,6 +106,20 @@ function guardCommand(action: string, rest: readonly string[] = []): number | Pr
         }
       } else {
         print(zcMessage(lang, 'statsExamineOff'))
+      }
+      return 0
+    }
+    case 'report': {
+      const days = Number(rest[0]) > 0 ? Math.floor(Number(rest[0])) : 7
+      if (!config.examineEnabled) {
+        print(zcMessage(lang, 'statsExamineOff'))
+        return 0
+      }
+      const audit = auditFor(config)
+      try {
+        print(reportLines(audit.summarizeSince(days), days, lang).join('\n'))
+      } finally {
+        audit.close()
       }
       return 0
     }

@@ -88,4 +88,32 @@ describe.each(factories)('audit contract: $name', ({ make }) => {
     store.clearAll()
     expect(store.count()).toBe(0)
   })
+
+  it('summarizeSince aggregates kinds and sources inside the window only', () => {
+    const store = make()
+    stores.push(store)
+    const day = 24 * 60 * 60 * 1000
+    const ago = (days: number) => new Date(Date.now() - days * day).toISOString()
+    store.insert({ source: 'tool_call', tool: 'bash', command: 'a', decision: { kind: 'allow', source: 'llm', risk: 'low' }, recordedAt: ago(0.1) })
+    store.insert({ source: 'tool_call', tool: 'bash', command: 'b', decision: { kind: 'allow', source: 'static-allow' }, recordedAt: ago(0.2) })
+    store.insert({ source: 'tool_call', tool: 'bash', command: 'c', decision: { kind: 'deny', source: 'hard-deny' }, recordedAt: ago(0.3) })
+    store.insert({ source: 'tool_call', tool: 'bash', command: 'd', decision: { kind: 'ask', source: 'llm', risk: 'medium', reviewerFailed: true }, recordedAt: ago(0.4) })
+    store.insert({ source: 'tool_call', tool: 'bash', command: 'old', decision: { kind: 'allow', source: 'llm', risk: 'low' }, recordedAt: ago(10) })
+
+    const summary = store.summarizeSince(7)
+    expect(summary.total).toBe(4)
+    expect(summary.allow).toBe(2)
+    expect(summary.deny).toBe(1)
+    expect(summary.ask).toBe(1)
+    expect(summary.reviewerFailed).toBe(1)
+    expect(summary.dbTotal).toBe(5)
+    expect(summary.bySource).toEqual([
+      { source: 'llm', count: 2 },
+      { source: 'hard-deny', count: 1 },
+      { source: 'static-allow', count: 1 },
+    ])
+
+    // widening the window pulls the 10-day-old row back in
+    expect(store.summarizeSince(30).total).toBe(5)
+  })
 })

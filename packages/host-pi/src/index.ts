@@ -52,6 +52,7 @@ import {
   classifyCommand,
   loadRules,
   maskKey,
+  reportLines,
   setEnabled,
   applySetApi,
   TemplateCache,
@@ -419,6 +420,14 @@ export default function (pi: ExtensionAPI): void {
           }),
         ]
         ctx.ui.notify(lines.join('\n'), 'info')
+      } else if (sub === 'report' || sub.startsWith('report ')) {
+        const daysRaw = Number(raw.slice('report'.length).trim())
+        const days = daysRaw > 0 ? Math.floor(daysRaw) : 7
+        if (!guard.config.examineEnabled) {
+          ctx.ui.notify(t('examineStatusOff'), 'info')
+          return
+        }
+        ctx.ui.notify(reportLines(guard.audit.summarizeSince(days), days, guard.lang).join('\n'), 'info')
       } else if (sub === 'status') {
         const last = guard.reviewer.lastReview
         const when = last ? new Date(last.at).toLocaleString() : ''

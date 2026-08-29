@@ -10,7 +10,7 @@ import { defineCatalog, type Lang } from '@auto-guard/core'
 const catalog = defineCatalog(
   {
     usage: '用法：node dist/cli.js <guard|set|examine|optimize> <action>',
-    guardUsage: '用法：node dist/cli.js guard <on|off|status|recent|stats|ping>',
+    guardUsage: '用法：node dist/cli.js guard <on|off|status|recent|stats|report|ping>',
     setUsage: '用法：node dist/cli.js set <set-key|show-key|clear-key|set-api|lang|history|reload>',
     examineUsage: '用法：node dist/cli.js examine <on|off|status|clear-old|clear-all>',
     optimizeUsage: '用法：node dist/cli.js optimize <status|analyze|list|rollback>',
@@ -71,7 +71,7 @@ const catalog = defineCatalog(
   },
   {
     usage: 'Usage: node dist/cli.js <guard|set|examine|optimize> <action>',
-    guardUsage: 'Usage: node dist/cli.js guard <on|off|status|recent|stats|ping>',
+    guardUsage: 'Usage: node dist/cli.js guard <on|off|status|recent|stats|report|ping>',
     setUsage: 'Usage: node dist/cli.js set <set-key|show-key|clear-key|set-api|lang|history|reload>',
     examineUsage: 'Usage: node dist/cli.js examine <on|off|status|clear-old|clear-all>',
     optimizeUsage: 'Usage: node dist/cli.js optimize <status|analyze|list|rollback>',

@@ -41,6 +41,7 @@ import {
   optimizeStatusLines,
   readMachineLang,
   recentLines,
+  reportLines,
   rollbackLearnedRules,
   saveApiKey,
   saveConfig,
@@ -299,6 +300,20 @@ function guardCommand(
         }
       } else {
         ctx.out.push(shellMessage(lang, 'statsExamineOff'))
+      }
+      return { code: 0, output: ctx.out }
+    }
+    case 'report': {
+      const days = Number(rest[0]) > 0 ? Math.floor(Number(rest[0])) : 7
+      if (!config.examineEnabled) {
+        ctx.out.push(shellMessage(lang, 'statsExamineOff'))
+        return { code: 0, output: ctx.out }
+      }
+      const audit = io.auditFor(config)
+      try {
+        ctx.out.push(reportLines(audit.summarizeSince(days), days, lang).join('\n'))
+      } finally {
+        audit.close()
       }
       return { code: 0, output: ctx.out }
     }

@@ -11,11 +11,11 @@
  * language so existing zh callers keep their byte-stable output (ADR-0011).
  */
 import { loadAnalyzeState, updateLastAnalysis } from './analyze-state.ts'
+import type { AuditStore, AuditWindowSummary } from './audit.ts'
 import { formatLocalTime, truncateOneLine, type RuntimeStatus } from './decision-history.ts'
 import { generateLearnedRules, loadLearnedRules, restoreLearnedRules, writeLearnedRules, type LearnedRulesFile } from './learned-rules.ts'
 import { coreMessage } from './messages.ts'
 import { sourceTag } from './notify.ts'
-import type { AuditStore } from './audit.ts'
 import { langOf, normalizeLang, type Lang } from './lang.ts'
 import type { GuardConfig, RulesFile } from './types.ts'
 
@@ -56,6 +56,28 @@ export function recentLines(entries: readonly RuntimeStatus[], count = 10, lang:
     const layer = sourceTag(entry.lastDecisionSource as never, lang).padEnd(6)
     const subject = entry.lastCommand ?? entry.lastDetail ?? ''
     lines.push(`${time}  ${tool} ${kind} ${layer}  ${truncateOneLine(subject, 48)}`)
+  }
+  return lines
+}
+
+/**
+ * `guard report [days]` lines: verdict counts over the window by kind and by
+ * decision source (LLM vs each rule/cache layer), plus the fail-closed count.
+ * Pure rendering over an {@link AuditWindowSummary} — the store does the math.
+ */
+export function reportLines(summary: AuditWindowSummary, days: number, lang: Lang = 'zh'): string[] {
+  if (summary.total === 0) return [coreMessage(lang, 'reportEmpty', { days, dbTotal: summary.dbTotal })]
+  const llm = summary.bySource.find((entry) => entry.source === 'llm')?.count ?? 0
+  const lines = [
+    coreMessage(lang, 'reportHeader', { days, dbTotal: summary.dbTotal }),
+    coreMessage(lang, 'reportKinds', { total: summary.total, allow: summary.allow, deny: summary.deny, ask: summary.ask }),
+  ]
+  if (llm > 0 || summary.reviewerFailed > 0) {
+    lines.push(coreMessage(lang, 'reportLlm', { llm, failed: summary.reviewerFailed }))
+  }
+  lines.push(coreMessage(lang, 'reportBySource'))
+  for (const { source, count } of summary.bySource) {
+    lines.push(`  ${sourceTag(source as never, lang).padEnd(8)} ${count}`)
   }
   return lines
 }

@@ -110,7 +110,7 @@
 
 - 拦截所有 `tool_call`（bash / pwsh / write / edit / read）**和用户手敲的每条 `user_bash` 命令**（operations 可改写输入）。
 - **四态 ask 确认框**（仅本次同意 / 本会话都同意 / 拒绝可输原因 / 本会话都拒绝），用 Pi 原生 UI；目录删除确认走 `ctx.ui.input`，headless 时 fail-closed。
-- slash 命令面最全：`/guard`（on/off/status/stats）、`/guard-set`（reload / set-key / show-key / clear-key / set-api 向导）、`/guard-examine`（审计）、`/guard-optimize`（学习 + 历史层）。
+- slash 命令面最全：`/guard`（on/off/status/stats/report）、`/guard-set`（reload / set-key / show-key / clear-key / set-api 向导）、`/guard-examine`（审计）、`/guard-optimize`（学习 + 历史层）。
 - 底部状态栏实时显示守卫态：`🛡️ on` · `⚠ no-key`（缺 key，fail-closed）· `审查✗`（上次审查失败）· `off`。
 - 通知路由：allow 仅 UI（`ctx.ui.notify`）；deny/ask 另经 `sendMessage` 注入模型上下文，让 agent 知道自己被拦。规则放行即使配置成 context 也强制只走页面。
 - 审计：SQLCipher，不可用时降级 Light（字段级 AES-GCM）。
@@ -176,9 +176,49 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 
 新增宿主 = 一条 profile + 一个适配层包，不改安装器逻辑（[接入指南](docs/new-host.md)）。
 
+## 命令行操作
+
+全部宿主共用一套命令面：安装器（`init` / `list` / `remove`）+ 四个管理组（`guard` / `set` / `examine` / `optimize`）。每个宿主不同的只是 **CLI 在哪**、**指向哪个配置根**。
+
+### 统一 CLI —— 一个入口管所有宿主
+
+用 `--config-root` 选宿主（→ 环境变量 `AUTO_GUARD_CONFIG_ROOT` → 自动探测，见[配置](#配置)）：
+
+```bash
+npx @auto-guard/cli guard status                                  # 多宿主状态总览
+npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # 指向单个宿主
+# 本仓库开发树（Node 23+ 可直跑 TS）：node packages/cli/src/auto-guard.ts <命令>
+# 或构建产物：pnpm build && node packages/cli/dist/auto-guard.js <命令>
+```
+
+### 各宿主自带 CLI —— 构建期绑定配置根，免 flag
+
+ZCode、Claude Code、OpenCode、Qoder 四个适配层还各自带一个 `dist/cli.js`，编译期就绑定本宿主的配置根——直接运行，不需要 `--config-root`：
+
+| 宿主 | 命令 | 作用根 |
+|---|---|---|
+| ZCode | `node <host-zcode>/dist/cli.js guard status` | `~/.zcode/auto-guard` |
+| Claude Code | `node <host-claude>/dist/cli.js guard ping` | `~/.claude/auto-guard` |
+| OpenCode | `node <host-opencode>/dist/cli.js guard status` | `~/.config/opencode/auto-guard` |
+| Qoder | `node <host-qoder>/dist/cli.js guard status` | `~/.qoder/auto-guard` |
+
+`<host-…>` 即适配层包目录：npm 安装后在 `<npm 全局目录>/node_modules/@auto-guard/host-…`，本仓库内是 `packages/host-…`。确切的绝对路径也在安装器写入的 hook 命令里（`~/.zcode/cli/config.json`、`~/.claude/settings.json`、`~/.qoder/settings.json`、`~/.config/opencode/opencode.json` 的 `plugin` 条目）——同一个 `dist/` 目录下、`hook-cli.js` 旁边就是 `cli.js`。
+
+两种入口的动作完全一致：`guard on|off|status|recent [n]|stats|report [days]|ping`、`set set-key|show-key|clear-key|set-api …|history …|reload`、`examine on|off|status|clear-old|clear-all`、`optimize status|analyze|list|rollback`——完整速查见 [CLI 指南](docs/cli.md)。`guard report` 按裁决种类与决策来源（LLM / 各规则层 / 各缓存层）统计审计窗口。
+
+两个带 UI 的宿主日常不需要终端：
+
+- **dsh**——开关就是权限选择器里的 `auto-guard` 预设（唯一开关）；配置走专属设置页（分组字段、key 打码、维护按钮：立即分析 / 查看规则 / 回滚 / 状态 / 清理审计 / 导出 / 新建审计库 / 统计），本地与 **Typert remote** 均可操作。命令行仍可管这个根的审计与学习：`npx @auto-guard/cli examine on --config-root ~/.dsh/auto-guard`（`guard on/off` 对 dsh 无效——开关只在预设）。
+- **pi**——命令面全在会话内：`/guard`（on/off/status/stats）、`/guard-set`（`set-key` 回显关闭向导 / show-key / clear-key / set-api / reload）、`/guard-examine`、`/guard-optimize`。终端等价写法：`npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard`。
+
+宿主特有的两点：
+
+- **zcode** 的会话内 slash 命令（`/guard`、`/guard-examine` …）是 `commands/*.md`，教模型替你跑自带 CLI；`guard recent 20` 是拉式反馈的查看入口。
+- **claude** 的 `guard ping` 是切换器（cc-switch / clawd）抹掉 hooks 后最快的存活自检。
+
 ## 配置
 
-全部配置走命令行或直接编辑配置根里的 JSON；**每个宿主一个配置根，互不共享**（Key、审计、学习规则独立）。管理命令的宿主选择：`--config-root <path>` → 环境变量 `AUTO_GUARD_CONFIG_ROOT` → 自动探测（`~/.zcode → ~/.pi → ~/.dsh`，取第一个存在的）——装了多个宿主时自动探测只命中一个，给其它宿主做配置要显式指定：
+全部配置走命令行或直接编辑配置根里的 JSON；**每个宿主一个配置根，互不共享**（Key、审计、学习规则独立）。管理命令的宿主选择：`--config-root <path>` → 环境变量 `AUTO_GUARD_CONFIG_ROOT` → 自动探测（`~/.zcode → ~/.claude → ~/.config/opencode → ~/.pi → ~/.dsh`，取第一个存在的）——装了多个宿主时自动探测只命中一个，给其它宿主做配置要显式指定：
 
 ```bash
 auto-guard set set-key --config-root ~/.pi/auto-guard   # 给 Pi 配 Key

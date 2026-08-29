@@ -11,7 +11,7 @@ import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { expandHome, normalizeCommand } from './command.ts'
 import { decryptField, deriveKey, isEncrypted } from './audit-crypto.ts'
-import { redactCommand, SCHEMA_DDL, type AuditEncryptionLevel, type AuditRecordInput, type AuditRow } from './audit.ts'
+import { redactCommand, SCHEMA_DDL, summarizeGroups, type AuditEncryptionLevel, type AuditGroupRow, type AuditRecordInput, type AuditRow, type AuditWindowSummary } from './audit.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -301,6 +301,23 @@ export class SqlcipherAuditStore {
       return Number(row.count)
     } catch {
       return 0
+    }
+  }
+
+  summarizeSince(days: number): AuditWindowSummary {
+    const db = this.db
+    if (!db) return summarizeGroups([], 0)
+    try {
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      const dbTotal = this.count()
+      const rows = db
+        .prepare(
+          'SELECT decision_kind, decision_source, reviewer_failed, COUNT(*) AS count FROM audit_log WHERE recorded_at >= ? GROUP BY decision_kind, decision_source, reviewer_failed',
+        )
+        .all(cutoff) as unknown as AuditGroupRow[]
+      return summarizeGroups(rows, dbTotal)
+    } catch {
+      return summarizeGroups([], 0)
     }
   }
 

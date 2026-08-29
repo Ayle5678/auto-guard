@@ -29,9 +29,11 @@ import {
   applyHistoryToggle,
   applySetApi,
   examineStatusLines,
+  langOf,
   optimizeListLines,
   optimizeStatusLines,
   recentLines,
+  reportLines,
   rollbackLearnedRules,
   setEnabled,
   statusLines,
@@ -92,6 +94,20 @@ function guardCommand(action: string, rest: readonly string[] = []): number | Pr
       }
       return 0
     }
+    case 'report': {
+      const days = Number(rest[0]) > 0 ? Math.floor(Number(rest[0])) : 7
+      if (!config.examineEnabled) {
+        print('审查日志未开启（cli.js examine on 后才有持久统计）')
+        return 0
+      }
+      const audit = auditFor(config)
+      try {
+        print(reportLines(audit.summarizeSince(days), days, langOf(config)).join('\n'))
+      } finally {
+        audit.close()
+      }
+      return 0
+    }
     case 'recent': {
       const count = Number(rest[0]) > 0 ? Number(rest[0]) : 10
       print(recentLines(readRecentDecisions(count), count).join('\n'))
@@ -105,7 +121,7 @@ function guardCommand(action: string, rest: readonly string[] = []): number | Pr
       })
     }
     default:
-      print('用法：node dist/cli.js guard <on|off|status|recent|stats|ping>')
+      print('用法：node dist/cli.js guard <on|off|status|recent|stats|report|ping>')
       return 1
   }
 }

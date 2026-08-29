@@ -113,7 +113,7 @@ Known coverage caveat (opencode, ADR-0011): your own permission rules that `allo
 
 - Intercepts every `tool_call` (bash / pwsh / write / edit / read) **and every `user_bash` command the user types** (with input rewrite for operations).
 - **Four-state ask dialog** (allow once / allow this session / deny with reason / deny this session) via Pi's native UI; directory-delete confirmation uses `ctx.ui.input` with a fail-closed headless marker.
-- Richest slash-command surface: `/guard` (on/off/status/stats), `/guard-set` (reload / set-key / show-key / clear-key / set-api wizard), `/guard-examine` (audit), `/guard-optimize` (learning + history layer).
+- Richest slash-command surface: `/guard` (on/off/status/stats/report), `/guard-set` (reload / set-key / show-key / clear-key / set-api wizard), `/guard-examine` (audit), `/guard-optimize` (learning + history layer).
 - A footer status bar shows live guard state: `🛡️ on` · `⚠ no-key` (fail-closed) · `审查✗` (last review failed) · `off`.
 - Notification routing: allow is UI-only (`ctx.ui.notify`); deny/ask also enter the model context via `sendMessage` so the agent knows it was blocked. Rule-based allows stay page-only even if configured otherwise.
 - Audit store: SQLCipher, falling back to the Light store (field-level AES-GCM) when SQLCipher is unavailable.
@@ -179,9 +179,49 @@ Each host's native channel stays fully supported and coexists with the installer
 
 Adding a host means one profile plus one adapter package — no installer changes ([guide](docs/new-host.md)).
 
+## Command-line operations
+
+One command surface everywhere: the installer (`init` / `list` / `remove`) plus four management groups (`guard` / `set` / `examine` / `optimize`). What differs per host is only **where the CLI lives** and **which config root it targets**.
+
+### Unified CLI — one entry for every host
+
+Pick the host with `--config-root` (→ `AUTO_GUARD_CONFIG_ROOT` env → auto-detect; see [Configuration](#configuration)):
+
+```bash
+npx @auto-guard/cli guard status                                  # multi-host overview
+npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # target one host
+# in this repo (Node 23+ runs TS directly): node packages/cli/src/auto-guard.ts <command>
+# or the build output: pnpm build && node packages/cli/dist/auto-guard.js <command>
+```
+
+### Per-host CLI — pre-bound, no flag needed
+
+The ZCode, Claude Code, OpenCode and Qoder adapters each also ship a `dist/cli.js`, compiled against their own config root — run it directly, no `--config-root`:
+
+| Host | Command | Targets |
+|---|---|---|
+| ZCode | `node <host-zcode>/dist/cli.js guard status` | `~/.zcode/auto-guard` |
+| Claude Code | `node <host-claude>/dist/cli.js guard ping` | `~/.claude/auto-guard` |
+| OpenCode | `node <host-opencode>/dist/cli.js guard status` | `~/.config/opencode/auto-guard` |
+| Qoder | `node <host-qoder>/dist/cli.js guard status` | `~/.qoder/auto-guard` |
+
+`<host-…>` is the adapter package directory: `<npm global>/node_modules/@auto-guard/host-…` after an npm install, `packages/host-…` inside this repo. The concrete absolute path is also visible in the hook command the installer wrote (`~/.zcode/cli/config.json`, `~/.claude/settings.json`, `~/.qoder/settings.json`, the `plugin` entry in `~/.config/opencode/opencode.json`) — `cli.js` sits in the same `dist/` directory as the `hook-cli.js` named there.
+
+Both entry points expose the same actions: `guard on|off|status|recent [n]|stats|report [days]|ping`, `set set-key|show-key|clear-key|set-api …|history …|reload`, `examine on|off|status|clear-old|clear-all`, `optimize status|analyze|list|rollback` — full table in the [CLI guide](docs/cli.md). `guard report` totals the audit window by verdict kind and decision source (LLM vs each rule/cache layer).
+
+The two UI hosts never need a terminal:
+
+- **dsh** — the `auto-guard` permission preset toggles the guard (the only switch); the dedicated settings page (grouped fields, masked key, maintenance buttons: analyze now / view rules / rollback / status / trim audit / export / new audit DB / stats) configures it, locally or via **Typert remote**. The CLI still covers audit and learning against this root: `npx @auto-guard/cli examine on --config-root ~/.dsh/auto-guard` (`guard on/off` is a no-op here — the preset is the switch).
+- **pi** — the full surface lives in-session: `/guard` (on/off/status/stats), `/guard-set` (`set-key` echo-disabled wizard / show-key / clear-key / set-api / reload), `/guard-examine`, `/guard-optimize`. Terminal equivalent: `npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard`.
+
+Two host-specific notes:
+
+- **zcode** slash commands (`/guard`, `/guard-examine`, …) are `commands/*.md` files that teach the model to run the bundled CLI for you; `guard recent 20` is the pull-based feedback channel.
+- **claude**: `guard ping` is the quickest "is the hook still alive" check after a cc-switch / clawd settings wipe.
+
 ## Configuration
 
-Everything is configured from the command line or by editing the JSON in a config root; **each host has its own root and nothing is shared** (keys, audit, learned rules are per host). Management commands pick a host via `--config-root <path>` → `AUTO_GUARD_CONFIG_ROOT` env → auto-detect (`~/.zcode` / `~/.pi` / `~/.dsh`, first existing). With several hosts installed, auto-detect lands on only one of them — target the others explicitly:
+Everything is configured from the command line or by editing the JSON in a config root; **each host has its own root and nothing is shared** (keys, audit, learned rules are per host). Management commands pick a host via `--config-root <path>` → `AUTO_GUARD_CONFIG_ROOT` env → auto-detect (`~/.zcode` → `~/.claude` → `~/.config/opencode` → `~/.pi` → `~/.dsh`, first existing). With several hosts installed, auto-detect lands on only one of them — target the others explicitly:
 
 ```bash
 auto-guard set set-key --config-root ~/.pi/auto-guard   # key for Pi
