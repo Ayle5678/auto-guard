@@ -177,10 +177,12 @@ export function analyzeLearnedRules(deps: AnalyzeDeps, lang: Lang = langOf(deps.
   }
 }
 
-/** `optimize list` lines. */
+/** `optimize list` lines: one line per rule, its learning reason on the next
+ * indented line — pattern and rationale read as a pair instead of one long
+ * wrapped row (user feedback). */
 export function optimizeListLines(learned: LearnedRulesFile, lang: Lang = 'zh'): string[] {
   if (learned.cacheable.length === 0) return [coreMessage(lang, 'optimizeListEmpty')]
-  return learned.cacheable.map((rule) => `${rule.pattern}${rule.reason ? ` — ${rule.reason}` : ''}`)
+  return learned.cacheable.flatMap((rule) => (rule.reason ? [rule.pattern, `  ${rule.reason}`] : [rule.pattern]))
 }
 
 /** `optimize rollback`: restore learned rules from the backup copy. */

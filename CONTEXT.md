@@ -192,3 +192,29 @@ _Avoid_: 判词、说明
 **删除理由标记（delete-reason marker）**:
 目录删除被复核拒绝后，用户在原命令上附带的协议标记（`[删除理由] <理由>`），引擎按字面解析后交 LLM 复核。是协议不是文案，不参与双语。
 _Avoid_: 删除前缀、注释语法
+
+## 工具与界面
+
+**TUI 控制台（Guard TUI / auto-guard-tui）**:
+全屏交互管理控制台（`packages/tui`，SPEC 0009 / ADR-0014）：覆盖安装器与 guard/set/examine/optimize 全部命令面，主要服务宿主无设置 UI 的用户。零运行时依赖、手写 ANSI 渲染；所有动作经 `runCli`/`runInstallerCommand` 执行，语义与 CLI 单一事实源。
+_Avoid_: 设置界面（那是 DSH 宿主的）、GUI
+
+**帧渲染器（frame renderer）**:
+TUI 的唯一渲染出口：`render(state) → string[]`（styled 行数组）。驱动层做行级 diff 重绘；组件全是纯函数，可在无终端环境下测试。
+_Avoid_: 组件树、虚拟 DOM
+
+**命令模式（command mode）**:
+TUI 内按 `:` 呼出的任意命令通道：空格分割 argv，`init|list|remove` 走安装器、其余走管理 CLI（自动补当前 `--config-root`），回执进日志屏。全命令面的保底通道。
+_Avoid_: shell 模式、终端模拟
+
+**回执（receipt）**:
+一次命令执行的可见结果：命令 + 退出码 + 双语输出。命令记录用户视角的 argv（注入的 `--config-root` 只存在于实际执行调用）。进 footer（最近一条）、日志屏（流水）与所在屏输出面板（最近一条）。退出码着色（0 绿 / 非 0 红）。
+_Avoid_: toast、通知
+
+**输出面板（output pane）**:
+列表屏与安装屏右侧的命令输出视口：内容 = 最近回执或只读自动加载结果；超宽行折行不静默截断（SPEC 0011），PgUp/PgDn/g/G 滚动、新回执贴底。日志屏是全量流水的可滚表面。
+_Avoid_: 终端模拟、控制台区
+
+**自动加载（autoload）**:
+列表屏首次进入自动执行的只读命令（`guard recent 10`、`examine/optimize status`、`set show-key`、安装 `list`），用于填输出面板；不写回执、不进日志屏（日志 = 用户显式动作 + 命令模式）。
+_Avoid_: 后台刷新、轮询

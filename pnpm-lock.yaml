@@ -190,6 +190,25 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.13.3)
 
+  packages/tui:
+    dependencies:
+      '@auto-guard/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':

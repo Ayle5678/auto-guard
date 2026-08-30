@@ -168,7 +168,8 @@ describe('commands: examine + optimize groups', () => {
       expect(snapshot.join('\n')).toContain('cacheable rules   : 1')
 
       expect(optimizeListLines({ version: 1, cacheable: [] })).toEqual(['(无学习规则)'])
-      expect(optimizeListLines({ version: 1, cacheable: [{ pattern: 'p', reason: 'r' }] })[0]).toBe('p — r')
+      expect(optimizeListLines({ version: 1, cacheable: [{ pattern: 'p', reason: 'r' }] })).toEqual(['p', '  r'])
+      expect(optimizeListLines({ version: 1, cacheable: [{ pattern: 'p' }] })).toEqual(['p'])
 
       const rolled = rollbackLearnedRules(config)
       expect(rolled.ok).toBe(true)

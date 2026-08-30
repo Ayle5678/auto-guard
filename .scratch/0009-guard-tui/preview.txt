@@ -1,0 +1,288 @@
+===== dashboard =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览   2 守卫  3 审计  4 优化  5 密钥  6 安装  7 日志  8 帮助                                   
+┌─ 宿主配置根 ───────────────────────────────────┐ ┌─ ZCode ───────────────────────────────────────┐
+│  DeepSeek Harness  ● on · key✗ · 审计关        │ │★ 当前根 — ~/.zcode/auto-guard                 │
+│  Pi  ● on · key✗ · 审计 561                    │ │enabled : true                                 │
+│❯ ZCode  ● on · key✓ · 审计 2087                │ │lang    : zh                                   │
+│  Claude Code  ● on · key✗ · 审计关             │ │config  : C:\Users\Administrator\.zcode\auto-gu│
+│  OpenCode  未播种（宿主已装，守卫未运行） ·    │ │ard\config.json                                │
+│  Qoder  ● on · key✓ · 审计 344                 │ │review  : https://api.deepseek.com · deepseek-v│
+│                                                │ │4-flash · ⚠ 无 API Key（fail-closed）          │
+│                                                │ │examine : on · history: on                     │
+│                                                │ │审计库记录总数：2087                           │
+│                                                │ │last    : Bash → allow [llm] @ 08-30 02:10:54 ·│
+│                                                │ │ cd /d/yilun/yilun_project/auto-guard-tui && no│
+│                                                │ │de - <<'EOF' …                                 │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+└────────────────────────────────────────────────┘ └───────────────────────────────────────────────┘
+                                                                                                    
+                                                                                                    
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 2 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫   3 审计  4 优化  5 密钥  6 安装  7 日志  8 帮助                                   
+enabled : true                                                                                      
+lang    : zh                                                                                        
+config  : C:\Users\Administrator\.zcode\auto-guard\config.json                                      
+review  : https://api.deepseek.com · deepseek-v4-flash · ⚠ 无 API Key（fail-closed）                
+examine : on · history: on                                                                          
+审计库记录总数：2087                                                                                
+last    : Bash → allow [llm] @ 08-30 02:10:54 · cd /d/yilun/yilun_project/auto-guard-tui && node - <
+<'EOF' …                                                                                            
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 关闭守卫（guard off）                 │ │（尚无命令执行。按 : 进入命令模式。）                 ││
+│  状态（guard status）                  │ │                                                       │
+│  最近裁决（guard recent）              │ │                                                       │
+│  统计（guard stats）                   │ │                                                       │
+│  报告（guard report）                  │ │                                                       │
+│  连通性（guard ping）                  │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 3 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫  3 审计   4 优化  5 密钥  6 安装  7 日志  8 帮助                                   
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 关闭审计（examine off）               │ │（尚无命令执行。按 : 进入命令模式。）                 ││
+│  审计状态（examine status）            │ │                                                       │
+│  清理 30 天前（examine clear-old）     │ │                                                       │
+│  清空审计（examine clear-all）         │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 4 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫  3 审计  4 优化   5 密钥  6 安装  7 日志  8 帮助                                   
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 学习状态（optimize status）           │ │（尚无命令执行。按 : 进入命令模式。）                 ││
+│  立即分析（optimize analyze）          │ │                                                       │
+│  学习规则（optimize list）             │ │                                                       │
+│  回滚规则（optimize rollback）         │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 5 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫  3 审计  4 优化  5 密钥   6 安装  7 日志  8 帮助                                   
+enabled : true                                                                                      
+lang    : zh                                                                                        
+config  : C:\Users\Administrator\.zcode\auto-guard\config.json                                      
+review  : https://api.deepseek.com · deepseek-v4-flash · ⚠ 无 API Key（fail-closed）                
+examine : on · history: on                                                                          
+审计库记录总数：2087                                                                                
+last    : Bash → allow [llm] @ 08-30 02:10:54 · cd /d/yilun/yilun_project/auto-guard-tui && node - <
+<'EOF' …                                                                                            
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 查看密钥（set show-key）              │ │（尚无命令执行。按 : 进入命令模式。）                 ││
+│  设置密钥向导（set set-key）           │ │                                                       │
+│  清除密钥（set clear-key）             │ │                                                       │
+│  API 地址（set set-api base）  https:  │ │                                                       │
+│  API 模型（set set-api model）  deeps  │ │                                                       │
+│  重置 API（set set-api reset）         │ │                                                       │
+│  界面语言（set lang）  —               │ │                                                       │
+│  关闭历史层（set history off）         │ │                                                       │
+│  重载说明（set reload）                │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 6 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫  3 审计  4 优化  5 密钥  6 安装   7 日志  8 帮助                                   
+  安装   状态   移除                                                                                
+┌─ 安装器 ───────────────────────────────────────┐ ┌─ 写入预览 ────────────────────────────────────┐
+│选择要安装的宿主（Space 勾选，Enter 预览）      │ │写入预览                                      ││
+│❯ [ ] 安装器语言 中文                           │ │                                               │
+│  [ ] DeepSeek Harness 已集成                   │ │                                               │
+│  [ ] Pi 已集成                                 │ │                                               │
+│  [ ] ZCode 已集成                              │ │                                               │
+│  [ ] Claude Code 已集成                        │ │                                               │
+│  [ ] OpenCode 已集成                           │ │                                               │
+│  [ ] Qoder 已集成                              │ │                                               │
+│  [ ] 更新规则文件                              │ │                                               │
+│  [x] 跳过规则更新                              │ │                                               │
+│  [ ] ▶ 按预览安装                              │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== screen 8 =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫  3 审计  4 优化  5 密钥  6 安装  7 日志  8 帮助                                    
+ 键位                                                                                               
+  ↑↓ / j k       move · 移动                                                                        
+  ←→ / h l       switch tabs (insta                                                                 
+  1…8            switch screen · 切                                                                 
+  Enter          run / select · 执                                                                  
+  Space          toggle checkbox ·                                                                  
+  Esc            back / cancel · 返                                                                 
+  :              command mode · 命                                                                  
+  r              refresh · 刷新                                                                     
+  g / G          scroll top / botto                                                                 
+  p              ping (dashboard) ·                                                                 
+  q / Ctrl+C     quit (terminal res                                                                 
+                                                                                                    
+ 动作 ↔ 等价 CLI 命令                                                                               
+  安装                                                                                              
+    init [--host …] [--update-rules|--skip-rules] [--lang]                                          
+    list                                                                                            
+    remove [--host …]                                                                               
+  守卫                                                                                              
+    guard on|off                                                                                    
+    guard status                                                                                    
+    guard recent [n]                                                                                
+    guard stats                                                                                     
+    guard report [days]                                                                             
+    guard ping                                                                                      
+  审计                                                                                              
+    examine on|off                                                                                  
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出                                         
+
+===== guard with receipt =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫   3 审计  4 优化  5 密钥  6 安装  7 日志  8 帮助                                   
+enabled : true                                                                                      
+lang    : zh                                                                                        
+config  : C:\Users\Administrator\.zcode\auto-guard\config.json                                      
+review  : https://api.deepseek.com · deepseek-v4-flash · ⚠ 无 API Key（fail-closed）                
+examine : on · history: on                                                                          
+审计库记录总数：2087                                                                                
+last    : Bash → allow [llm] @ 08-30 02:10:54 · cd /d/yilun/yilun_project/auto-guard-tui && node - <
+<'EOF' …                                                                                            
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 关闭守卫（guard off）                 │ │                                                       │
+│  状态（guard status）                  │ │                                                       │
+│  最近裁决（guard recent）              │ │                                                       │
+│  统计（guard stats）                   │ │                                                       │
+│  报告（guard report）                  │ │                                                       │
+│  连通性（guard ping）                  │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+ ↑↓ 移动 · Enter 执行 · 1-8 切屏 · : 命令 · r 刷新 · q 退出         ✓ guard status --config-root → 0
+
+===== command mode =====
+ auto-guard 守卫控制台   ZCode   ~/.zcode/auto-guard   zh   ● on                                    
+  1 总览  2 守卫   3 审计  4 优化  5 密钥  6 安装  7 日志  8 帮助                                   
+enabled : true                                                                                      
+lang    : zh                                                                                        
+config  : C:\Users\Administrator\.zcode\auto-guard\config.json                                      
+review  : https://api.deepseek.com · deepseek-v4-flash · ⚠ 无 API Key（fail-closed）                
+examine : on · history: on                                                                          
+审计库记录总数：2087                                                                                
+last    : Bash → allow [llm] @ 08-30 02:10:54 · cd /d/yilun/yilun_project/auto-guard-tui && node - <
+<'EOF' …                                                                                            
+┌────────────────────────────────────────┐ ┌─ 输出 ────────────────────────────────────────────────┐
+│❯ 关闭守卫（guard off）                 │ │                                                       │
+│  状态（guard status）                  │ │                                                       │
+│  最近裁决（guard recent）              │ │                                                       │
+│  统计（guard stats）                   │ │                                                       │
+│  报告（guard report）                  │ │                                                       │
+│  连通性（guard ping）                  │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+│                                        │ │                                                       │
+└────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
+:: optimize list▌                                                                                   
+ Enter 提交 · Esc 取消                                              ✓ guard status --config-root → 0
+

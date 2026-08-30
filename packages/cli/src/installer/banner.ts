@@ -13,8 +13,8 @@ import { createRequire } from 'node:module'
 import { message } from './i18n.ts'
 import { HOST_IDS } from './profiles.ts'
 
-/** 逐行渐变（256 色），自上而下：亮青 → 蓝 → 紫。 */
-const GRADIENT = ['51', '45', '39', '33', '27', '21', '93'] as const
+/** 逐行渐变（256 色码），自上而下：亮青 → 蓝 → 紫。导出供 TUI 字标复用（SPEC 0010）。 */
+export const GRADIENT = [51, 45, 39, 33, 27, 21, 93] as const
 
 /** 7 行像素网格字母（每行一个字符串，# 实心 / . 空白）。 */
 const GLYPHS: Record<string, readonly string[]> = {
@@ -99,6 +99,16 @@ function renderGridRow(grid: Cell[][], row: number, noColor: boolean): string {
 
 const LETTER_GRIDS: Record<string, Cell[][]> = Object.fromEntries([...new Set(WORDS.flat())].map((ch) => [ch, buildLetter(ch)]))
 
+/** 一行字标：实心块与钩边都着该行渐变色（noColor 时不加色）。不截尾——字母画布定宽，拼接后天然对齐。 */
+function wordmarkRow(row: number, noColor: boolean): string {
+  return WORDS.map((word) => word.map((ch) => renderGridRow(LETTER_GRIDS[ch]!, row, noColor)).join(LETTER_GAP)).join(WORD_GAP).replace(/\s+$/, '')
+}
+
+/** 素文本字标行（7+1 行，无 ANSI、无标语）——TUI 品牌头复用同一字形资产（SPEC 0010）。 */
+export function renderBannerGrid(): string[] {
+  return Array.from({ length: GLYPH_H + 1 }, (_, row) => wordmarkRow(row, true))
+}
+
 /** CLI 包版本号（workspace 与 npm 安装两种布局都指向 cli 自己的 package.json）。 */
 function cliVersion(): string {
   try {
@@ -119,7 +129,7 @@ const hostList = (): string => `（适配 ${HOST_IDS.join(' / ')}）`
 export function renderBanner(noColor = false): string[] {
   const rows: string[] = ['']
   for (let r = 0; r < GLYPH_H + 1; r++) {
-    rows.push(WORDS.map((word) => word.map((ch) => renderGridRow(LETTER_GRIDS[ch]!, r, noColor)).join(LETTER_GAP)).join(WORD_GAP).replace(/\s+$/, ''))
+    rows.push(wordmarkRow(r, noColor))
   }
   const taglineLines = [`auto-guard v${cliVersion()}`, message('zh', 'bannerGuardName'), message('en', 'bannerGuardName'), hostList()]
   for (const line of taglineLines) {
