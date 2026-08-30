@@ -101,22 +101,11 @@ export function wrapToWidth(text: string, max: number): string[] {
 }
 
 /**
- * Row count `wrapToWidth(text, max)` would produce, without building the
- * segments — the reducer needs folded pane totals to scroll by page without
- * rendering (SPEC 0011). Render-time clamping stays the source of truth.
+ * Row count `wrapToWidth(text, max)` would produce — the reducer needs folded
+ * pane totals to scroll by page without rendering (SPEC 0011). Delegates to
+ * `wrapToWidth` so the two can never drift; render-time clamping stays the
+ * source of truth.
  */
 export function wrappedCount(text: string, max: number): number {
-  if (max <= 0) return 1
-  let count = 1
-  let width = 0
-  for (const ch of text) {
-    const w = charWidth(ch.codePointAt(0) ?? 0)
-    if (width + w > max && width > 0) {
-      count++
-      width = w
-    } else {
-      width += w
-    }
-  }
-  return count
+  return wrapToWidth(text, max).length
 }

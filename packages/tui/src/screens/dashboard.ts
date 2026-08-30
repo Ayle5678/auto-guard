@@ -80,8 +80,10 @@ export function dashboardKey(state: AppState, ev: { name: string; ch?: string; c
   if (ev.ch === 'p' && focused?.seeded) {
     const run: PendingRun = {
       kind: 'mgmt',
-      // Explicit --config-root keeps the dashboard ping on the focused root.
-      argv: ['guard', 'ping', '--config-root', focused.root],
+      // Out-of-band root keeps the ping on the FOCUSED root while argv stays
+      // the user-visible command (SPEC 0011).
+      argv: ['guard', 'ping'],
+      root: focused.root,
       label: 'guard ping',
       busyKey: 'busyPing',
     }

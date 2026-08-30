@@ -30,6 +30,9 @@ export interface PendingRun {
   kind: 'mgmt' | 'inst'
   argv: string[]
   label: string
+  /** Target root override (dashboard pings the FOCUSED root); the driver
+   * injects it as `--config-root` at execution time — never part of argv. */
+  root?: string
   /** Busy label key override (i18n). */
   busyKey?: 'busyRefresh' | 'busyPing' | 'busyAnalyze' | 'busyInstall' | 'busyRemove'
 }

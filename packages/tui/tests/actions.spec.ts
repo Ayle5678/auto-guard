@@ -17,8 +17,15 @@ describe('execRun', () => {
     expect(receipt).toMatchObject({ id: 7, code: 0, argv: 'guard status', output: ['ok'] })
   })
 
-  it('strips even explicit --config-root from the display argv (SPEC 0011)', async () => {
-    const receipt = await execRun({ runCli: async () => ({ code: 0, output: [] }) }, { kind: 'mgmt', argv: ['guard', 'ping', '--config-root', '/focused'], label: 'guard ping' }, '/root', 2)
+  it('run.root targets a non-current root while argv stays user-view (SPEC 0011)', async () => {
+    const seen: (readonly string[])[] = []
+    const receipt = await execRun(
+      { runCli: async (argv) => (seen.push(argv), { code: 0, output: [] }) },
+      { kind: 'mgmt', argv: ['guard', 'ping'], root: '/focused', label: 'guard ping' },
+      '/current',
+      2,
+    )
+    expect(seen[0]).toEqual(['guard', 'ping', '--config-root', '/focused'])
     expect(receipt.argv).toBe('guard ping')
   })
 

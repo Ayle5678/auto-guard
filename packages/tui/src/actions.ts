@@ -49,25 +49,13 @@ export function injectConfigRoot(argv: readonly string[], root: string): string[
 }
 
 /**
- * Receipts record the user-visible command (SPEC 0011): the injected
- * `--config-root` pair is execution plumbing — keeping it out of `receipt.argv`
- * keeps the `❯` line, footer and log screen honest without touching semantics.
+ * Execute one pending run; returns the receipt for the log screen. Receipts
+ * record `run.argv` verbatim — the user-visible command. Root targeting is
+ * out-of-band (`run.root` / the driver's current root) and becomes the
+ * injected `--config-root` at execution time only (SPEC 0011).
  */
-export function displayArgv(argv: readonly string[]): string {
-  const out: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--config-root') {
-      i++
-      continue
-    }
-    out.push(argv[i]!)
-  }
-  return out.join(' ')
-}
-
-/** Execute one pending run; returns the receipt for the log screen. */
 export async function execRun(deps: ActionDeps, run: PendingRun, root: string, id: number): Promise<Receipt> {
-  const argv = run.kind === 'mgmt' ? injectConfigRoot(run.argv, root) : [...run.argv]
+  const argv = run.kind === 'mgmt' ? injectConfigRoot(run.argv, run.root || root) : [...run.argv]
   // Installer runs are forced non-interactive: the TUI owns the terminal
   // (raw mode), so the installer's own readline must never take over — its
   // interactive flows are re-expressed by the installer screen instead.
@@ -76,7 +64,7 @@ export async function execRun(deps: ActionDeps, run: PendingRun, root: string, i
     run.kind === 'mgmt'
       ? await (deps.runCli ?? runCli)(argv)
       : await (deps.runInstaller ?? runInstallerCommand)(argv, installerDeps)
-  return { id, argv: displayArgv(argv), code: result.code, output: result.output }
+  return { id, argv: run.argv.join(' '), code: result.code, output: result.output }
 }
 
 // ---------- dashboard structured reads ----------

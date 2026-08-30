@@ -296,11 +296,11 @@ describe('dashboard keys', () => {
     expect(result.patch.notice).toContain('ZCode')
   })
 
-  it('p pings the focused root with an explicit --config-root', () => {
+  it('p pings the focused root with the root out-of-band (SPEC 0011)', () => {
     const result = dashboardKey(state(), { name: 'char', ch: 'p' })
     expect(result.effects[0]).toMatchObject({
       type: 'run',
-      run: { kind: 'mgmt', argv: ['guard', 'ping', '--config-root', root] },
+      run: { kind: 'mgmt', argv: ['guard', 'ping'], root },
     })
   })
 })
@@ -406,23 +406,94 @@ describe('pane scroll + receipt argv (SPEC 0011)', () => {
     expect(toTop.views.help!.offset).toBe(0)
   })
 
-  it('footer advertises scrolling on list and help screens only', () => {
-    expect(plainOf(render(state({ screen: 'guard', width: 100 })))).toContain('PgUp/PgDn')
-    expect(plainOf(render(state({ screen: 'help', width: 100 })))).toContain('PgUp/PgDn')
+  it('footer advertises scrolling on pane screens only', () => {
+    for (const screen of ['guard', 'set', 'installer', 'help'] as const) {
+      expect(plainOf(render(state({ screen, width: 100 })))).toContain('PgUp/PgDn')
+    }
     expect(plainOf(render(state({ screen: 'dashboard', width: 100 })))).not.toContain('PgUp/PgDn')
+  })
+
+  it('installer preview pane scrolls via PgUp/PgDn/g/G', () => {
+    const views = { installer: { lines: ['diff line 1', 'diff line 2'], offset: 0 } }
+    const s = state({ screen: 'installer', width: 100, height: 24, views })
+    const bottom = reduce(s, { type: 'key', key: key('char', 'G') }).state
+    expect(bottom.views.installer!.offset).toBeGreaterThan(1000)
+    const top = reduce(bottom, { type: 'key', key: key('char', 'g') }).state
+    expect(top.views.installer!.offset).toBe(0)
+    // ↑↓ keep moving the installer row cursor
+    const moved = reduce(top, { type: 'key', key: key('down') })
+    expect(moved.state.installer.cursor).toBe(1)
+    expect(moved.state.views.installer!.offset).toBe(0)
+  })
+
+  it('receipt targeting is out-of-band: dashboard ping keeps argv clean, root via run.root', () => {
+    const focusedRoot = join('C:', 'tmp', '.pi', 'auto-guard')
+    const roots = [
+      { ...state().roots[0]!, root, hostId: 'zcode' as const },
+      { ...state().roots[0]!, root: focusedRoot, homeDir: join('C:', 'tmp', '.pi'), hostId: 'pi' as const, seeded: true, config: config() },
+    ]
+    const result = dashboardKey(state({ roots, focusRoot: 1 }), { name: 'char', ch: 'p' })
+    expect(result.effects[0]).toMatchObject({ type: 'run', run: { argv: ['guard', 'ping'], root: focusedRoot } })
+  })
+})
+
+describe('rendering regressions (SPEC 0011)', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+
+  it('bilingual: group titles, scroll hint and help key table render in English too', () => {
+    const plain = plainOf(render(state({ screen: 'set', lang: 'en', width: 100, height: 30 })))
+    expect(plain).toContain('API endpoint')
+    expect(plain).toContain('Preferences')
+    expect(plain).toContain('Maintenance')
+    expect(plain).toContain('PgUp/PgDn')
+    const help = plainOf(render(state({ screen: 'help', lang: 'en', width: 100, height: 40 })))
+    expect(help).toContain('PgUp / PgDn')
+    expect(help).toContain('page output/help')
+  })
+
+  it('NO_COLOR output carries no SGR escapes and keeps the layout', async () => {
+    const { rowToString } = await import('../src/ui/theme.ts')
+    const frame = render(state({ screen: 'set', width: 100, height: 30 }))
+    const plainRows = frame.map((row) => rowToString(row, false))
+    expect(plainRows.join('\n')).not.toContain('\x1b[')
+    expect(plainRows.join('\n')).toContain('界面语言')
+    expect(plainRows).toHaveLength(30)
+  })
+
+  it('resize re-folds the pane at the new width (views stay raw)', () => {
+    let s = state({ screen: 'guard', width: 100 })
+    s = reduce(s, { type: 'key', key: key('char', '2') }).state
+    // 69 cols: folds at the 80-col window (content ~42) and fits the 130-col one (~71).
+    s = reduce({ ...s, busy: null }, {
+      type: 'autoload-done',
+      screen: 'guard',
+      receipt: { id: 1, argv: 'guard recent 10', code: 0, output: ['x'.repeat(58) + 'REWRAP-TAIL'] },
+    }).state
+    const narrow = reduce(s, { type: 'resized', width: 80, height: 30 }).state
+    expect(plainOf(render(narrow))).toContain('REWRAP-TAIL')
+    const wide = reduce(narrow, { type: 'resized', width: 130, height: 30 }).state
+    expect(plainOf(render(wide))).toContain('REWRAP-TAIL')
+  })
+
+  it('footer never exceeds the frame width', () => {
+    for (const width of [80, 100, 130]) {
+      const frame = render(state({ screen: 'guard', width, height: 30 }))
+      expect(frame[frame.length - 1]!.map((s) => s.text).join('').length).toBeLessThanOrEqual(width)
+    }
   })
 })
 
 describe('set screen groups (SPEC 0011)', () => {
   const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
 
-  it('renders the four group titles with language under preferences, before maintenance', () => {
+  it('renders the four group titles in order with language under preferences, before maintenance', () => {
     const plain = plainOf(render(state({ screen: 'set', width: 100, height: 30 })))
-    expect(plain).toContain('API 端点')
-    expect(plain).toContain('偏好')
-    expect(plain).toContain('维护')
-    expect(plain.indexOf('界面语言')).toBeGreaterThan(plain.indexOf('API 端点'))
-    expect(plain.indexOf('界面语言')).toBeLessThan(plain.indexOf('维护'))
+    // The four titles are unique strings (action labels never contain them).
+    const marks = ['密钥管理', 'API 端点', '偏好', '维护'].map((title) => plain.indexOf(title))
+    expect(marks.every((index) => index >= 0)).toBe(true)
+    expect([...marks].sort((a, b) => a - b)).toEqual(marks)
+    expect(plain.indexOf('界面语言')).toBeGreaterThan(marks[2]!)
+    expect(plain.indexOf('界面语言')).toBeLessThan(marks[3]!)
   })
 
   it('cursor never rests on a group title: starts on the first action', () => {
@@ -442,6 +513,15 @@ describe('set screen groups (SPEC 0011)', () => {
     const up = reduce(state({ screen: 'set' }), { type: 'key', key: key('up') }).state
     const entered = reduce(up, { type: 'key', key: key('enter') })
     expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'reload'] } })
+  })
+
+  it('REGRESSION: clearing the key still routes through the danger dialog', () => {
+    let s = state({ screen: 'set' })
+    for (let i = 0; i < 2; i++) s = reduce(s, { type: 'key', key: key('down') }).state // show-key → set-key → clear-key
+    const entered = reduce(s, { type: 'key', key: key('enter') })
+    expect(entered.effects).toEqual([])
+    expect(entered.state.dialog?.pending?.argv).toEqual(['set', 'clear-key'])
+    expect(entered.state.dialog?.danger).toBe(true)
   })
 })
 

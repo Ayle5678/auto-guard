@@ -15,7 +15,7 @@ import { detectRoot, detect, loadRootSummaries, needsInstallerLang, validateWiza
 import { withIntegration } from './screens/installer.ts'
 import { dashboardKey, renderDashboard, visibleRoots } from './screens/dashboard.ts'
 import { installerKey, renderInstaller } from './screens/installer.ts'
-import { logLines, renderLog, scrollBy } from './screens/log.ts'
+import { renderLog, scrollBy } from './screens/log.ts'
 import { helpRowCount, renderHelp } from './screens/help.ts'
 import { listActions, renderListScreen, rootSummary, settledCursor, stepCursor } from './screens/lists.ts'
 import { confirmDialog, emptyInput, footerBar, headerBar, hintRow, inputKey, inputRow, keyHint, moveCursor, navTabs, padFrame, splitWidth, type NavTab } from './ui/kit.ts'
@@ -176,7 +176,7 @@ function refreshCurrent(state: AppState): { state: AppState; effects: Effect[] }
 /** Receipt rendered as a view: command line, output, exit footer. */
 function stickyView(receipt: Receipt): { lines: string[]; offset: number } {
   // Huge offset = "stick to bottom"; panel() clamps to total - viewport.
-  return { lines: [`❯ ${receipt.argv}`, ...receipt.output, `↳ exit ${receipt.code}`], offset: 1_000_000 }
+  return { lines: [`❯ ${receipt.argv}`, ...receipt.output, `↳ exit ${receipt.code}`], offset: STICKY_BOTTOM }
 }
 
 /** Read-only autoload per screen (SPEC 0010): fill the output pane on first visit. */
@@ -309,6 +309,9 @@ function screenRouting(state: AppState, key: KeyEvent): { state: AppState; effec
     case 'dashboard':
       return applyScreenResult(state, dashboardKey(state, key))
     case 'installer': {
+      // PgUp/PgDn/g/G scroll the preview pane before row keys take over.
+      const scrolled = paneScrollStep(state, key)
+      if (scrolled) return { state: scrolled, effects: [] }
       const result = installerKey(state, key)
       const patch: Partial<AppState> = { ...result.patch }
       if ('dialog' in result) patch.dialog = result.dialog ?? null
@@ -353,15 +356,18 @@ function scrollStep(state: AppState, key: KeyEvent): { lines: string[]; offset: 
   if (key.name === 'up' || isChar(key, 'k')) return { ...view, offset: scrollBy(view.offset, -1, total, viewport) }
   if (key.name === 'down' || isChar(key, 'j')) return { ...view, offset: scrollBy(view.offset, 1, total, viewport) }
   if (isChar(key, 'g')) return { ...view, offset: 0 }
-  if (isChar(key, 'G')) return { ...view, offset: 1_000_000 }
+  if (isChar(key, 'G')) return { ...view, offset: STICKY_BOTTOM }
   if (key.name === 'pageup') return { ...view, offset: scrollBy(view.offset, -viewport, total, viewport) }
   if (key.name === 'pagedown') return { ...view, offset: scrollBy(view.offset, viewport, total, viewport) }
   return view
 }
 
-// ---------- pane scrolling for list + help screens (SPEC 0011) ----------
+// ---------- pane scrolling for list + installer + help screens (SPEC 0011) ----------
 
-const SCROLLABLE_PANES: readonly ScreenId[] = ['guard', 'examine', 'optimize', 'set', 'help']
+/** Sticky-bottom sentinel: clamps to "last page" at render time. */
+const STICKY_BOTTOM = 1_000_000
+
+const SCROLLABLE_PANES: readonly ScreenId[] = ['guard', 'examine', 'optimize', 'set', 'installer', 'help']
 
 /** Viewport of a scrollable pane at the current size (mirrors the renderers). */
 function paneViewport(state: AppState): number {
@@ -371,7 +377,9 @@ function paneViewport(state: AppState): number {
 /** Folded row total of the screen's pane — same math the renderers use. */
 function paneTotal(state: AppState): number {
   if (state.screen === 'help') return helpRowCount(state)
-  const contentWidth = Math.max(1, splitWidth(state.width).right - 4)
+  // Installer splits 50/50, list screens 42/58 (same as the renderers).
+  const ratio = state.screen === 'installer' ? 0.5 : 0.42
+  const contentWidth = Math.max(1, splitWidth(state.width, ratio).right - 4)
   return (state.views[state.screen]?.lines ?? []).reduce((sum, line) => sum + wrappedCount(line, contentWidth), 0)
 }
 
@@ -383,7 +391,7 @@ function paneScrollStep(state: AppState, key: KeyEvent): AppState | null {
   // g/G use raw endpoints (0 / huge): render-time clamping keeps them honest
   // even when folding changes the total between keypress and paint.
   if (isChar(key, 'g')) return { ...state, ...patchOffset(state, screen, 0) }
-  if (isChar(key, 'G')) return { ...state, ...patchOffset(state, screen, 1_000_000) }
+  if (isChar(key, 'G')) return { ...state, ...patchOffset(state, screen, STICKY_BOTTOM) }
   let delta: number | null = null
   if (key.name === 'pageup') delta = -paneViewport(state)
   else if (key.name === 'pagedown') delta = paneViewport(state)
