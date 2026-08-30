@@ -16,7 +16,7 @@ import { createHostMessage } from './messages.ts'
 import { createHookCliMain } from './hook-cli.ts'
 import { createCliMain } from './cli.ts'
 import { createSessionMain } from './session-start.ts'
-import { defaultWire } from './wire.ts'
+import { createDefaultWire } from './wire.ts'
 
 export interface CreateHookHostOptions {
   /** Root everything in this directory instead of the real home (tests). */
@@ -46,7 +46,9 @@ export function createHookHost(descriptor: HostDescriptor, options: CreateHookHo
   const message = createHostMessage(descriptor)
   const kit = createBootstrap(descriptor, space, options.home)
   const extraction = createExtraction(descriptor, message)
-  const wire = descriptor.wire ?? defaultWire
+  // SPEC 0015: the capability-aware default wire translates ask→deny for
+  // hosts whose protocol cannot surface an ask (codex); descriptor.wire still wins.
+  const wire = descriptor.wire ?? createDefaultWire(descriptor.capabilities)
 
   const hookMain = createHookCliMain({ descriptor, space, kit, extraction, message, wire })
   const cliMain = createCliMain({ space, kit, message })

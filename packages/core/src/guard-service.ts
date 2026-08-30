@@ -243,13 +243,19 @@ export class GuardService {
   }
 
   private decideFile(request: GuardRequest): Decision {
-    const path = expandHome(request.filePath ?? '')
+    // One payload can carry several targets (codex apply_patch); every one of
+    // them crosses the sensitive gate — a lone first-path check would miss
+    // `.env` hiding at position two.
+    const candidates = [request.filePath, ...(request.paths ?? [])]
     const sensitive = this.rules.sensitivePaths
-    if (path && sensitive.some((pattern) => matchesSensitivePath(path, pattern))) {
-      return {
-        kind: 'ask',
-        source: 'sensitive-path',
-        reason: `Path is on the sensitive list, confirmation required: ${path}`,
+    for (const candidate of candidates) {
+      const path = expandHome(candidate ?? '')
+      if (path && sensitive.some((pattern) => matchesSensitivePath(path, pattern))) {
+        return {
+          kind: 'ask',
+          source: 'sensitive-path',
+          reason: `Path is on the sensitive list, confirmation required: ${path}`,
+        }
       }
     }
     return { kind: 'allow', source: 'passthrough' }

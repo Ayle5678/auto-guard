@@ -74,6 +74,10 @@ export function resolvePackagePaths(): PackagePaths {
       distHookCli: join(dir('@auto-guard/host-qoder'), 'dist', 'hook-cli.js'),
       distSessionStart: join(dir('@auto-guard/host-qoder'), 'dist', 'session-start.js'),
     },
+    codex: {
+      distHookCli: join(dir('@auto-guard/host-codex'), 'dist', 'hook-cli.js'),
+      distSessionStart: join(dir('@auto-guard/host-codex'), 'dist', 'session-start.js'),
+    },
   }
 }
 

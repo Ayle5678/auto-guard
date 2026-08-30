@@ -51,6 +51,22 @@ export function synthesizeShellCommand(command: string, path: string): string {
   return `${command} "${path.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
+/**
+ * Extract the target paths of an apply_patch V4A patch text (SPEC 0015).
+ * Every `*** Add File:` / `*** Update File:` / `*** Delete File:` header and
+ * `*** Move to:` rename target yields one path; order of first appearance is
+ * kept and duplicates are dropped. Content lines never match (they do not
+ * start with the `*** ` header marker).
+ */
+export function parsePatchPaths(patchText: string): string[] {
+  const paths: string[] = []
+  for (const match of patchText.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gim)) {
+    const path = match[1].trim()
+    if (path && !paths.includes(path)) paths.push(path)
+  }
+  return paths
+}
+
 export interface HostExtraction {
   normalizeHookInput(raw: unknown): HookInput
   toGuardRequest(input: HookInput, workspace?: string, lang?: Lang): GuardableExtraction
@@ -103,6 +119,30 @@ export function createExtraction(descriptor: HostDescriptor, message: HostMessag
         request: {
           tool: 'bash',
           command: synthesizeShellCommand(mapping.synthesizeCommand, path),
+          session: input.session_id,
+          workspace,
+        },
+      }
+    }
+
+    // SPEC 0015 patch extraction: the payload carries an apply_patch patch
+    // text, not fielded paths. Missing text or a headerless patch is
+    // unreviewable (fail-closed); a parsed patch reviews every target path.
+    if (mapping.patchCommand !== undefined) {
+      const patchText = firstOf(params, [mapping.patchCommand])
+      if (patchText === undefined) {
+        return { kind: 'unreviewable', reason: message(lang, 'unreviewablePath', { tool: input.tool_name ?? '?' }) }
+      }
+      const paths = parsePatchPaths(patchText)
+      if (paths.length === 0) {
+        return { kind: 'unreviewable', reason: message(lang, 'unreviewablePath', { tool: input.tool_name ?? '?' }) }
+      }
+      return {
+        kind: 'guardable',
+        request: {
+          tool: mapping.guardTool,
+          filePath: paths[0],
+          paths,
           session: input.session_id,
           workspace,
         },

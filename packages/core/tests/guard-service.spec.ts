@@ -1482,6 +1482,21 @@ describe('GuardService: sensitive path gate', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('reviews every path of a multi-target file call (SPEC 0015 apply_patch)', async () => {
+    const { service, dir } = setup()
+    try {
+      // The sensitive hit is NOT the primary path — the whole set is gated.
+      const d = await service.decide({ tool: 'edit', filePath: '/workspace/src/app.ts', paths: ['/workspace/src/app.ts', '/workspace/.env'] })
+      expect(d).toMatchObject({ kind: 'ask', source: 'sensitive-path' })
+      expect(d.reason).toContain('/workspace/.env')
+
+      const clean = await service.decide({ tool: 'edit', filePath: '/workspace/src/app.ts', paths: ['/workspace/src/app.ts', '/workspace/src/other.ts'] })
+      expect(clean).toMatchObject({ kind: 'allow', source: 'passthrough' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('GuardService: file tracker', () => {

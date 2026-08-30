@@ -7,7 +7,7 @@ The management CLI is a thin terminal shell over the shared core operations laye
 
 ```
 auto-guard [--config-root <path>] <group> <action> [args]                             # management
-auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--lang zh|en] # installer
+auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder,codex] [--yes] [--lang zh|en] # installer
 ```
 
 ## Installer (SPEC 0002)
@@ -19,7 +19,7 @@ auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes
 | `auto-guard list` | Show detection evidence + integration status per host and the next step. |
 | `auto-guard remove [--host …]` | Uninstall: restore from `*.auto-guard.bak` when present, otherwise remove auto-guard entries structurally. Guard data roots are kept. |
 
-Common flags: `--host <dsh,pi,zcode,claude,opencode,qoder>` (repeatable values in one list), `--yes`, `--banner` (force the init banner outside a TTY), `--home <path>` (override HOME, mainly for tests), `--lang <zh|en>` (installer output language). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
+Common flags: `--host <dsh,pi,zcode,claude,opencode,qoder,codex>` (repeatable values in one list), `--yes`, `--banner` (force the init banner outside a TTY), `--home <path>` (override HOME, mainly for tests), `--lang <zh|en>` (installer output language). `--config-root` is accepted and ignored by the installer — the guard config root belongs to the guard, not the installer (spec 0002). Exit codes: 0 ok, 2 failed/undetected/unknown host.
 
 Language: the whole product (installer + management CLI + engine messages + host prompts) speaks Chinese and English. Resolution is the same four layers everywhere (ADR-0011): `AUTO_GUARD_LANG` env (one-shot override) → per-host `config.lang` (`auto-guard set lang en|zh`) → machine default `~/.auto-guard/config.json` → `zh` fallback. The installer chain additionally leads with `--lang` and ends with the interactive prompt: `--lang` → `AUTO_GUARD_LANG` → machine default → bilingual "请选择语言 / Select language" prompt (init on a TTY, only when no default is remembered) → `zh`. The prompt choice and `--lang` are both persisted to the machine default immediately — later inits never re-ask, `remove` keeps the preference. LLM decision reasons follow the setting; the `[删除理由]` marker is protocol and stays Chinese. ZCode hook spinner text (`statusMessage`) is written in the install-time language and changes only on reinstall.
 

@@ -5,7 +5,7 @@ AI 编码 agent 的缓存式自动命令审查工具（Cached Auto Command Revie
 ## 宿主与适配
 
 **宿主（Host）**:
-承载守卫的 AI 编码工具。当前六个：DSH（DeepSeek Harness 插件体系）、Pi（Pi Coding Agent 扩展）、ZCode（PreToolUse hook 插件）、Claude Code（PreToolUse hook）、OpenCode（permission.asked 插件）、Qoder（PreToolUse hook，国际版 IDE）。
+承载守卫的 AI 编码工具。当前七个：DSH（DeepSeek Harness 插件体系）、Pi（Pi Coding Agent 扩展）、ZCode（PreToolUse hook 插件）、Claude Code（PreToolUse hook）、OpenCode（permission.asked 插件）、Qoder（PreToolUse hook，国际版 IDE）、Codex（OpenAI Codex CLI，hooks.json PreToolUse hook）。
 _Avoid_: 平台、客户端、载体
 
 **宿主适配层（Host Adapter）**:
@@ -51,7 +51,7 @@ _Avoid_: 规则名、层级号
 _Avoid_: 安全默认
 
 **headless fallback**:
-宿主没有确认 UI 时 ask 的归宿；由宿主能力声明（dsh 原生 ask→deny、pi headlessMode、zcode/claude/qoder 委托宿主权限系统、opencode 委托宿主 permission.ask 与 TUI）。
+宿主没有确认 UI 时 ask 的归宿；由宿主能力声明（dsh 原生 ask→deny、pi headlessMode、zcode/claude/qoder 委托宿主权限系统、opencode 委托宿主 permission.ask 与 TUI、codex ask→deny——其 hook 协议对不支持的 "ask" 会弃用并继续执行，绝不发 ask）。
 _Avoid_: 无人值守模式
 
 ## 规则

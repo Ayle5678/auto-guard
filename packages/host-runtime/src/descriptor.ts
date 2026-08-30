@@ -20,6 +20,14 @@ export interface ToolMapping {
    * fail-closed, never a pass.
    */
   synthesizeCommand?: string
+  /**
+   * SPEC 0015: set when the named tool_input field carries an apply_patch
+   * V4A patch text (codex `apply_patch`/`Edit`/`Write` aliases put the whole
+   * patch in `tool_input.command`). The runtime parses the patch headers into
+   * the full target-path set; a missing field or a headerless patch is
+   * unreviewable — fail-closed, never a pass.
+   */
+  patchCommand?: string
 }
 
 /** Decision metadata carried alongside a wire outcome for status bookkeeping. */
@@ -38,12 +46,12 @@ export interface WireOutcome {
 /**
  * Exit serializer slot (ADR-0016): the one place host wire dialects differ.
  * Default (omitted) = the Claude-compatible `hookSpecificOutput` dialect
- * shared by zcode/claude/qoder; opencode injects its `{status,reason}`
- * verdict contract here.
+ * shared by zcode/claude/qoder/codex, capability-translated (SPEC 0015);
+ * opencode injects its `{status,reason}` verdict contract here.
  */
 export interface WireSerializer {
-  /** stdout text for the final outcome; '' means silence (allow for hook hosts). */
-  serialize(outcome: WireOutcome): string
+  /** stdout text for the final outcome; '' means silence (allow for hook hosts). `lang` is the resolved process/runtime language for host-flavored notes. */
+  serialize(outcome: WireOutcome, lang?: Lang): string
 }
 
 /** The eight data fields of a host (ADR-0016) plus the two extension slots. */

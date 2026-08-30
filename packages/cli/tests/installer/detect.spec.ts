@@ -17,7 +17,7 @@ afterEach(() => {
 describe('host detector (ticket 01)', () => {
   it('reports nothing detected on an empty HOME', () => {
     const results = detectHosts({ home: fakeHome(), hasExecutable: () => false })
-    expect(results.map((r) => r.detected)).toEqual([false, false, false, false, false, false])
+    expect(results.map((r) => r.detected)).toEqual([false, false, false, false, false, false, false])
     const any = results.every((r) => r.confidence === 'none')
     expect(any).toBe(true)
   })
@@ -57,6 +57,28 @@ describe('host detector (ticket 01)', () => {
     const opencode = results.find((r) => r.profile.id === 'opencode')!
     expect(opencode.detected).toBe(true)
     expect(opencode.confidence).toBe('high')
+  })
+
+  it('detects codex via ~/.codex/config.toml alone and treats a bare ~/.codex as medium', () => {
+    const fileHome = fakeHome()
+    mkdirSync(join(fileHome, '.codex'), { recursive: true })
+    writeFileSync(join(fileHome, '.codex', 'config.toml'), '', 'utf8')
+    const fileResults = detectHosts({ home: fileHome, hasExecutable: () => false })
+    const codexByFile = fileResults.find((r) => r.profile.id === 'codex')!
+    expect(codexByFile.detected).toBe(true)
+    expect(codexByFile.confidence).toBe('high')
+
+    const dirHome = fakeHome()
+    mkdirSync(join(dirHome, '.codex'), { recursive: true })
+    const dirResults = detectHosts({ home: dirHome, hasExecutable: () => false })
+    const codexByDir = dirResults.find((r) => r.profile.id === 'codex')!
+    expect(codexByDir.detected).toBe(false)
+    expect(codexByDir.confidence).toBe('medium')
+
+    const exeResults = detectHosts({ home: dirHome, hasExecutable: (exe) => exe === 'codex' })
+    const codexByDirAndExe = exeResults.find((r) => r.profile.id === 'codex')!
+    expect(codexByDirAndExe.detected).toBe(true)
+    expect(codexByDirAndExe.confidence).toBe('high')
   })
 
   it('treats claude/opencode directory-only findings as medium confidence (AND semantics)', () => {

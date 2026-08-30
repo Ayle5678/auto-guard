@@ -13,9 +13,9 @@
  */
 import { isMessageKey, message, type Lang, type MessageKey } from './i18n.ts'
 
-export type HostId = 'dsh' | 'pi' | 'zcode' | 'claude' | 'opencode' | 'qoder'
+export type HostId = 'dsh' | 'pi' | 'zcode' | 'claude' | 'opencode' | 'qoder' | 'codex'
 
-export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder']
+export const HOST_IDS: readonly HostId[] = ['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder', 'codex']
 
 /**
  * Entry templates: a fixed JSON string, or a per-language renderer (the
@@ -32,6 +32,7 @@ export interface PackagePaths {
   claude: { distHookCli: string; distSessionStart: string }
   opencode: { distPluginDir: string }
   qoder: { distHookCli: string; distSessionStart: string }
+  codex: { distHookCli: string; distSessionStart: string }
 }
 
 export interface DetectionSpec {
@@ -144,6 +145,17 @@ const CLAUDE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{
 // exact and regex substring) still hit exactly one tool per call.
 const QODER_PRETOOLUSE_TEMPLATE = `{"matcher":"Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace|delete_file","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_HOOK_CLI}\\"","timeout":90}]}`
 const QODER_SESSIONSTART_TEMPLATE = `{"matcher":"startup|resume","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_SESSION_START}\\"","timeout":30}]}`
+
+// Codex hooks.json dialect (learn.chatgpt.com/docs/hooks — the Claude-
+// compatible one; the inline config.toml [hooks] form is not touched so the
+// two layers never need merging). Codex reports shell/unified exec as "Bash"
+// and file edits as apply_patch (aliases Edit/Write); the payload carries a
+// V4A patch text in tool_input.command, parsed by the host adapter (SPEC
+// 0015). Managed tools (web_search etc.) and MCP tools are not hooked.
+// ⚠ Non-managed hooks must be trusted once via /hooks in Codex before they
+// run — untrusted hooks are skipped silently (codexTrustHint tells the user).
+const CODEX_PRETOOLUSE_TEMPLATE = `{"matcher":"^(Bash|apply_patch|Edit|Write)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CODEX_HOOK_CLI}\\"","timeout":90}]}`
+const CODEX_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_CODEX_SESSION_START}\\"","timeout":30}]}`
 
 export const PROFILES: readonly HostProfile[] = [
   {
@@ -264,6 +276,30 @@ export const PROFILES: readonly HostProfile[] = [
       ],
     },
   },
+  {
+    id: 'codex',
+    configRoot: '.codex/auto-guard',
+    label: 'Codex CLI',
+    detection: { dirs: ['.codex'], files: ['.codex/config.toml'], executables: ['codex'] },
+    sessionNote: 'sessionNoteCodexHooksNoHotReload',
+    // The trust gate is codex-specific and mandatory: untrusted hooks are
+    // skipped silently, so a user who misses this note thinks the guard is
+    // running when it is not.
+    postInstallNotes: ['codexTrustHint', 'codexVerifyHint'],
+    action: {
+      kind: 'json-merge',
+      // hooks.json, NOT config.toml: a pure-JSON channel the existing
+      // array-append ops can write, and it merges cleanly with any inline
+      // [hooks] the user already has (codex warns when both define entries —
+      // ours live in exactly one layer).
+      file: '~/.codex/hooks.json',
+      requiredTokens: ['${AUTO_GUARD_CODEX_HOOK_CLI}', '${AUTO_GUARD_CODEX_SESSION_START}'],
+      ops: [
+        { kind: 'array-append', arrayPath: ['hooks', 'PreToolUse'], template: CODEX_PRETOOLUSE_TEMPLATE, markerSuffix: '/host-codex/dist/hook-cli.js' },
+        { kind: 'array-append', arrayPath: ['hooks', 'SessionStart'], template: CODEX_SESSIONSTART_TEMPLATE, markerSuffix: '/host-codex/dist/session-start.js' },
+      ],
+    },
+  },
 ]
 
 export function profileById(id: HostId): HostProfile | undefined {
@@ -344,6 +380,8 @@ const TOKENS: Record<string, TokenSpec> = {
   '${AUTO_GUARD_OPENCODE_PLUGIN}': { resolve: (paths) => paths.opencode.distPluginDir, json: true },
   '${AUTO_GUARD_QODER_HOOK_CLI}': { resolve: (paths) => paths.qoder.distHookCli, json: true },
   '${AUTO_GUARD_QODER_SESSION_START}': { resolve: (paths) => paths.qoder.distSessionStart, json: true },
+  '${AUTO_GUARD_CODEX_HOOK_CLI}': { resolve: (paths) => paths.codex.distHookCli, json: true },
+  '${AUTO_GUARD_CODEX_SESSION_START}': { resolve: (paths) => paths.codex.distSessionStart, json: true },
 }
 
 /** Substitute ${TOKEN} placeholders; JSON-embedded values are escaped so native Windows paths survive JSON.parse. */

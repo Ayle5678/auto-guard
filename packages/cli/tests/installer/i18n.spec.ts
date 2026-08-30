@@ -40,6 +40,10 @@ function installerDeps(home: string): InstallerDeps {
         distHookCli: join(home, 'pkg', 'host-qoder', 'dist', 'hook-cli.js'),
         distSessionStart: join(home, 'pkg', 'host-qoder', 'dist', 'session-start.js'),
       },
+      codex: {
+        distHookCli: join(home, 'pkg', 'host-codex', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-codex', 'dist', 'session-start.js'),
+      },
     },
   }
 }

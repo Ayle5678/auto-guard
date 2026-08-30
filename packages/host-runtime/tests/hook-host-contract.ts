@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import type { GuardConfig } from '@auto-guard/core'
-import { createHookHost, defaultWire, type HookHost, type HostDescriptor } from '../src/index.ts'
+import { createHookHost, createDefaultWire, type HookHost, type HostDescriptor } from '../src/index.ts'
 
 export interface HookIoCapture {
   stdout: string[]
@@ -69,11 +69,19 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
   })
 
   /** The host wire's stdout for an allow outcome ('' for hook hosts, explicit JSON for opencode). */
-  const allowOut = (): string => (descriptor.wire ?? defaultWire).serialize({ action: 'allow' })
+  const allowOut = (): string => (descriptor.wire ?? createDefaultWire(descriptor.capabilities)).serialize({ action: 'allow' })
 
   /** A guarded bash-surface tool name in THIS host's spelling (Bash vs bash vs run_in_terminal). */
   const bashTool = (): string =>
     Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'bash')?.[0] ?? 'Bash'
+
+  /**
+   * How THIS host renders a fail-closed ask (SPEC 0015): most hosts surface
+   * the ask to their permission system; hosts with `headlessFallback: 'deny'`
+   * (codex — its PreToolUse "ask" is discarded-and-continued) render deny.
+   */
+  const failClosedRendering = (): 'ask' | 'deny' =>
+    descriptor.capabilities.headlessFallback === 'deny' ? 'deny' : 'ask'
 
   /** Assert stdout equals the wire's allow rendering ([] for silence). */
   function expectAllow(capture: HookIoCapture): void {
@@ -82,9 +90,9 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
   }
 
   describe(`${name}: fail-closed ladder through the shared pipeline`, () => {
-    it('unparseable stdin → ask (human decides), exit 0', async () => {
+    it('unparseable stdin → fail-closed rendering (ask, or deny on deny-fallback hosts), exit 0', async () => {
       const { stdout, exitCodes } = await runHook('not json at all')
-      expect(failClosedDecision(stdout[0])).toBe('ask')
+      expect(failClosedDecision(stdout[0])).toBe(failClosedRendering())
       expect(exitCodes).toEqual([])
     })
 
@@ -111,9 +119,9 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
       expect(JSON.stringify(parsed).length).toBeGreaterThan(0)
     })
 
-    it('guarded tool with unreadable parameters → ask (unreviewable)', async () => {
+    it('guarded tool with unreadable parameters → fail-closed rendering (unreviewable)', async () => {
       const { stdout } = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: bashTool(), tool_input: {} }))
-      expect(failClosedDecision(stdout[0])).toBe('ask')
+      expect(failClosedDecision(stdout[0])).toBe(failClosedRendering())
     })
 
     it('untracked tools pass through without an LLM round-trip', async () => {
@@ -135,7 +143,29 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
       const writeTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'write')?.[0]
       if (!writeTool) return // host has no write-surface tool in the guarded set
       const { stdout } = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: writeTool, tool_input: { [descriptor.pathFields[0] ?? 'file_path']: '.env', content: 'A=1' } }))
-      expect(failClosedDecision(stdout[0])).toBe('ask')
+      expect(failClosedDecision(stdout[0])).toBe(failClosedRendering())
+    })
+
+    it('patch-text tools review every target path (SPEC 0015)', async () => {
+      const patchTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.patchCommand !== undefined)
+      if (!patchTool) return // host has no patch-surface tool in the guarded set
+      const [toolName, mapping] = patchTool
+      const patch = ['*** Begin Patch', '*** Update File: src/app.ts', '@@ line', '*** Update File: .env', '+KEY=1', ''].join('\n')
+      const { stdout } = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: { [mapping.patchCommand!]: patch } }))
+      // The sensitive hit is the SECOND path in the patch — the whole set must
+      // cross the gate, and the outcome renders in the host's fail-closed form.
+      expect(failClosedDecision(stdout[0])).toBe(failClosedRendering())
+    })
+
+    it('patch-text tools pass benign patches and reject headerless ones', async () => {
+      const patchTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.patchCommand !== undefined)
+      if (!patchTool) return
+      const [toolName, mapping] = patchTool
+      const benign = ['*** Begin Patch', '*** Update File: src/app.ts', '@@ line', '+ok()', ''].join('\n')
+      const allowed = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: { [mapping.patchCommand!]: benign } }))
+      expectAllow(allowed)
+      const headerless = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: { [mapping.patchCommand!]: 'not a patch at all' } }))
+      expect(failClosedDecision(headerless.stdout[0])).toBe(failClosedRendering())
     })
   })
 

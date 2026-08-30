@@ -117,6 +117,13 @@ export interface GuardRequest {
   command?: string
   /** For write/edit/read, the target path. */
   filePath?: string
+  /**
+   * Additional target paths of one file tool call (SPEC 0015): a codex
+   * apply_patch payload touches many files at once, and every one of them
+   * must cross the sensitive-path gate. `filePath` stays the primary path
+   * (the history subject); `paths` is the full set including it.
+   */
+  paths?: readonly string[]
   /** Session identity for session-scoped cache keys. */
   session?: string
   /** Workspace identity for workspace-isolated cache keys. */

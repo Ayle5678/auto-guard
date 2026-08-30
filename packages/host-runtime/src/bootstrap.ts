@@ -61,7 +61,7 @@ export interface HostBootstrapKit {
   recordAudit(runtime: GuardRuntime, request: GuardRequest, decision: Decision, finalAction: 'allow' | 'block'): void
   analysisDue(config: GuardConfig): boolean
   sessionIdFromEnv(): string | undefined
-  workspaceFromEnv(): string | undefined
+  workspaceFromEnv(fallback?: string): string | undefined
 }
 
 export interface GuardRuntime {
@@ -93,8 +93,13 @@ export function createBootstrap(descriptor: HostDescriptor, space: HostConfigSpa
     return firstEnv(descriptor.envNames.session)
   }
 
-  function workspaceFromEnv(): string | undefined {
-    return firstEnv(descriptor.envNames.workspace) ?? process.cwd()
+  /**
+   * Workspace identity: descriptor env chain first; `fallback` (SPEC 0015)
+   * lets the hook pipeline hand in the payload's own `cwd` for hosts like
+   * codex that inject no workspace env; `process.cwd()` stays the last resort.
+   */
+  function workspaceFromEnv(fallback?: string): string | undefined {
+    return firstEnv(descriptor.envNames.workspace) ?? fallback ?? process.cwd()
   }
 
   /** Decision history ring for this host (200-line JSONL, pull-based). */

@@ -184,6 +184,7 @@ auto-guard remove --host pi --yes
 | **claude** | `~/.claude/settings.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-claude>/dist/hook-cli.js` / `session-start.js`（Claude Code 方言：`type: "command"` + 单字符串命令 + 秒级 `timeout`；matcher 含 NotebookEdit 覆盖 .ipynb 写路径） | 新会话；**hooks 无热重载，必须新开 Claude Code 会话** |
 | **opencode** | `~/.config/opencode/opencode.json` 存在 | ① `plugin` 数组追加 `<host-opencode>/dist` 目录条目；② `permission` 对象的 `bash`/`edit`/`read` 三键首位插入 `"*": "ask"`（opencode 后匹配者优先，用户既有规则在前故优先；已有 `"*"` 则不动；该键是全局字符串动作时跳过不覆盖） | 新会话（插件随 opencode 启动加载） |
 | **qoder** | `~/.qoder/settings.json` 存在 | 该文件 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-qoder>/dist/hook-cli.js` / `session-start.js`（Claude Code 同构方言：`type: "command"` + 秒级 `timeout`；matcher 覆盖 Qoder 双命名工具集与 `apply_patch` 别名；只支持国际版 IDE，CN 版与 CLI 入口不适配） | 新会话；**hooks 无热重载，必须新开 Qoder 会话** |
+| **codex** | `~/.codex/config.toml` 存在 **或** `codex` 在 PATH | **独立文件** `~/.codex/hooks.json`（不碰 config.toml 内联 `[hooks]`，两层会合并告警）的 `hooks.PreToolUse` / `hooks.SessionStart` 追加 `node <host-codex>/dist/hook-cli.js` / `session-start.js`（Claude Code 同构方言：matcher 正则 + `type: "command"` + 秒级 `timeout`；matcher 覆盖 `Bash` 与 `apply_patch`/`Edit`/`Write` 补丁面） | 新会话；**hooks 无热重载，必须新开 Codex 会话**；且**首次运行前必须 `/hooks` 信任**（见下） |
 
 检测按「与」语义：标志文件单独命中即可，否则需要目录 + 可执行同时命中——只装了同名可执行文件不算，避免写进不存在的宿主。
 
@@ -209,6 +210,15 @@ auto-guard init --host claude --yes            # 重新写入即恢复
 - **共享配置的副作用**：Qoder 的 hooks 配置在 IDE / CLI 入口间共享，CLI 若支持同名事件也会执行本守卫——接受的副作用，不另做适配。
 - **工具覆盖面**：matcher 覆盖 Qoder 的双命名工具集（`Bash|Read|Write|Edit` 短名与 `run_in_terminal|read_file|create_file|search_replace` 长名）与 `apply_patch` 别名；Qoder 特有的 `delete_file` 工具合成为单文件 bash `rm "<路径>"` 守卫，与真实 bash `rm` 同流。
 - **无热重载**：装完或改完 hooks 都必须新开 Qoder 会话；守卫失效时先确认 `~/.qoder/settings.json` 的 `hooks.PreToolUse` 还在，再重跑 `auto-guard init --host qoder --yes`。
+
+#### codex 宿主专属警示
+
+- **信任门（必须做）**：Codex 对非托管 hook 实施内容哈希信任制——**未信任的 hook 会被静默跳过**，守卫看似开启实则没跑。装完必须新开 Codex 会话执行一次 `/hooks`，审查并信任 auto-guard 的两条条目；改动 hooks.json（含升级重装）后需重新信任。自动化场景可用 `codex exec --dangerously-bypass-hook-trust` 单次放行。
+- **ask 按拒绝落地**：Codex 的 PreToolUse 协议能解析 `permissionDecision:"ask"` 但不支持——hook 标记失败、工具调用**继续执行**（fail-open）。适配层因此绝不发 `"ask"`（`headlessFallback: 'deny'`，dsh 先例）：ask 类裁决（目录删除复核、审查器故障兜底等）以 **deny** 形式到达模型，理由里附「本宿主无法弹出人工确认，已按拒绝处理；如确认安全，请手动执行该命令，或将其加入 userConfirmed 规则」。
+- **守卫是纯加法**：allow = 静默（exit 0），Codex 自己的沙箱 / 审批流程照常——auto-guard 只拦危险命令，不代替宿主审批。`danger-full-access` 沙箱模式下宿主本不弹确认，守卫的 deny 是唯一安全网。
+- **补丁面覆盖**：文件编辑以 `apply_patch`（含 `Edit`/`Write` 别名）进 hook，适配层解析 V4A 补丁文本，**每条** `*** Add/Update/Delete File:` / `*** Move to:` 目标路径都过敏感路径门（第二个文件里的 `.env` 也逃不掉）；补丁文本缺失或无头部 → unreviewable（fail-closed）。MCP 与托管工具（web_search 等）v1 透传。
+- **桌面 App**：ChatGPT.app 内置的 codex 二进制与 CLI 共享 `~/.codex` 与同一 hook 运行时，同一份 hooks.json 对 App 会话同样生效（已核对其内置版本含完整 hook 运行时）；App 内的信任 UI 形态尚未实机验证。
+- **无热重载**：装完或改完 hooks 都必须新开 Codex 会话；守卫失效时先确认 `~/.codex/hooks.json` 还在、`/hooks` 里处于已信任状态，再重跑 `auto-guard init --host codex --yes`。
 
 ### 2.7 安全保证
 

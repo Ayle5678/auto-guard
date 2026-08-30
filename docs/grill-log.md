@@ -244,3 +244,14 @@
 
 **Q3 engines 下限写多少？**
 ➡️ 自答：候选 **22.18**（type stripping 默认开启与 `node:sqlite` 无标志取大；原生可选依赖 ≥22 已满足），由 SPEC 0014 工单 01 实测钉死（该版本真跑 init/ping/smoke），不拍脑袋写死在 ADR。
+
+## Round 13 — 新宿主 Codex：ask 的宿主语义 + 补丁面（2026-08-30，ADR-0018 / SPEC 0015）
+
+> 起因：用户要求本机接入 codex-cli 0.151.0。协议深查（官方 hooks 文档 + 二进制 strings）发现三处与既有 hook 宿主不同：PreToolUse 的 `"ask"` **解析但不支持**（hook 失败 + 调用继续 = fail-open）；文件编辑走 `apply_patch`、V4A 补丁文本塞 `tool_input.command`、单补丁多文件；集成通道有 config.toml TOML 与 hooks.json JSON 两条（双层会合并、同层双定义告警）。zcode 安装在先（用户已装），按 new-host 指南先测活再接入。
+
+**Q1 ask 怎么落地？**
+➡️ **绝不发 `"ask"`**：codex 会弃用该裁决并放行调用，比不装守卫还糟。能力声明 `headlessFallback: 'deny'`（dsh 先例），翻译放运行时**默认 wire 工厂**——描述符保持纯数据（ADR-0016 纪律），`'host'` 宿主行为逐字节不变；deny 理由附双语提示（为何没弹确认 + 出路：手动执行 / userConfirmed）。拒绝项：发 ask 赌宿主版本行为（fail-open，违反 fail-closed 纪律）；codex 包内私改 wire（行为函数进描述符包，ADR-0016 接缝就歪了——翻译由能力值驱动才是数据）。
+**Q2 apply_patch 多文件怎么过敏感路径门？**
+➡️ `ToolMapping.patchCommand` 纯数据槽 + `GuardRequest.paths` 可选多路径，core `decideFile` **遍历全路径**——文件工具唯一的守卫就是敏感路径门，只查首路径等于给补丁留后门。补丁文本缺失/零头部 → unreviewable（fail-closed）。内容纪律不变：decideFile 从不读内容。拒绝项：整个补丁当 bash 命令跑 shell 管线（补丁正文含 `;`/换行，复合拆分产出垃圾子命令）；把解析写进 codex 包（下一个补丁宿主得再抄一遍）。
+**Q3 集成通道选哪个？allow 要不要短路宿主审批？PermissionRequest 要不要接？**
+➡️ **独立 `~/.codex/hooks.json`**（纯 array-append，ADR-0008 门槛内零安装器改动），不碰 TOML 内联层——避免合并告警，复用既有写入器。**allow = 静默**（与 zcode/claude 同位：守卫纯加法，不代替宿主审批；full-access 模式下 deny 是唯一安全网）。**PermissionRequest 不接（v1）**：PreToolUse deny 已覆盖全量访问模式，审批层短路是独立特性，值得独立 spec。信任门（`/hooks` 内容哈希制，未信任静默跳过）如实写进 postInstall 警示——「看似开启实则没跑」比失效更危险。桌面 App 与 CLI 共享 `~/.codex` 与同一 hook 运行时（已核对内置二进制），同一集成覆盖；App 内信任 UI 未实机验证，文档如实标注。

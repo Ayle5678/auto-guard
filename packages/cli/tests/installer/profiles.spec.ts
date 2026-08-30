@@ -8,12 +8,13 @@ const fullPaths = (): PackagePaths => ({
   claude: { distHookCli: 'C:/x/packages/host-claude/dist/hook-cli.js', distSessionStart: 'C:/x/packages/host-claude/dist/session-start.js' },
   opencode: { distPluginDir: 'C:/x/packages/host-opencode/dist' },
   qoder: { distHookCli: 'C:/x/packages/host-qoder/dist/hook-cli.js', distSessionStart: 'C:/x/packages/host-qoder/dist/session-start.js' },
+  codex: { distHookCli: 'C:/x/packages/host-codex/dist/hook-cli.js', distSessionStart: 'C:/x/packages/host-codex/dist/session-start.js' },
 })
 
 describe('host profiles (ADR-0008)', () => {
-  it('declares exactly dsh / pi / zcode / claude / opencode / qoder', () => {
-    expect(HOST_IDS).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder'])
-    expect(PROFILES.map((p) => p.id)).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder'])
+  it('declares exactly dsh / pi / zcode / claude / opencode / qoder / codex', () => {
+    expect(HOST_IDS).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder', 'codex'])
+    expect(PROFILES.map((p) => p.id)).toEqual(['dsh', 'pi', 'zcode', 'claude', 'opencode', 'qoder', 'codex'])
   })
 
   it('all shipped profiles pass schema validation', () => {
@@ -31,7 +32,7 @@ describe('host profiles (ADR-0008)', () => {
 
   it('rejects unknown host ids and structurally broken actions', () => {
     const unknown = { ...profileById('pi')!, id: 'nope' } as unknown as (typeof PROFILES)[number]
-    expect(validateProfile(unknown)[0]).toMatch(/^id 必须是 dsh\|pi\|zcode\|claude\|opencode\|qoder 之一$/)
+    expect(validateProfile(unknown)[0]).toMatch(/^id 必须是 dsh\|pi\|zcode\|claude\|opencode\|qoder\|codex 之一$/)
     const commandWithoutArgs = { kind: 'command', executable: '', installArgs: [], removeArgs: [], listArgs: [], pluginId: '' }
     const brokenCommand = { ...profileById('pi')!, action: commandWithoutArgs } as unknown as (typeof PROFILES)[number]
     expect(validateProfile(brokenCommand)).toContain('command 动作缺少 executable')
@@ -109,6 +110,34 @@ describe('host profiles (ADR-0008)', () => {
     expect(preToolUse.hooks[0]!.timeout).toBe(90) // LLM latency budget, mirroring claude
     const sessionStart = JSON.parse(renderTemplate(qoderTemplate(ops[1]!), paths)) as { matcher: string; hooks: Array<{ timeout: number }> }
     expect(sessionStart.matcher).toBe('startup|resume')
+    expect(sessionStart.hooks[0]!.timeout).toBe(30)
+  })
+
+  it('codex profile mirrors claude but writes the dedicated hooks.json channel', () => {
+    const codex = profileById('codex')!
+    expect(codex.action.kind).toBe('json-merge')
+    if (codex.action.kind !== 'json-merge') throw new Error('expected json-merge')
+    expect(codex.action.file).toBe('~/.codex/hooks.json')
+    expect(codex.configRoot).toBe('.codex/auto-guard')
+    const ops = codex.action.ops.filter((op): op is Extract<typeof op, { kind: 'array-append' }> => op.kind === 'array-append')
+    expect(ops.map((op) => op.arrayPath.join('.'))).toEqual(['hooks.PreToolUse', 'hooks.SessionStart'])
+    expect(codex.action.requiredTokens).toEqual(['${AUTO_GUARD_CODEX_HOOK_CLI}', '${AUTO_GUARD_CODEX_SESSION_START}'])
+    // The trust gate is the codex-specific mandatory note; the ask→deny
+    // semantics warning rides along with the verification hint.
+    expect(codex.postInstallNotes).toEqual(['codexTrustHint', 'codexVerifyHint'])
+    const paths = fullPaths()
+    const codexTemplate = (op: (typeof ops)[number]): string => (typeof op.template === 'function' ? op.template('zh') : op.template)
+    const preToolUse = JSON.parse(renderTemplate(codexTemplate(ops[0]!), paths)) as {
+      matcher: string
+      hooks: Array<{ type: string; command: string; timeout: number }>
+    }
+    // Codex reports shell as Bash and edits as apply_patch (+ aliases).
+    expect(preToolUse.matcher).toBe('^(Bash|apply_patch|Edit|Write)$')
+    expect(preToolUse.hooks[0]!.type).toBe('command')
+    expect(preToolUse.hooks[0]!.command).toBe(`node "${paths.codex.distHookCli}"`)
+    expect(preToolUse.hooks[0]!.timeout).toBe(90) // LLM latency budget, mirroring claude
+    const sessionStart = JSON.parse(renderTemplate(codexTemplate(ops[1]!), paths)) as { matcher: string; hooks: Array<{ timeout: number }> }
+    expect(sessionStart.matcher).toBe('^(startup|resume)$')
     expect(sessionStart.hooks[0]!.timeout).toBe(30)
   })
 

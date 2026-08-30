@@ -59,6 +59,7 @@ const HOSTS = {
   zcode: { hookCli: 'packages/host-zcode/dist/hook-cli.js', configRoot: ['.zcode', 'auto-guard'] },
   opencode: { hookCli: 'packages/host-opencode/dist/hook-cli.js', configRoot: ['.config', 'opencode', 'auto-guard'] },
   qoder: { hookCli: 'packages/host-qoder/dist/hook-cli.js', configRoot: ['.qoder', 'auto-guard'] },
+  codex: { hookCli: 'packages/host-codex/dist/hook-cli.js', configRoot: ['.codex', 'auto-guard'] },
   claude: { hookCli: 'packages/host-claude/dist/hook-cli.js', configRoot: ['.claude', 'auto-guard'] },
 }
 

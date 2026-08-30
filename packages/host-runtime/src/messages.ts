@@ -74,6 +74,7 @@ const catalog = defineCatalog(
     hitUntracked: '未跟踪工具，直通',
     unreviewableBash: '无法读取 Bash 命令参数（tool_input 解析失败），保守起见需要人工确认 [{tool}]',
     unreviewablePath: '无法读取 {tool} 目标路径（tool_input 解析失败），保守起见需要人工确认',
+    askDeniedNoPrompt: '【本宿主无法弹出人工确认，auto-guard 已按拒绝处理；如确认安全，请手动执行该命令，或将其加入 userConfirmed 规则】',
   },
   {
     usage: 'Usage: node dist/cli.js <guard|set|examine|optimize> <action>',
@@ -135,6 +136,7 @@ const catalog = defineCatalog(
     hitUntracked: 'untracked tool; passthrough',
     unreviewableBash: 'Cannot read the Bash command parameters (tool_input failed to parse); asking a human as a fail-safe [{tool}]',
     unreviewablePath: 'Cannot read the {tool} target path (tool_input failed to parse); asking a human as a fail-safe',
+    askDeniedNoPrompt: '[This host cannot surface a confirmation prompt, so auto-guard denied the call; if it is safe, run it manually or add it to the userConfirmed rules]',
   },
 )
 
@@ -150,4 +152,9 @@ export function createHostMessage(descriptor?: HostDescriptor): HostMessage {
     if (override !== undefined) return interpolate(override, params)
     return catalog.message(lang, key, params)
   }
+}
+
+/** Shared-catalog lookup without a host binding (SPEC 0015: the deny-fallback wire note). */
+export function createRuntimeCatalogMessage(): HostMessage {
+  return (lang, key, params = {}) => catalog.message(lang, key, params)
 }

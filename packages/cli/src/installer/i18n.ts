@@ -17,7 +17,7 @@ export type { Lang }
 export { envLang, normalizeLang } from '@auto-guard/core'
 
 const ZH = {
-  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
+  usage: '用法：auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder,codex] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: '{name} 缺少参数值',
   unknownFlag: '未知参数：{name}（可用：--host --yes --banner --home --lang --update-rules --skip-rules）',
   unknownHosts: '未知宿主：{hosts}（可用值：{valid}）',
@@ -36,7 +36,7 @@ const ZH = {
   summaryEntry: '  · {label}（{note}）',
   verifyHint: '验证：新开会话后运行 auto-guard guard status，或在宿主中执行一条命令观察审查提示',
   configHint: '配置：各宿主独立 —— auto-guard set set-key --config-root ~/.<host>/auto-guard（也可 examine on 开审计）',
-  uninstallHint: '卸载：auto-guard remove [--host dsh,pi,zcode,claude,opencode,qoder]',
+  uninstallHint: '卸载：auto-guard remove [--host dsh,pi,zcode,claude,opencode,qoder,codex]',
   seedingNote: '说明：守卫配置与数据在首次运行时播种到 ~/.<host>/auto-guard/，init 不创建这些文件',
   failuresSummary: '有 {count} 个宿主未完成：{hosts}',
   listDetectLine: '  检测: {value}',
@@ -93,9 +93,12 @@ const ZH = {
   sessionNoteClaudeHooksNoHotReload: 'hooks 无热重载，必须新开 Claude Code 会话',
   sessionNoteOpencodePlugin: '插件随 opencode 启动加载，须新开 opencode 会话',
   sessionNoteQoderHooksNoHotReload: 'hooks 无热重载，必须新开 Qoder 会话',
+  sessionNoteCodexHooksNoHotReload: 'hooks 无热重载，必须新开 Codex 会话',
   claudeVerifyHint: '验证：新会话运行 node <host-claude>/dist/cli.js guard ping，或执行一条命令观察审查提示',
   claudeSwitcherRisk: '⚠ 已知风险：cc-switch / clawd 等切换器会整体覆写 ~/.claude/settings.json 抹掉 hooks——若守卫失效，先检查该文件，再重跑 auto-guard init --host claude 恢复',
   qoderVerifyHint: '验证：新会话运行 node <host-qoder>/dist/cli.js guard ping，或执行一条命令观察审查提示',
+  codexTrustHint: '⚠ 必须信任：在 Codex 中执行一次 /hooks，审查并信任 auto-guard 的两条 hook——未信任的 hook 会被静默跳过（守卫看似开启实则未生效）',
+  codexVerifyHint: '验证：信任后新会话运行 node <host-codex>/dist/cli.js guard ping，或执行一条命令观察审查提示；ask 类裁决在 Codex 上按拒绝处理（其 hook 协议暂不支持转人工确认）',
   opencodeKeepAskNote: '说明：permission 中插入的 "*" 规则在 remove 时保留（无法区分归属）；如需清除请手工删除各工具对象首位的 "*": "ask"',
   opencodeSessionAlwaysNote: '说明：你在 opencode 权限框选「本会话总是」后，同模式调用经宿主放行、不再进守卫（ADR-0015）',
   removedKeepPermission: '；permission 中插入的 "*" 规则保留（无法区分归属，如需清除请手工删除）',
@@ -120,7 +123,7 @@ const ZH = {
 export type MessageKey = keyof typeof ZH
 
 const EN: Record<MessageKey, string> = {
-  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
+  usage: 'Usage: auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder,codex] [--yes] [--update-rules|--skip-rules] [--home <path>] [--lang <zh|en>]',
   flagMissingValue: 'missing value for {name}',
   unknownFlag: 'Unknown flag: {name} (available: --host --yes --banner --home --lang --update-rules --skip-rules)',
   unknownHosts: 'Unknown host(s): {hosts} (valid values: {valid})',
@@ -139,7 +142,7 @@ const EN: Record<MessageKey, string> = {
   summaryEntry: '  · {label} ({note})',
   verifyHint: 'Verify: start a new session and run auto-guard guard status, or run any command in the host and watch for the review prompt',
   configHint: 'Configure: one root per host — auto-guard set set-key --config-root ~/.<host>/auto-guard (or run examine on to enable the audit log)',
-  uninstallHint: 'Uninstall: auto-guard remove [--host dsh,pi,zcode,claude,opencode,qoder]',
+  uninstallHint: 'Uninstall: auto-guard remove [--host dsh,pi,zcode,claude,opencode,qoder,codex]',
   seedingNote: 'Note: guard config and data are seeded into ~/.<host>/auto-guard/ on first run; init does not create them',
   failuresSummary: '{count} host(s) not finished: {hosts}',
   listDetectLine: '  Detected: {value}',
@@ -196,9 +199,12 @@ const EN: Record<MessageKey, string> = {
   sessionNoteClaudeHooksNoHotReload: 'hooks have no hot reload — you must start a new Claude Code session',
   sessionNoteOpencodePlugin: 'the plugin loads at opencode startup — start a new opencode session',
   sessionNoteQoderHooksNoHotReload: 'hooks have no hot reload — you must start a new Qoder session',
+  sessionNoteCodexHooksNoHotReload: 'hooks have no hot reload — you must start a new Codex session',
   claudeVerifyHint: 'Verify: in a new session run node <host-claude>/dist/cli.js guard ping, or run a command and watch for the review prompt',
   claudeSwitcherRisk: '⚠ Known risk: switchers such as cc-switch / clawd overwrite ~/.claude/settings.json wholesale and wipe the hooks — if the guard goes silent, check that file first, then re-run auto-guard init --host claude to restore',
   qoderVerifyHint: 'Verify: in a new session run node <host-qoder>/dist/cli.js guard ping, or run a command and watch for the review prompt',
+  codexTrustHint: '⚠ Trust required: run /hooks once in Codex and trust the two auto-guard hooks — untrusted hooks are skipped silently (the guard looks enabled but is not)',
+  codexVerifyHint: 'Verify: after trusting, in a new session run node <host-codex>/dist/cli.js guard ping, or run a command and watch for the review prompt; ask verdicts land as denials on Codex (its hook protocol cannot surface a human confirmation yet)',
   opencodeKeepAskNote: 'Note: the "*" rules inserted under permission survive remove (ownership cannot be distinguished); delete the leading "*": "ask" by hand if you want them gone',
   opencodeSessionAlwaysNote: 'Note: after picking "Always (this session)" in an opencode permission prompt, matching calls are allowed by the host and never reach the guard (ADR-0015)',
   removedKeepPermission: ' (the "*" rules inserted under permission are kept — ownership cannot be distinguished; remove them by hand if needed)',

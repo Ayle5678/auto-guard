@@ -37,6 +37,10 @@ function installerDeps(home: string): InstallerDeps {
         distHookCli: join(home, 'pkg', 'host-qoder', 'dist', 'hook-cli.js'),
         distSessionStart: join(home, 'pkg', 'host-qoder', 'dist', 'session-start.js'),
       },
+      codex: {
+        distHookCli: join(home, 'pkg', 'host-codex', 'dist', 'hook-cli.js'),
+        distSessionStart: join(home, 'pkg', 'host-codex', 'dist', 'session-start.js'),
+      },
     },
   }
 }
@@ -228,6 +232,32 @@ describe('auto-guard remove (ticket 04)', () => {
     const remove = await runCli(['remove', '--host', 'qoder'], { installer: deps })
     expect(remove.code).toBe(0)
     expect(readFileSync(settingsPath, 'utf8')).toBe(original)
+  })
+
+  it('codex init → remove round-trips hooks.json with user hooks preserved', async () => {
+    const home = fakeHome()
+    const deps = { ...installerDeps(home), hasExecutable: (exe: string) => exe === 'codex' }
+    mkdirSync(join(home, '.codex'), { recursive: true })
+    // requiredTokens must point at existing built artifacts.
+    mkdirSync(join(home, 'pkg', 'host-codex', 'dist'), { recursive: true })
+    writeFileSync(join(home, 'pkg', 'host-codex', 'dist', 'hook-cli.js'), '', 'utf8')
+    writeFileSync(join(home, 'pkg', 'host-codex', 'dist', 'session-start.js'), '', 'utf8')
+    const original = '{"hooks":{"PreToolUse":[{"matcher":"Grep","hooks":[{"type":"command","command":"mine.sh"}]}]}}'
+    const hooksPath = join(home, '.codex', 'hooks.json')
+    writeFileSync(hooksPath, original, 'utf8')
+
+    const init = await runCli(['init', '--host', 'codex', '--yes'], { installer: deps })
+    expect(init.code).toBe(0)
+    expect(init.output.join('\n')).toContain('新开 Codex 会话')
+    expect(init.output.join('\n')).toContain('/hooks')
+    const written = JSON.parse(readFileSync(hooksPath, 'utf8')) as { hooks: { PreToolUse: unknown[]; SessionStart: unknown[] } }
+    expect(written.hooks.PreToolUse).toHaveLength(2)
+    expect(written.hooks.SessionStart).toHaveLength(1)
+    expect(existsSync(`${hooksPath}.auto-guard.bak`)).toBe(true)
+
+    const remove = await runCli(['remove', '--host', 'codex'], { installer: deps })
+    expect(remove.code).toBe(0)
+    expect(readFileSync(hooksPath, 'utf8')).toBe(original)
   })
 
   it('opencode init writes plugin + permission; remove restores the backup byte-for-byte', async () => {

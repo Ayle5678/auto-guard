@@ -16,6 +16,9 @@ importers:
       '@auto-guard/host-claude':
         specifier: workspace:*
         version: link:../host-claude
+      '@auto-guard/host-codex':
+        specifier: workspace:*
+        version: link:../host-codex
       '@auto-guard/host-opencode':
         specifier: workspace:*
         version: link:../host-opencode
@@ -95,6 +98,25 @@ importers:
         version: 13.0.3
 
   packages/host-claude:
+    dependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/host-codex:
     dependencies:
       '@auto-guard/core':
         specifier: workspace:*

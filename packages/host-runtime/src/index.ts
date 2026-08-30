@@ -12,7 +12,7 @@ export type {
   OutcomeMeta,
   WireSerializer,
 } from './descriptor.ts'
-export { synthesizeShellCommand } from './extraction.ts'
+export { synthesizeShellCommand, parsePatchPaths } from './extraction.ts'
 export type { HookInput, GuardableExtraction, HostExtraction } from './extraction.ts'
 export { createExtraction } from './extraction.ts'
 export { createConfigSpace, type HostConfigSpace } from './config.ts'
@@ -27,7 +27,14 @@ export { createHookHost, type CreateHookHostOptions, type HookHost } from './cre
 export { runCliFacade } from './cli-facade.ts'
 
 // Default (Claude-compatible `hookSpecificOutput`) wire.
-export { defaultWire, serializeHookOutput, type HookAction, type HookOutput, type HookSpecificOutput } from './wire.ts'
+export {
+  defaultWire,
+  createDefaultWire,
+  serializeHookOutput,
+  type HookAction,
+  type HookOutput,
+  type HookSpecificOutput,
+} from './wire.ts'
 
 // OpenCode `{status,reason}` wire (serializer slot + plugin-side parsing).
 export {

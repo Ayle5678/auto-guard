@@ -20,6 +20,7 @@ import type { HostDescriptor, OutcomeMeta, WireOutcome } from './descriptor.ts'
 import type { HostConfigSpace } from './config.ts'
 import type { HostBootstrapKit, GuardRuntime } from './bootstrap.ts'
 import type { HostExtraction, HookInput } from './extraction.ts'
+import { parsePatchPaths } from './extraction.ts'
 import type { HostMessage } from './messages.ts'
 import { createDecisionRender } from './decision-render.ts'
 import type { WireSerializer } from './descriptor.ts'
@@ -90,8 +91,8 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
     io.writeOut(text)
   }
 
-  function failClosedAsk(io: HookIo, reason: string): void {
-    emit(io, wire.serialize({ action: 'ask', reason }))
+  function failClosedAsk(io: HookIo, reason: string, lang: Lang = hookLang()): void {
+    emit(io, wire.serialize({ action: 'ask', reason }, lang))
   }
 
   type FinalOutcome = WireOutcome
@@ -181,6 +182,14 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
       return undefined
     }
     const name = (input.tool_name ?? '').toLowerCase()
+    // Patch-surface tools (codex apply_patch, SPEC 0015) carry no path field;
+    // their subject is the first target path inside the patch text.
+    const patchField = descriptor.guardedTools[input.tool_name ?? '']?.patchCommand
+    if (patchField !== undefined) {
+      const patchText = firstString(patchField)
+      const firstPath = patchText ? parsePatchPaths(patchText)[0] : undefined
+      return firstPath ? truncateOneLine(firstPath, 200) : undefined
+    }
     const subject = descriptor.history.bashNames.includes(name) ? firstString('command') : firstString(...descriptor.history.pathFields)
     return subject ? truncateOneLine(subject, 200) : undefined
   }
@@ -256,7 +265,7 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
     }
 
     const lang = runtime.lang
-    const extractionResult = extraction.toGuardRequest(input, kit.workspaceFromEnv(), lang)
+    const extractionResult = extraction.toGuardRequest(input, kit.workspaceFromEnv(input.cwd), lang)
 
     let outcome: FinalOutcome
     if (extractionResult.kind === 'passthrough') {
@@ -304,6 +313,6 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
       // Telemetry must never alter the decision path.
     }
 
-    emit(io, wire.serialize(outcome))
+    emit(io, wire.serialize(outcome, lang))
   }
 }
