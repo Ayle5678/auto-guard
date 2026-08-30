@@ -4,8 +4,8 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：ADR-0011 功能已全量落地——core 四层解析、各包目录、`set lang`、安装器机器默认与 conformance 语言等价均有现行测试在库）
 
-- [ ] 交互 init 选语言后机器默认落盘；二次 init 不再提问
-- [ ] `init --lang en` 更新机器默认；`remove` 后文件保留
-- [ ] 英文安装产出的 ZCode hook 条目 statusMessage 为英文；重跑 init 幂等不重写
+- [x] 交互 init 选语言后机器默认落盘；二次 init 不再提问
+- [x] `init --lang en` 更新机器默认；`remove` 后文件保留
+- [x] 英文安装产出的 ZCode hook 条目 statusMessage 为英文；重跑 init 幂等不重写

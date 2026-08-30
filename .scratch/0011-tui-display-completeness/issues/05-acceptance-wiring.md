@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 02, 03, 04 — 全部前置票完成后收口。
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：实现与验收复选框均已就位，补记状态）
 
 - [x] preview.txt 重生成，包含折行/滚动/分组的演示帧
 - [x] docs/usage.md §6（TUI）键位与交互描述与实现一致

@@ -4,8 +4,8 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：ADR-0011 功能已全量落地——core 四层解析、各包目录、`set lang`、安装器机器默认与 conformance 语言等价均有现行测试在库）
 
-- [ ] 值矩阵测试：四个值 × 两语言标签全部解析正确；垃圾输入 block
-- [ ] Pi 交互测试（fake UI）断言英文设置下标签为英文、追问拒绝原因分支照常触发、会话记忆写入语义不变
-- [ ] allow/deny 与 reason 透传行为与重构前一致
+- [x] 值矩阵测试：四个值 × 两语言标签全部解析正确；垃圾输入 block
+- [x] Pi 交互测试（fake UI）断言英文设置下标签为英文、追问拒绝原因分支照常触发、会话记忆写入语义不变
+- [x] allow/deny 与 reason 透传行为与重构前一致

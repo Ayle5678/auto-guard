@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：实现与验收复选框均已就位，补记状态）
 
 - [x] 无头断言：组标题行按序渲染（密钥→API 端点→偏好→维护），语言项位于偏好组
 - [x] 无头断言：光标上下移动跳过标题行；在组边界处 Enter 命中正确的下一可选项

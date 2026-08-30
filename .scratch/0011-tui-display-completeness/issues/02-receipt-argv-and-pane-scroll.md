@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：实现与验收复选框均已就位，补记状态）
 
 - [x] 无头断言：回执 argv 不含 `--config-root`，而动作层实际调用参数仍注入当前根（单一事实源不破）
 - [x] 无头断言：列表屏 `PgDn`/`g`/`G` 改变输出面板 offset 且 `↑↓` 仍移动动作光标；窄窗（如 80×24）下超视口回执 `g` 滚顶后首行可见、`G` 回底

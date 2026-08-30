@@ -4,8 +4,8 @@
 
 **Blocked by:** 01、02、03、04
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：ADR-0011 功能已全量落地——core 四层解析、各包目录、`set lang`、安装器机器默认与 conformance 语言等价均有现行测试在库）
 
-- [ ] conformance 语言等价断言通过
-- [ ] 文档与实际解析顺序、命令面一致（flags 表人工核对）
-- [ ] 全仓测试与 typecheck 绿；三种场景冒烟通过
+- [x] conformance 语言等价断言通过
+- [x] 文档与实际解析顺序、命令面一致（flags 表人工核对）
+- [x] 全仓测试与 typecheck 绿；三种场景冒烟通过

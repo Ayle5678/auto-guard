@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done（2026-08-30 核对：实现与验收复选框均已就位，补记状态）
 
 - [x] 无头断言：超宽回执行折行后，输出面板可见内容包含行尾标记（如 `[cache]`），且无静默丢字符
 - [x] 无头断言：日志屏与安装预览面板的宽行同样折行（80 列宽度下断言）
