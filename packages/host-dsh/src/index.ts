@@ -56,6 +56,7 @@ import { createContextNotice, createPageNoticeEvents, notifyRoute } from './noti
 import { dshMessage, type DshMessageKey } from './messages.ts'
 import { DshLlmReviewer } from './dsh-reviewer.ts'
 import { FileTracker } from '@auto-guard/core'
+import { createGuardService } from '@auto-guard/host-runtime'
 import { AUTO_GUARD_DIR, installGuardSettings, loadConfig } from './config.ts'
 
 export const name = 'auto-guard'
@@ -102,19 +103,17 @@ function createState(
     audit = createAuditStore(expandHome(config.auditDbPath))
   }
   const history = new HistoryStore({ dbPath: config.auditDbPath, password: config.auditPassword, days: config.historyDays, store: audit })
-  const learned = loadLearnedRules(config.learnedRulesPath, [...rules.hardDeny, ...rules.alwaysReview, ...rules.directoryDelete])
-  const templateCache = new TemplateCache(config.templateCachePath)
-  templateCache.setCacheablePatterns(learned.cacheable)
-  const service = new GuardService({
+  // GuardDeps wiring is the shared runtime assembly (ADR-0016); the in-memory
+  // session state and the audit-store choice stay dsh's own.
+  const { service, learned, templateCache } = createGuardService({
     config,
     rules,
+    lang,
     sessionCache,
     persistentCache,
     llmReviewer,
     fileTracker,
     historyStore: history,
-    templateCache,
-    lang,
   })
   return { config, rules, service, audit, history, learned, templateCache, lang }
 }

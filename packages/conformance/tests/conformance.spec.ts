@@ -27,10 +27,8 @@ import {
   GuardService,
   HistoryStore,
   loadRules,
-  loadLearnedRules,
   PersistentCache,
   SessionLruCache,
-  TemplateCache,
   DiskSessionCache,
   createPendingSinks,
   createTrackerStore,
@@ -39,19 +37,21 @@ import {
   reviewTimeoutBudget,
   parseReviewJson,
   type DecisionSource,
-  type GuardConfig,
   type GuardRequest,
   type LlmReviewRequest,
   type LlmReviewer,
   type LlmReviewResult,
 } from '@auto-guard/core'
+import { createGuardService, serializeHookOutput, createExtraction, createHostMessage, type HostDescriptor } from '@auto-guard/host-runtime'
+import { ZCODE_DESCRIPTOR } from '@auto-guard/host-zcode/src/descriptor.ts'
+import { CLAUDE_DESCRIPTOR } from '@auto-guard/host-claude/src/descriptor.ts'
+import { QODER_DESCRIPTOR } from '@auto-guard/host-qoder/src/descriptor.ts'
+import { OPENCODE_DESCRIPTOR } from '@auto-guard/host-opencode/src/descriptor.ts'
 import { toGuardRequest as piToGuardRequest } from '@auto-guard/host-pi/src/adapter.ts'
 import { toGuardRequest as dshToGuardRequest } from 'auto-guard/src/adapter.ts'
 import { toGuardRequest as zcodeToGuardRequest, normalizeHookInput as zcodeNormalize } from '@auto-guard/host-zcode/src/zcode-adapter.ts'
 import { toGuardRequest as claudeToGuardRequest, normalizeHookInput as claudeNormalize } from '@auto-guard/host-claude/src/claude-adapter.ts'
-import { serializeHookOutput as claudeSerialize } from '@auto-guard/host-claude/src/hook-output.ts'
 import { toGuardRequest as qoderToGuardRequest, normalizeHookInput as qoderNormalize } from '@auto-guard/host-qoder/src/qoder-adapter.ts'
-import { serializeHookOutput as qoderSerialize } from '@auto-guard/host-qoder/src/hook-output.ts'
 import {
   toGuardRequest as opencodeToGuardRequest,
   payloadFromAsked,
@@ -86,6 +86,14 @@ interface Bootstrap {
   make: (dir: string, reviewer: LlmReviewer, apiKey: string, lang?: 'zh' | 'en') => GuardService
 }
 
+/**
+ * The four hook-host descriptors run through the runtime's ONE assembly
+ * (`buildGuardDeps` — the exact wiring `createHookHost` uses internally, with
+ * the reviewer injectable); pi/dsh keep their memory-state assembly. A
+ * decision difference between the descriptor rows can therefore only come
+ * from descriptor-declared data or the assembly inputs, never from a
+ * host-local copy of the pipeline.
+ */
 function bootstraps(): Bootstrap[] {
   const makeService = (dir: string, reviewer: LlmReviewer, state: SessionStateKind, lang?: 'zh' | 'en'): GuardService => {
     const config = defaultGuardConfig(dir)
@@ -98,29 +106,27 @@ function bootstraps(): Bootstrap[] {
     const audit = createAuditStore(config.auditDbPath)
     openStores.push(audit)
     const history = new HistoryStore({ dbPath: config.auditDbPath, store: audit, days: config.historyDays })
-    const learned = loadLearnedRules(config.learnedRulesPath, [...rules.hardDeny, ...rules.alwaysReview, ...rules.directoryDelete])
-    const templateCache = new TemplateCache(config.templateCachePath)
-    templateCache.setCacheablePatterns(learned.cacheable)
-    return new GuardService({
+    const lang0 = lang ?? 'zh'
+    const { service } = createGuardService({
       config,
       rules,
+      lang: lang0,
       sessionCache,
       persistentCache: new PersistentCache(config.cachePath),
       llmReviewer: reviewer,
       fileTracker: new FileTracker(config.fileTrackerWindowSec * 1000, state === 'disk' ? createTrackerStore(join(dir, 'sessions', 's0'), config.fileTrackerWindowSec * 1000) : undefined),
       historyStore: history,
-      templateCache,
       pendingPersistence,
-      ...(lang ? { lang } : {}),
     })
+    return service
   }
   return [
     { name: 'pi-style bootstrap (memory state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'memory', lang) },
     { name: 'dsh-style bootstrap (memory state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'memory', lang) },
-    { name: 'zcode-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
-    { name: 'claude-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
-    { name: 'opencode-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
-    { name: 'qoder-style bootstrap (disk state)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
+    { name: 'zcode descriptor (disk state, runtime assembly)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
+    { name: 'claude descriptor (disk state, runtime assembly)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
+    { name: 'opencode descriptor (disk state, runtime assembly)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
+    { name: 'qoder descriptor (disk state, runtime assembly)', make: (dir, reviewer, _apiKey, lang) => makeService(dir, reviewer, 'disk', lang) },
   ]
 }
 
@@ -226,6 +232,55 @@ describe('fail-closed matrix: identical reviewer-failure semantics on all hosts'
   })
 })
 
+describe('SPEC 0012: synthesized delete_file rides the exact bash rm pipeline', () => {
+  // The qoder descriptor row (disk-state, runtime assembly) — the composition
+  // the synthesized command actually travels through on its host.
+  const makeQoderStyle = bootstraps().at(-1)!.make
+
+  // The LEFT side of every comparison is a real delete_file payload through
+  // the qoder adapter; only the RIGHT side is a hand-written bash rm —
+  // equivalence between different producers, not a literal compared to itself.
+  function fromDeleteFile(payloadPath: string): GuardRequest {
+    const extraction = qoderToGuardRequest(qoderNormalize({ session_id: 's1', tool_name: 'delete_file', tool_input: { path: payloadPath } }), 'w')
+    if (extraction.kind !== 'guardable') throw new Error('delete_file payload should extract as guardable')
+    return extraction.request
+  }
+  function fromBash(command: string): GuardRequest {
+    const extraction = zcodeToGuardRequest(zcodeNormalize({ session_id: 's1', tool_name: 'Bash', tool_input: { command } }), 'w')
+    if (extraction.kind !== 'guardable') throw new Error('bash payload should extract as guardable')
+    return extraction.request
+  }
+
+  it('single-file rm is never silently allowed: the delete_file event and the real bash event go to the LLM alike', async () => {
+    const synthesized = await makeQoderStyle(root(), okReviewer(), 'disk').decide(fromDeleteFile('C:/proj/notes.txt'))
+    const realBash = await makeQoderStyle(root(), okReviewer(), 'disk').decide(fromBash('rm "C:/proj/notes.txt"'))
+    expect(synthesized).toMatchObject(realBash)
+    expect(synthesized.source).toBe('llm')
+    expect(synthesized.cached).toBeUndefined()
+  })
+
+  it('sensitive-path demotion fires identically for the synthesized command', async () => {
+    const synthesized = await makeQoderStyle(root(), okReviewer(), 'disk').decide(fromDeleteFile('C:/proj/.env'))
+    const realBash = await makeQoderStyle(root(), okReviewer(), 'disk').decide(fromBash('rm "C:/proj/.env"'))
+    expect(synthesized).toMatchObject(realBash)
+    expect(synthesized.source).toBe('llm')
+  })
+
+  it('reviewer failure fails closed identically for the synthesized command', async () => {
+    const failing = (): LlmReviewer => ({
+      async review(req: LlmReviewRequest): Promise<LlmReviewResult> {
+        void req
+        throw new Error('boom')
+      },
+    })
+    const synthesized = await makeQoderStyle(root(), failing(), 'disk').decide(fromDeleteFile('C:/a'))
+    const realBash = await makeQoderStyle(root(), failing(), 'disk').decide(fromBash('rm "C:/a"'))
+    expect(synthesized).toMatchObject(realBash)
+    expect(synthesized.kind).toBe('deny')
+    expect(synthesized.reviewerFailed).toBe(true)
+  })
+})
+
 describe('shared reviewer contract across hosts', () => {
   beforeAll(() => {
     // REVIEW_SYSTEM_PROMPT and the timeout budget are core-owned; hosts must
@@ -267,8 +322,18 @@ describe('adapter translation equivalence: one logical call, six dialects (qoder
     }
   })
 
-  it('a sensitive .env write translates identically on all adapters', () => {
-    const expected: GuardRequest = { tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
+  it('qoder delete_file synthesizes the same bash rm request as a real Bash tool call (SPEC 0012)', () => {
+    const synthesized = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'delete_file', tool_input: { path: 'C:/a' } }), WS)
+    const realQoderBash = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'Bash', tool_input: { command: 'rm "C:/a"' } }), WS)
+    const realClaudeBash = claudeToGuardRequest(claudeNormalize({ session_id: SES, tool_name: 'Bash', tool_input: { command: 'rm "C:/a"' } }), WS)
+    const expected: GuardRequest = { tool: 'bash', command: 'rm "C:/a"', session: SES, workspace: WS }
+    for (const [host, extraction] of Object.entries({ qoderSynth: synthesized, qoderBash: realQoderBash, claudeBash: realClaudeBash })) {
+      expect(extraction, host).toMatchObject({ kind: 'guardable' })
+      expect((extraction as { request?: GuardRequest }).request, host).toEqual(expected)
+    }
+  })
+
+  it('a sensitive .env write translates identically on all adapters', () => {    const expected: GuardRequest = { tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
     const pi = piToGuardRequest({ tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS })
     const dsh = dshToGuardRequest({ name: 'write', arguments: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' }, signal: new AbortController().signal, agent: { session: { id: SES, header: { cwd: WS } } } })
     const zcode = zcodeToGuardRequest(zcodeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
@@ -295,26 +360,34 @@ describe('fail-closed matrix: where each failure lands for the user on claude/op
   it('claude: unparseable guarded payload → unreviewable → permissionDecision ask', () => {
     const extraction = claudeToGuardRequest(claudeNormalize({ tool_name: 'Bash', tool_input: {} }))
     expect(extraction.kind).toBe('unreviewable')
-    const json = JSON.parse(claudeSerialize({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
+    const json = JSON.parse(serializeHookOutput({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
     expect(json.hookSpecificOutput.permissionDecision).toBe('ask')
   })
 
   it('qoder: unparseable guarded payload → unreviewable → permissionDecision ask (spec 0005)', () => {
     const extraction = qoderToGuardRequest(qoderNormalize({ tool_name: 'create_file', tool_input: {} }))
     expect(extraction.kind).toBe('unreviewable')
-    const json = JSON.parse(qoderSerialize({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
+    const json = JSON.parse(serializeHookOutput({ action: 'ask', reason: 'unreadable' })) as { hookSpecificOutput: { permissionDecision: string } }
     expect(json.hookSpecificOutput.permissionDecision).toBe('ask')
   })
 
-  it('qoder and claude serialize the same decision to byte-identical stdout JSON (ticket 03)', () => {
-    // The two hosts speak the same Claude-compatible dialect; the wire shape
-    // must stay identical for allow (silence), deny and ask alike.
+  it('SPEC 0013 (replaces the qoder≡claude byte pin): all three hook facades re-export the ONE runtime serializer', async () => {
+    // The migration checkpoint is gone on purpose: claude/qoder/zcode shims
+    // delegate to the runtime's default wire, so "byte-identical" is now
+    // guaranteed by construction — equality with the runtime serializer is
+    // the structural pin.
+    const zcodeMod = await import('@auto-guard/host-zcode/src/hook-output.ts')
+    const claudeMod = await import('@auto-guard/host-claude/src/hook-output.ts')
+    const qoderMod = await import('@auto-guard/host-qoder/src/hook-output.ts')
     for (const action of [
       { action: 'allow' as const },
       { action: 'deny' as const, reason: '命中黑名单 [黑名单]: rm -rf /' },
       { action: 'ask' as const, reason: '保守起见需要人工确认' },
     ]) {
-      expect(qoderSerialize(action)).toBe(claudeSerialize(action))
+      const expected = serializeHookOutput(action)
+      expect(claudeMod.serializeHookOutput(action)).toBe(expected)
+      expect(qoderMod.serializeHookOutput(action)).toBe(expected)
+      expect(zcodeMod.serializeHookOutput(action)).toBe(expected)
     }
   })
 
@@ -399,5 +472,117 @@ describe('language equivalence (SPEC 0004): language changes wording, never verd
     expect(zhAsk.source).toBe('llm')
     expect(zhAsk.reason).toContain('LLM 已拒绝过此命令')
     expect(enAsk.reason).toContain('The LLM already denied this command')
+  })
+})
+
+describe('descriptor contract (SPEC 0013 ticket 04): differences must only come from declared data', () => {
+  const DESCRIPTORS: Array<[string, HostDescriptor]> = [
+    ['zcode', ZCODE_DESCRIPTOR],
+    ['claude', CLAUDE_DESCRIPTOR],
+    ['qoder', QODER_DESCRIPTOR],
+    ['opencode', OPENCODE_DESCRIPTOR],
+  ]
+  const WS = 'D:/work/demo'
+
+  /** Each descriptor's extraction of the shared scenario battery. */
+  function extractionOf(descriptor: HostDescriptor, payload: Record<string, unknown>) {
+    const extraction = createExtraction(descriptor, createHostMessage(descriptor))
+    return extraction.toGuardRequest(extraction.normalizeHookInput(JSON.parse(JSON.stringify(payload))), WS, 'zh')
+  }
+
+  it('every guarded bash scenario lands on the same GuardRequest shape wherever the tool exists', () => {
+    for (const [name, descriptor] of DESCRIPTORS) {
+      const bashTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'bash' && !m.synthesizeCommand)?.[0]
+      if (!bashTool) continue
+      const result = extractionOf(descriptor, { session_id: 's1', tool_name: bashTool, tool_input: { command: 'git status' } })
+      expect(result, name).toMatchObject({ kind: 'guardable' })
+      if (result.kind === 'guardable') {
+        expect(result.request, name).toEqual({ tool: 'bash', command: 'git status', session: 's1', workspace: WS })
+      }
+    }
+  })
+
+  it('the fail-closed semantics are identical: guarded tool, unreadable params → unreviewable in every host', () => {
+    for (const [name, descriptor] of DESCRIPTORS) {
+      const bashTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'bash' && !m.synthesizeCommand)?.[0]
+      if (!bashTool) continue
+      const result = extractionOf(descriptor, { session_id: 's1', tool_name: bashTool, tool_input: {} })
+      expect(result.kind, name).toBe('unreviewable')
+    }
+  })
+
+  it('self-proof: an injected descriptor fault (dropped Write) changes ONLY the declared behavior', () => {
+    // Remove the write-surface tool from a claude copy: the write payload
+    // flips guardable → passthrough while the bash scenario stays identical.
+    const writeTool = Object.entries(CLAUDE_DESCRIPTOR.guardedTools).find(([, m]) => m.guardTool === 'write')![0]
+    const broken: HostDescriptor = {
+      ...CLAUDE_DESCRIPTOR,
+      guardedTools: Object.fromEntries(Object.entries(CLAUDE_DESCRIPTOR.guardedTools).filter(([t]) => t !== writeTool)),
+    }
+    const healthy = extractionOf(CLAUDE_DESCRIPTOR, { session_id: 's1', tool_name: writeTool, tool_input: { file_path: `${WS}/a.txt`, content: 'x' } })
+    const faulty = extractionOf(broken, { session_id: 's1', tool_name: writeTool, tool_input: { file_path: `${WS}/a.txt`, content: 'x' } })
+    expect(healthy.kind).toBe('guardable')
+    expect(faulty.kind).toBe('passthrough') // the injected config error, caught
+    const bash = { session_id: 's1', tool_name: 'Bash', tool_input: { command: 'git status' } }
+    expect(extractionOf(broken, bash)).toEqual(extractionOf(CLAUDE_DESCRIPTOR, bash)) // nothing else moved
+  })
+
+  it('self-proof: a swapped path-field chain reroutes extraction exactly as declared', () => {
+    // qoder's filepath spelling is declared data: a copy without `filepath`
+    // must stop finding payloads that only carry `filepath`.
+    const broken: HostDescriptor = { ...QODER_DESCRIPTOR, pathFields: QODER_DESCRIPTOR.pathFields.filter((f) => f !== 'filepath') }
+    const payload = { session_id: 's1', tool_name: 'apply_patch', tool_input: { filepath: 'C:/a.txt', content: 'x' } }
+    expect(extractionOf(QODER_DESCRIPTOR, payload).kind).toBe('guardable')
+    expect(extractionOf(broken, payload).kind).toBe('unreviewable') // chain no longer reaches the path
+  })
+})
+
+describe('language regression matrix (SPEC 0013 ticket 04): four hook descriptors × zh/en', () => {
+  const WS = 'D:/work/demo'
+
+  it.each(DESCRIPTOR_ROWS())('$name: extraction fail-closed wording follows the language, decision kinds never do', ({ descriptor, name }) => {
+    const extraction = createExtraction(descriptor, createHostMessage(descriptor))
+    const bashTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'bash' && !m.synthesizeCommand)?.[0]
+    if (!bashTool) return
+    const zh = extraction.toGuardRequest(extraction.normalizeHookInput({ tool_name: bashTool, tool_input: {} }), WS, 'zh')
+    const en = extraction.toGuardRequest(extraction.normalizeHookInput({ tool_name: bashTool, tool_input: {} }), WS, 'en')
+    expect(zh.kind).toBe(en.kind)
+    expect(zh.kind).toBe('unreviewable')
+    if (zh.kind === 'unreviewable' && en.kind === 'unreviewable') {
+      expect(zh.reason).toContain('保守起见需要人工确认')
+      expect(en.reason).toMatch(/asking a human as a fail-safe/i)
+    }
+  })
+
+  function DESCRIPTOR_ROWS(): Array<{ descriptor: HostDescriptor; name: string }> {
+    return [
+      { descriptor: ZCODE_DESCRIPTOR, name: 'zcode' },
+      { descriptor: CLAUDE_DESCRIPTOR, name: 'claude' },
+      { descriptor: QODER_DESCRIPTOR, name: 'qoder' },
+      { descriptor: OPENCODE_DESCRIPTOR, name: 'opencode' },
+    ]
+  }
+
+  it.each(DESCRIPTOR_ROWS())('$name: set lang is wired (receipt follows the newly selected language, via the shared runtime CLI)', async ({ descriptor, name }) => {
+    // `set lang en` receipt in English — the ADR-0011 drift the runtime fixed
+    // for the three hosts that used to hardcode Chinese.
+    const { createConfigSpace, createCliMain, createBootstrap } = await import('@auto-guard/host-runtime')
+    const dir = root()
+    const space = createConfigSpace(descriptor, dir)
+    space.saveConfig({ ...space.defaultConfig(), enabled: true, lang: 'en' })
+    const kit = createBootstrap(descriptor, space, dir)
+    const chunks: string[] = []
+    const original = process.stdout.write
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const cliMain = createCliMain({ space, kit, message: createHostMessage(descriptor) })
+      await cliMain(['set', 'lang', 'zh'])
+    } finally {
+      process.stdout.write = original
+    }
+    expect(chunks.join(''), name).toContain('语言已设置：zh')
   })
 })

@@ -207,7 +207,7 @@ auto-guard init --host claude --yes            # 重新写入即恢复
 
 - **只支持国际版 Qoder IDE**：用户级配置为 `~/.qoder/settings.json`。CN 版（`~/.qoder-cn/`，灵码系）与 Qoder CLI 入口不适配、不验证。
 - **共享配置的副作用**：Qoder 的 hooks 配置在 IDE / CLI 入口间共享，CLI 若支持同名事件也会执行本守卫——接受的副作用，不另做适配。
-- **工具覆盖面**：matcher 覆盖 Qoder 的双命名工具集（`Bash|Read|Write|Edit` 短名与 `run_in_terminal|read_file|create_file|search_replace` 长名）与 `apply_patch` 别名；`delete_file` 工具不在守卫范围（v1）——经 bash 的 `rm`/`del` 已被守卫。
+- **工具覆盖面**：matcher 覆盖 Qoder 的双命名工具集（`Bash|Read|Write|Edit` 短名与 `run_in_terminal|read_file|create_file|search_replace` 长名）与 `apply_patch` 别名；Qoder 特有的 `delete_file` 工具合成为单文件 bash `rm "<路径>"` 守卫，与真实 bash `rm` 同流。
 - **无热重载**：装完或改完 hooks 都必须新开 Qoder 会话；守卫失效时先确认 `~/.qoder/settings.json` 的 `hooks.PreToolUse` 还在，再重跑 `auto-guard init --host qoder --yes`。
 
 ### 2.7 安全保证

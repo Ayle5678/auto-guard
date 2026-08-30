@@ -138,7 +138,11 @@ const CLAUDE_SESSIONSTART_TEMPLATE = `{"matcher":"^(startup|resume)$","hooks":[{
 // pipe list Qoder's own shipped guardrail matcher uses, which matches both
 // pipe-split-exact and regex interpretations. International IDE only — the
 // CN build (~/.qoder-cn) and the CLI entry point are out of scope (spec 0005).
-const QODER_PRETOOLUSE_TEMPLATE = `{"matcher":"Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_HOOK_CLI}\\"","timeout":90}]}`
+// delete_file joins the guarded set in SPEC 0012 (synthesized to bash
+// `rm "<path>"` in the adapter). Substring safety holds: no name in the list
+// is a substring of another, so both matcher interpretations (pipe-split
+// exact and regex substring) still hit exactly one tool per call.
+const QODER_PRETOOLUSE_TEMPLATE = `{"matcher":"Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace|delete_file","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_HOOK_CLI}\\"","timeout":90}]}`
 const QODER_SESSIONSTART_TEMPLATE = `{"matcher":"startup|resume","hooks":[{"type":"command","command":"node \\"\${AUTO_GUARD_QODER_SESSION_START}\\"","timeout":30}]}`
 
 export const PROFILES: readonly HostProfile[] = [

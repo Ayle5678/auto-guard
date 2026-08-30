@@ -59,6 +59,9 @@ importers:
       '@auto-guard/host-qoder':
         specifier: workspace:*
         version: link:../host-qoder
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
       '@auto-guard/host-zcode':
         specifier: workspace:*
         version: link:../host-zcode
@@ -96,6 +99,9 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -112,6 +118,9 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -131,6 +140,9 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -147,6 +159,9 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -159,6 +174,25 @@ importers:
         version: 3.2.7(@types/node@24.13.3)
 
   packages/host-qoder:
+    dependencies:
+      '@auto-guard/core':
+        specifier: workspace:*
+        version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/host-runtime:
     dependencies:
       '@auto-guard/core':
         specifier: workspace:*
@@ -179,6 +213,9 @@ importers:
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

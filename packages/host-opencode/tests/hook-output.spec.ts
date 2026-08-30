@@ -20,7 +20,7 @@ describe('serializeVerdict / parseVerdict', () => {
   })
 })
 
-describe('statusToReply (ADR-0011 revision mapping)', () => {
+describe('statusToReply (ADR-0015 revision mapping)', () => {
   it('allow → once, deny → reject, ask → no reply (native TUI)', () => {
     expect(statusToReply('allow')).toBe('once')
     expect(statusToReply('deny')).toBe('reject')

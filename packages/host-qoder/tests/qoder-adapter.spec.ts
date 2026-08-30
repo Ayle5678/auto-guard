@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { GUARDED_TOOL_NAMES, normalizeHookInput, toGuardRequest } from '../src/qoder-adapter.ts'
+import { GUARDED_TOOL_NAMES, normalizeHookInput, synthesizeDeleteCommand, toGuardRequest } from '../src/qoder-adapter.ts'
 
 const SESSION = 'sess_qoder1'
 
 describe('GUARDED_TOOL_NAMES', () => {
-  it('covers both Qoder naming sets plus the apply_patch alias', () => {
+  it('covers both Qoder naming sets plus the apply_patch alias and delete_file (SPEC 0012)', () => {
     expect(Object.keys(GUARDED_TOOL_NAMES).sort()).toEqual([
       'Bash',
       'Edit',
@@ -12,6 +12,7 @@ describe('GUARDED_TOOL_NAMES', () => {
       'Write',
       'apply_patch',
       'create_file',
+      'delete_file',
       'read_file',
       'run_in_terminal',
       'search_replace',
@@ -24,6 +25,7 @@ describe('GUARDED_TOOL_NAMES', () => {
     expect(GUARDED_TOOL_NAMES['create_file']).toBe('write')
     expect(GUARDED_TOOL_NAMES['search_replace']).toBe('edit')
     expect(GUARDED_TOOL_NAMES['apply_patch']).toBe('edit')
+    expect(GUARDED_TOOL_NAMES['delete_file']).toBe('bash')
   })
 })
 
@@ -71,9 +73,41 @@ describe('toGuardRequest', () => {
     expect(result).toEqual({ kind: 'passthrough', reason: 'untracked tool Grep' })
   })
 
-  it('passes through delete_file (spec 0005: not guarded in v1 — the bash rm path is)', () => {
-    const result = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file', tool_input: { path: 'C:/a' } }), ws)
-    expect(result.kind).toBe('passthrough')
+  it('synthesizes delete_file into a single-file bash rm request (SPEC 0012)', () => {
+    const result = toGuardRequest(normalizeHookInput({ session_id: SESSION, tool_name: 'delete_file', tool_input: { path: 'C:/a' } }), ws)
+    expect(result.kind).toBe('guardable')
+    if (result.kind === 'guardable') {
+      expect(result.request).toEqual({ tool: 'bash', command: 'rm "C:/a"', session: SESSION, workspace: ws })
+    }
+  })
+
+  it('synthesizes delete_file through the full defensive path chain', () => {
+    for (const key of ['file_path', 'filePath', 'filepath', 'path']) {
+      const result = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file', tool_input: { [key]: 'C:/a.txt' } }), ws)
+      expect(result.kind, key).toBe('guardable')
+      if (result.kind === 'guardable') expect(result.request.command, key).toBe('rm "C:/a.txt"')
+    }
+  })
+
+  it('wraps paths containing spaces in double quotes', () => {
+    const result = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file', tool_input: { path: 'C:/My Docs/a b.txt' } }), ws)
+    expect(result.kind).toBe('guardable')
+    if (result.kind === 'guardable') expect(result.request.command).toBe('rm "C:/My Docs/a b.txt"')
+  })
+
+  it('escapes double quotes and backslashes inside the synthesized path', () => {
+    expect(synthesizeDeleteCommand('rm', 'C:/a"b.txt')).toBe('rm "C:/a\\"b.txt"')
+    // Backslash escaping runs first so a trailing `C:\dir\` cannot escape the closing quote.
+    expect(synthesizeDeleteCommand('rm', 'C:\\dir\\')).toBe('rm "C:\\\\dir\\\\"')
+    const result = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file', tool_input: { path: 'C:/a"b.txt' } }), ws)
+    if (result.kind === 'guardable') expect(result.request.command).toBe('rm "C:/a\\"b.txt"')
+  })
+
+  it('treats delete_file without a readable path as unreviewable (fail closed, never a pass)', () => {
+    const result = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file', tool_input: {} }), ws)
+    expect(result.kind).toBe('unreviewable')
+    const noInput = toGuardRequest(normalizeHookInput({ tool_name: 'delete_file' }), ws)
+    expect(noInput.kind).toBe('unreviewable')
   })
 
   it('passes through mcp tools', () => {

@@ -139,7 +139,7 @@
 
 - 镜像 claude 适配层的一次一进程模型：会话态落盘 `~/.qoder/auto-guard/sessions/<sid>/`，裁决经 stdout JSON `permissionDecision` 返回（allow = 静默）；ask 委托 Qoder 原生确认框。
 - 只支持**国际版 Qoder IDE**（`~/.qoder/`）；CN 版（`~/.qoder-cn/`）与 Qoder CLI 入口不适配、不验证。hooks 写在用户级 `~/.qoder/settings.json`（`type: "command"` + 秒级 timeout，与 Claude Code 方言同构）；该配置文件在 IDE/CLI 入口间共享，CLI 若支持同名事件也会执行本守卫——接受的副作用，不另做适配。
-- 工具双命名全覆盖：`Bash|Read|Write|Edit` 短名 + `run_in_terminal|read_file|create_file|search_replace` 长名 + `apply_patch` 别名；matcher 用 Qoder 自带插件的管道分隔式。`delete_file` 工具不在守卫范围（v1）——经 bash 的 `rm`/`del` 已被守卫。
+- 工具双命名全覆盖：`Bash|Read|Write|Edit` 短名 + `run_in_terminal|read_file|create_file|search_replace` 长名 + `apply_patch` 别名；matcher 用 Qoder 自带插件的管道分隔式。Qoder 特有的 `delete_file` 工具合成为单文件 bash `rm "<路径>"` 守卫——与真实 bash `rm` 完全同流（LLM 必审、敏感路径降级、fail-closed）。
 - hooks 无热重载，装完必须**新开 Qoder 会话**；无 slash 命令面，管理走 `node <host-qoder>/dist/cli.js guard …`。
 
 ### `@auto-guard/host-opencode` — OpenCode 权限系统适配层

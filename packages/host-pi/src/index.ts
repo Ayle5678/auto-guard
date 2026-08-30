@@ -31,7 +31,6 @@ import {
   shouldRunAutoAnalysis,
   prepareDeletionMarker,
   GuardService,
-  type GuardDeps,
   HistoryStore,
   generateLearnedRules,
   loadLearnedRules,
@@ -62,6 +61,7 @@ import {
   usesFourStateAsk,
 } from '@auto-guard/core'
 import type { Decision, GuardConfig, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
+import { createGuardService } from '@auto-guard/host-runtime'
 import { AUTO_GUARD_DIR, defaultConfig, loadConfig, saveConfig } from './config.ts'
 import { PI_CAPABILITIES } from './pi-capabilities.ts'
 import { toGuardRequest } from './adapter.ts'
@@ -109,21 +109,18 @@ function buildGuard(): GuardState {
   const auditPassword = loadAuditPassword(AUTO_GUARD_DIR)
   const audit = createAuditStore(config.auditDbPath, auditPassword)
   const history = new HistoryStore({ dbPath: config.auditDbPath, password: auditPassword, days: config.historyDays })
-  const learned = loadLearnedRules(config.learnedRulesPath, [...rules.hardDeny, ...rules.alwaysReview, ...rules.directoryDelete])
-  const templateCache = new TemplateCache(config.templateCachePath)
-  templateCache.setCacheablePatterns(learned.cacheable)
-  const deps: GuardDeps = {
+  // GuardDeps wiring is the shared runtime assembly (ADR-0016); the in-memory
+  // session state and the audit-store choice stay pi's own.
+  const { service, learned, templateCache } = createGuardService({
     config,
     rules,
+    lang,
     sessionCache,
     persistentCache,
     llmReviewer,
     fileTracker,
     historyStore: history,
-    templateCache,
-    lang,
-  }
-  const service = new GuardService(deps)
+  })
   return { config, rules, service, reviewer: llmReviewer, audit, history, learned, templateCache, lang }
 }
 

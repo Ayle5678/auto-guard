@@ -100,9 +100,10 @@ describe('host profiles (ADR-0008)', () => {
       matcher: string
       hooks: Array<{ type: string; command: string; timeout: number }>
     }
-    // The unanchored pipe list covers both Qoder naming sets plus apply_patch;
-    // it matches whether Qoder treats matchers as pipe-split exact or regex.
-    expect(preToolUse.matcher).toBe('Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace')
+    // The unanchored pipe list covers both Qoder naming sets plus apply_patch
+    // and delete_file (SPEC 0012); it matches whether Qoder treats matchers as
+    // pipe-split exact or regex.
+    expect(preToolUse.matcher).toBe('Bash|Read|Write|Edit|apply_patch|run_in_terminal|read_file|create_file|search_replace|delete_file')
     expect(preToolUse.hooks[0]!.type).toBe('command')
     expect(preToolUse.hooks[0]!.command).toBe(`node "${paths.qoder.distHookCli}"`)
     expect(preToolUse.hooks[0]!.timeout).toBe(90) // LLM latency budget, mirroring claude

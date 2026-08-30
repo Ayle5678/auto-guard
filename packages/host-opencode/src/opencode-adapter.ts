@@ -1,28 +1,33 @@
 /**
- * Adapter mapping OpenCode permission requests to the guard service input.
+ * OpenCode adapter — the host-side half of the payload pipeline (ADR-0016).
  *
- * Two producers feed the same spawned hook CLI (and the same GuardRequest
- * shape as the claude/zcode adapters):
- *  - the `permission.asked` bus event (payload built by the plugin, ADR-0011
+ * Two producers feed the spawned hook CLI (and the same GuardRequest shape
+ * as the other hosts):
+ *  - the `permission.asked` bus event (payload built here, ADR-0015
  *    revision: this is the only dispatch path that actually fires on
  *    OpenCode 1.18.x);
  *  - the `permission.ask` plugin hook (typed upstream; kept for forward
  *    compatibility).
  *
  * Both normalize to the hook CLI stdin shape {tool_name, tool_input,
- * session_id, cwd}; this module also holds the stdin→GuardRequest side used
- * by the hook CLI process itself.
+ * session_id, cwd}. The stdin → GuardRequest side now lives in the shared
+ * runtime, bound to OPENCODE_DESCRIPTOR; the guarded permission surface
+ * below is the descriptor's guarded-tool table under its plugin-side name.
  */
 import { isAbsolute, join } from 'node:path'
+import { createExtraction, createHostMessage } from '@auto-guard/host-runtime'
 import type { GuardRequest } from '@auto-guard/core'
 import type { PermissionAskedProperties, SdkPermission } from './opencode-plugin-types.ts'
+import { OPENCODE_DESCRIPTOR } from './descriptor.ts'
+
+const extraction = createExtraction(OPENCODE_DESCRIPTOR, createHostMessage(OPENCODE_DESCRIPTOR))
 
 /** Guarded permission keys and their guard-side tool names. `edit` covers edit/write/patch host-side. */
-export const GUARDED_PERMISSION_TYPES: Record<string, string> = {
-  bash: 'bash',
-  edit: 'edit',
-  read: 'read',
-}
+export const GUARDED_PERMISSION_TYPES: Record<string, string> = extraction.guardedToolNames
+
+export const normalizeHookInput = extraction.normalizeHookInput
+export const toGuardRequest = extraction.toGuardRequest
+export type { GuardableExtraction } from '@auto-guard/host-runtime'
 
 /** Hook CLI stdin payload (Claude-compatible field names, one object per request). */
 export interface HookCliPayload {
@@ -83,64 +88,4 @@ export function payloadFromSdkPermission(permission: SdkPermission, worktree: st
   )
 }
 
-export interface OpencodeHookInput {
-  session_id?: string
-  tool_name?: string
-  toolName?: string
-  tool_input?: Record<string, unknown>
-  toolInput?: Record<string, unknown>
-  cwd?: string
-}
-
-export function normalizeHookInput(raw: unknown): OpencodeHookInput {
-  if (!raw || typeof raw !== 'object') return {}
-  const input = raw as Record<string, unknown>
-  const toolInput =
-    input.tool_input && typeof input.tool_input === 'object'
-      ? (input.tool_input as Record<string, unknown>)
-      : input.toolInput && typeof input.toolInput === 'object'
-        ? (input.toolInput as Record<string, unknown>)
-        : undefined
-  return {
-    session_id: firstString(input.session_id),
-    tool_name: firstString(input.tool_name) ?? firstString(input.toolName),
-    tool_input: toolInput,
-    cwd: firstString(input.cwd),
-  }
-}
-
-export type GuardableExtraction =
-  | { kind: 'passthrough'; reason?: string }
-  | { kind: 'guardable'; request: GuardRequest }
-  | { kind: 'unreviewable'; reason: string }
-
-/**
- * Convert a hook CLI payload to a guard request. Same fail-closed contract
- * as the claude/zcode adapters: unreadable parameters of a guarded tool are
- * `unreviewable`, surfaced as `ask` (the OpenCode TUI decides).
- */
-export function toGuardRequest(input: OpencodeHookInput, workspace?: string): GuardableExtraction {
-  const tool = GUARDED_PERMISSION_TYPES[input.tool_name ?? '']
-  if (!tool) {
-    return { kind: 'passthrough', reason: input.tool_name ? `untracked permission type ${input.tool_name}` : 'no tool name in payload' }
-  }
-  const params = input.tool_input ?? {}
-
-  if (tool === 'bash') {
-    const command = firstString(params.command)
-    if (command === undefined) {
-      return { kind: 'unreviewable', reason: '无法读取 bash 命令参数（metadata/patterns 均缺失），保守起见需要人工确认' }
-    }
-    return { kind: 'guardable', request: { tool, command, session: input.session_id, workspace } }
-  }
-
-  const filePath = firstString(params.file_path) ?? firstString(params.filePath) ?? firstString(params.path)
-  if (filePath === undefined) {
-    return { kind: 'unreviewable', reason: `无法读取 ${input.tool_name} 目标路径（metadata/patterns 均缺失），保守起见需要人工确认` }
-  }
-  const content = firstString(params.content)
-  return {
-    kind: 'guardable',
-    request: content === undefined ? { tool, filePath, session: input.session_id, workspace } : { tool, filePath, content, session: input.session_id, workspace },
-  }
-}
+export type { GuardRequest }

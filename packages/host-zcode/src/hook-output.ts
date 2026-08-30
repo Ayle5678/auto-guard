@@ -1,84 +1,30 @@
 /**
- * Translate guard outcomes into the ZCode PreToolUse hook output protocol.
- *
- * Confirmed against the ZCode client bundle (strict zod schema): stdout must
- * parse as JSON with at most the documented keys, and `hookEventName` inside
- * `hookSpecificOutput` must equal exactly `"PreToolUse"` or the result is
- * discarded with a ToolExecutionFailed error.
- *
- * Mapping policy:
- *  - allow  → emit nothing and exit 0 (fast path; silence is the pass signal)
- *  - ask    → permissionDecision "ask"; ZCode renders its native prompt
- *  - deny   → permissionDecision "deny"; the reason reaches the model context
- *
- * Text resolves from the ZCode catalog with the effective language (ADR-0011);
- * the `[删除理由]` marker inside the retry hint is protocol and stays Chinese.
+ * ZCode hook output surface — re-exported from the shared runtime (ADR-0016).
+ * The wire half is the default `hookSpecificOutput` dialect; the text half is
+ * the shared decision renderer with the zcode catalog wording.
  */
-import { notificationText, type Lang } from '@auto-guard/core'
-import type { Decision } from '@auto-guard/core'
-import { zcMessage } from './messages.ts'
+import { createHostMessage, createDecisionRender, serializeHookOutput, defaultWire } from '@auto-guard/host-runtime'
+import type { Decision, Lang } from '@auto-guard/core'
 
-export type HookAction =
-  | { action: 'allow'; silent?: boolean }
-  | { action: 'deny' | 'ask'; reason: string }
+export { serializeHookOutput }
+export type { HookAction, HookOutput, HookSpecificOutput } from '@auto-guard/host-runtime'
 
-export interface HookSpecificOutput {
-  hookEventName: 'PreToolUse'
-  permissionDecision?: 'allow' | 'ask' | 'deny'
-  permissionDecisionReason?: string
-  additionalContext?: string
-}
+const render = createDecisionRender(createHostMessage())
 
-export interface HookOutput {
-  hookSpecificOutput: HookSpecificOutput
-}
-
-/**
- * Build the printable reason for a deny/ask outcome. Uses the shared
- * notification text (layer tag + risk + reason) so the model sees which guard
- * layer decided.
- */
+/** Build the printable reason for a deny/ask outcome (layer tag + risk + reason). */
 export function decisionReasonText(decision: Decision, lang: Lang = 'zh'): string {
-  return notificationText(decision, lang)
+  return render.decisionReasonText(decision, lang)
 }
 
 /** Append the deletion-retry hint on the first directory-delete denial. */
 export function withDeletionHint(reason: string, lang: Lang = 'zh'): string {
-  return `${reason} ${zcMessage(lang, 'deletionRetryHint')}`
+  return render.withDeletionHint(reason, lang)
 }
 
-/**
- * Explain HOW a decision was reached, for the decision history / `guard recent`.
- * Rule hits name the exact pattern; cache hits name the cache layer plus the
- * original review reason; LLM decisions carry their verdict reason.
- */
+/** Explain HOW a decision was reached, for the decision history / `guard recent`. */
 export function hitDetail(decision: Decision, matchedPattern: string | undefined, lang: Lang = 'zh'): string {
-  if (matchedPattern) return zcMessage(lang, 'hitRule', { pattern: matchedPattern, reason: decision.reason ?? zcMessage(lang, 'hitRuleDefault') })
-  switch (decision.source) {
-    case 'session-cache':
-      return zcMessage(lang, 'hitSessionCache', { reason: decision.reason ?? zcMessage(lang, 'hitCacheDefault') })
-    case 'persistent-cache':
-      return zcMessage(lang, 'hitPersistentCache', { reason: decision.reason ?? zcMessage(lang, 'hitCacheDefault') })
-    case 'history':
-      return zcMessage(lang, 'hitHistory', { reason: decision.reason ?? zcMessage(lang, 'hitHistoryDefault') })
-    case 'learned':
-      return zcMessage(lang, 'hitLearned', { reason: decision.reason ?? zcMessage(lang, 'hitLearnedDefault') })
-    case 'passthrough':
-      return zcMessage(lang, 'hitUntracked')
-    default:
-      return (decision.reason ?? '').slice(0, 120)
-  }
+  return render.hitDetail(decision, matchedPattern, lang)
 }
 
-/** Serialize an action to the exact stdout contract. Empty string for allow. */
-export function serializeHookOutput(action: HookAction): string {
-  if (action.action === 'allow') return ''
-  const output: HookOutput = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: action.action,
-      permissionDecisionReason: action.reason,
-    },
-  }
-  return JSON.stringify(output)
-}
+/** The zcode wire is the default one; exported for parity checks. */
+export const zcodeWire = defaultWire

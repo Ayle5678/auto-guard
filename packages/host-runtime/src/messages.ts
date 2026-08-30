@@ -1,11 +1,17 @@
 /**
- * ZCode adapter message catalog (zh / en) — the built-in management CLI
- * (usage lines, receipts, the set-key wizard), hook intercept/fail-closed
- * reasons and the hook output rendering (ADR-0011). Engine wording comes
- * from the core catalog; the `[删除理由]` marker is protocol, never
- * localized. Key parity between languages is enforced by the type system.
+ * Shared hook-host message catalog (zh / en) — the runtime's base wording,
+ * carried over byte-for-byte from the zcode catalog when the runtime was
+ * extracted (ADR-0016, language layer based on the most complete host per
+ * ADR-0009). Engine wording comes from the core catalog; the `[删除理由]`
+ * marker is protocol, never localized. Key parity between languages is
+ * enforced by the type system.
+ *
+ * `failBootstrap` takes a `{configPath}` placeholder so every host renders
+ * its own root; host-flavored wording beyond that rides
+ * `HostDescriptor.catalogOverride`.
  */
-import { defineCatalog, type Lang } from '@auto-guard/core'
+import { defineCatalog, interpolate, type Lang } from '@auto-guard/core'
+import type { HostDescriptor } from './descriptor.ts'
 
 const catalog = defineCatalog(
   {
@@ -51,7 +57,7 @@ const catalog = defineCatalog(
     deleteNoDetail: '未提供详情',
     unknownDecisionDenied: '未知裁决，已拦截',
     failStdinNotJson: 'auto-guard：无法解析 hook 输入（stdin 不是合法 JSON），保守起见需要人工确认',
-    failBootstrap: 'auto-guard 初始化失败（检查 ~/.zcode/auto-guard/config.json）：{error}；保守起见需要人工确认',
+    failBootstrap: 'auto-guard 初始化失败（检查 {configPath}）：{error}；保守起见需要人工确认',
     failDecide: 'auto-guard 裁决过程异常：{error}；保守起见需要人工确认',
     failUncaught: 'auto-guard 未捕获异常：{error}；保守起见需要人工确认',
     passthroughDetail: '直通/放行',
@@ -112,7 +118,7 @@ const catalog = defineCatalog(
     deleteNoDetail: 'no details provided',
     unknownDecisionDenied: 'Unknown decision; denied',
     failStdinNotJson: 'auto-guard: could not parse the hook input (stdin is not valid JSON); asking a human as a fail-safe',
-    failBootstrap: 'auto-guard failed to start (check ~/.zcode/auto-guard/config.json): {error}; asking a human as a fail-safe',
+    failBootstrap: 'auto-guard failed to start (check {configPath}): {error}; asking a human as a fail-safe',
     failDecide: 'auto-guard decision error: {error}; asking a human as a fail-safe',
     failUncaught: 'auto-guard uncaught error: {error}; asking a human as a fail-safe',
     passthroughDetail: 'passthrough/allow',
@@ -132,9 +138,16 @@ const catalog = defineCatalog(
   },
 )
 
-export type ZcodeMessageKey = Parameters<typeof catalog.message>[1]
+export type RuntimeMessageKey = Parameters<typeof catalog.message>[1]
 
-/** Look up one ZCode-surface message. */
-export function zcMessage(lang: Lang, key: ZcodeMessageKey, params: Record<string, string | number> = {}): string {
-  return catalog.message(lang, key, params)
+/** Catalog lookup bound to one host: descriptor overrides first, then the shared catalog. */
+export type HostMessage = (lang: Lang, key: RuntimeMessageKey, params?: Record<string, string | number>) => string
+
+/** Build the message lookup for a host (no descriptor = the shared catalog alone). */
+export function createHostMessage(descriptor?: HostDescriptor): HostMessage {
+  return (lang, key, params = {}) => {
+    const override = descriptor?.catalogOverride?.[key]?.[lang]
+    if (override !== undefined) return interpolate(override, params)
+    return catalog.message(lang, key, params)
+  }
 }

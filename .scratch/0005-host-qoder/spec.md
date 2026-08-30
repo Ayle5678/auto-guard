@@ -10,6 +10,7 @@
 - **Qoder CLI 不适配**：不验证、不承诺。注意一个接受的副作用：hooks 写在用户级配置，而配置文件在 IDE/CLI/QoderWork 入口间共享（官方文档"each entry point only runs the events it supports"），CLI 若支持同名事件也会执行我们的 hook——不为此做适配或测试，文档说明即可。
 - **LLM 只走 API 模式，无"Qoder 内置模型"模式**：Qoder 无官方推理 API（唯一官方 OpenAPI 是团队管理/用量统计接口）；社区逆向项目 qoder-proxy 违反 ToS、随时会断，安全审查工具不依赖。Qoder BYOK（DeepSeek/百炼等）与 API 模式等价——同一把 key 守卫直连即可，无需独立模式。裁决 LLM 配置照旧落 `~/.qoder/auto-guard/config.json`（key 水合链 ADR-0006 不变）。
 - **delete_file 不守卫（v1）**：Qoder 特有的文件删除工具。GuardRequest 工具枚举（bash/pwsh/write/edit/read）不含 delete，扩枚举是 core 改动，超出"镜像 claude"的范围；且经 bash 的 `rm`/`del` 已被守卫。留作后续独立 feature。
+  - （2026-08-30 更新：SPEC 0012 撤销此裁剪——`delete_file` 以 bash `rm "<路径>"` 合成纳入守卫，不扩 GuardRequest 枚举。）
 - **无新 ADR**：0007/0008 的直接应用，没有新 kind 的集成写入（对照产出 ADR-0011 的门槛）；协议同构性记录在 research 文件。
 
 ### Qoder（claude 镜像）

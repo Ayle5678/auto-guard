@@ -1,0 +1,117 @@
+{
+  "hook: allow static git status": {
+    "stdout": "{\"status\":\"allow\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: deny hard rm -rf /": {
+    "stdout": "{\"status\":\"deny\",\"reason\":\"[Auto Guard] ⛔ 拦截 [黑名单]: Recursive delete of root is always denied\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: two-phase dir delete": {
+    "stdout": "{\"status\":\"deny\",\"reason\":\"[Auto Guard] ⛔ 拦截 [删除复核]: 目录删除需要理由。请附带 [删除理由] <理由> 重试同一命令（已记录命令：rm -rf ./build） 如需继续，请在原命令后附带 [删除理由] <你的理由> 重试；理由将由 LLM 复核。\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: sensitive ask .env edit": {
+    "stdout": "{\"status\":\"ask\",\"reason\":\"[Auto Guard] ❓ 询问 [敏感路径]: Path is on the sensitive list, confirmation required: D:/w/.env\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: untracked permission type": {
+    "stdout": "{\"status\":\"allow\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: unreviewable bash empty input": {
+    "stdout": "{\"status\":\"ask\",\"reason\":\"无法读取 bash 命令参数（metadata/patterns 均缺失），保守起见需要人工确认\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: unreviewable edit no path": {
+    "stdout": "{\"status\":\"ask\",\"reason\":\"无法读取 edit 目标路径（metadata/patterns 均缺失），保守起见需要人工确认\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "hook: bad stdin": {
+    "stdout": "{\"status\":\"ask\",\"reason\":\"auto-guard：无法解析 hook 输入（stdin 不是合法 JSON），保守起见需要人工确认\"}\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: usage no args": {
+    "stdout": "用法：node dist/cli.js <guard|set|examine|optimize> <action>\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: guard usage": {
+    "stdout": "用法：node dist/cli.js guard <on|off|status|recent|stats|report|ping>\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: guard status": {
+    "stdout": "enabled : true\nlang    : zh\nconfig  : C:\\Users\\Administrator\\AppData\\Local\\Temp\\ag-snap\\opencode\\cli-guard_status\\.config\\opencode\\auto-guard/config.json\nreview  : https://api.deepseek.com · deepseek-v4-flash · ⚠ 无 API Key（fail-closed）\nexamine : off · history: off\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: guard recent": {
+    "stdout": "(暂无裁决历史)\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: guard stats": {
+    "stdout": "审查日志未开启（cli.js examine on 后才有持久统计）\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: set usage": {
+    "stdout": "用法：node dist/cli.js set <set-key|show-key|clear-key|set-api|history|reload>\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: set show-key": {
+    "stdout": "env DEEPSEEK_API_KEY: 未设置\nstored     : (未存储)\nlegacy     : (无)\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: set-api usage": {
+    "stdout": "用法：set set-api base <url> | set set-api model <id> | set set-api reset；API Key 走环境变量或加密存储，拒绝命令行传 Key\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: set history on": {
+    "stdout": "history 层已开启（按命令骨架复用 60 天审计放行记录）\n⚠ examine 未开启：history 层依赖审计数据，请先 examine on 积累记录\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: examine usage": {
+    "stdout": "用法：node dist/cli.js examine <on|off|status|clear-old|clear-all>\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: examine status": {
+    "stdout": "examineEnabled: false\ndb: C:\\Users\\Administrator\\AppData\\Local\\Temp\\ag-snap\\opencode\\cli-examine_status\\.config\\opencode\\auto-guard\\audit.db\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: examine on": {
+    "stdout": "审查日志已开启（本地 SQLite + 字段级加密，数据不出本机）\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: optimize usage": {
+    "stdout": "用法：node dist/cli.js optimize <status|analyze|list|rollback>\n",
+    "stderr": "",
+    "status": 1
+  },
+  "cli: optimize status": {
+    "stdout": "autoAnalyzeEnabled: false\nlastAnalysisAt    : 从未\ninterval          : 20 分钟\nrowLimit          : 5000（每次分析最近 5000 条审计）\ncacheable rules   : 0\n",
+    "stderr": "",
+    "status": 0
+  },
+  "cli: optimize list": {
+    "stdout": "(无学习规则)\n",
+    "stderr": "",
+    "status": 0
+  }
+}

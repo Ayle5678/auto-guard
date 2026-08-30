@@ -1,5 +1,5 @@
 /**
- * OpenCode plugin entry (ADR-0011, revised at implementation time).
+ * OpenCode plugin entry (ADR-0015, revised at implementation time).
  *
  * Dispatch reality on OpenCode 1.18.x (verified against the compiled host
  * binary, see research/opencode-plugin-api.md): the `permission.ask` plugin

@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@auto-guard/core": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@auto-guard/host-runtime": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

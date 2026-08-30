@@ -32,7 +32,7 @@
 - 只支持**国际版 Qoder IDE**（用户级配置 `~/.qoder/settings.json`）。CN 版（`~/.qoder-cn/`）与 Qoder CLI 入口不适配——CN 版用户找不到写入痕迹是预期行为，不是故障。
 - hooks 无热重载：装完必须新开 Qoder 会话。新会话仍未生效时：`auto-guard list` 看 qoder 行是否"已接入"；确认 `~/.qoder/settings.json` 的 `hooks.PreToolUse` 还在且条目指向存在的 `dist/hook-cli.js`；再重跑 `auto-guard init --host qoder --yes`。
 - Qoder 的 hooks 配置在 IDE / CLI 入口间共享：CLI 若支持同名事件也会执行本守卫——接受的副作用，不另做适配。
-- `delete_file` 工具不在守卫范围（v1）：文件删除经 bash 的 `rm`/`del` 才会被审查。
+- `delete_file` 工具按单文件 bash `rm "<路径>"` 合成守卫（与真实 bash `rm` 同流）；递归目录删除仍走 bash `rm -rf` 的两段式复核。
 
 ## 权限被宿主配置默认禁用
 
