@@ -29,6 +29,16 @@ describe('execRun', () => {
     expect(receipt.argv).toBe('guard ping')
   })
 
+  it('REGRESSION: embedded newlines in CLI output become real receipt lines', async () => {
+    const receipt = await execRun(
+      { runCli: async () => ({ code: 0, output: ['时间        工具    结果    层级\n  08-30  Edit  allow\n  08-29  Bash  deny'] }) },
+      { kind: 'mgmt', argv: ['guard', 'recent', '10'], label: 'guard recent 10' },
+      '/root',
+      3,
+    )
+    expect(receipt.output).toEqual(['时间        工具    结果    层级', '  08-30  Edit  allow', '  08-29  Bash  deny'])
+  })
+
   it('routes installer commands non-interactively', async () => {
     const seen: Array<[readonly string[], unknown]> = []
     await execRun(

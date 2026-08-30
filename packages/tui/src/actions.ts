@@ -64,7 +64,11 @@ export async function execRun(deps: ActionDeps, run: PendingRun, root: string, i
     run.kind === 'mgmt'
       ? await (deps.runCli ?? runCli)(argv)
       : await (deps.runInstaller ?? runInstallerCommand)(argv, installerDeps)
-  return { id, argv: run.argv.join(' '), code: result.code, output: result.output }
+  // The CLI contract allows elements with embedded newlines (tables are
+  // joined before push); panes render one element as one row, so split them
+  // into real lines at the seam — otherwise whole outputs collapse into a
+  // single truncated row (real-terminal bug, SPEC 0011 follow-up).
+  return { id, argv: run.argv.join(' '), code: result.code, output: result.output.flatMap((line) => line.split(/\r?\n/)) }
 }
 
 // ---------- dashboard structured reads ----------
