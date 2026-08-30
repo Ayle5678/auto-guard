@@ -48,6 +48,23 @@ export function injectConfigRoot(argv: readonly string[], root: string): string[
   return [...argv, '--config-root', root]
 }
 
+/**
+ * Receipts record the user-visible command (SPEC 0011): the injected
+ * `--config-root` pair is execution plumbing — keeping it out of `receipt.argv`
+ * keeps the `❯` line, footer and log screen honest without touching semantics.
+ */
+export function displayArgv(argv: readonly string[]): string {
+  const out: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--config-root') {
+      i++
+      continue
+    }
+    out.push(argv[i]!)
+  }
+  return out.join(' ')
+}
+
 /** Execute one pending run; returns the receipt for the log screen. */
 export async function execRun(deps: ActionDeps, run: PendingRun, root: string, id: number): Promise<Receipt> {
   const argv = run.kind === 'mgmt' ? injectConfigRoot(run.argv, root) : [...run.argv]
@@ -59,7 +76,7 @@ export async function execRun(deps: ActionDeps, run: PendingRun, root: string, i
     run.kind === 'mgmt'
       ? await (deps.runCli ?? runCli)(argv)
       : await (deps.runInstaller ?? runInstallerCommand)(argv, installerDeps)
-  return { id, argv: argv.join(' '), code: result.code, output: result.output }
+  return { id, argv: displayArgv(argv), code: result.code, output: result.output }
 }
 
 // ---------- dashboard structured reads ----------

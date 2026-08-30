@@ -5,7 +5,7 @@
  */
 import { t } from '../i18n.ts'
 import type { AppState } from '../types.ts'
-import { clampOffset, panel } from '../ui/kit.ts'
+import { clampOffset, panel, wrapPanelLines } from '../ui/kit.ts'
 import { theme, type Row, type Style } from '../ui/theme.ts'
 
 /** Flatten receipts into scrollback lines (oldest first, newest at bottom). */
@@ -28,19 +28,26 @@ export function renderLog(state: AppState): Row[] {
   const view = state.views.log ?? { lines: [], offset: 0 }
   const lines = logLines(state)
   const height = Math.max(3, state.height - 5)
-  const offset = clampOffset(view.offset, lines.length, height)
-  const visible = lines.slice(offset, offset + height)
+  // Wrap before clamping (SPEC 0011): continuation rows keep the source
+  // style, so styled output folds instead of being cut at the pane edge.
+  const wrapped = wrapPanelLines(lines, Math.max(1, state.width - 4))
+  const offset = clampOffset(view.offset, wrapped.length, height)
+  const visible = wrapped.slice(offset, offset + height)
   return panel(
     state.width,
     lines.length
-      ? visible.map((line) => ({ text: line.text, style: line.style }))
+      ? visible
       : [{ text: t(L, 'logEmpty'), style: theme.muted }],
-    { title: t(L, 'logTitle'), height, scroll: { offset, total: lines.length } },
+    { title: t(L, 'logTitle'), height, scroll: { offset, total: wrapped.length } },
   )
 }
 
-/** Scroll keys shared by log view: ↑↓ half-screen via PgUp/PgDn, g/G ends. */
-export function scrollBy(current: { lines: string[]; offset: number }, delta: number, viewport: number): number {
-  const max = Math.max(0, current.lines.length - viewport)
-  return Math.min(max, Math.max(0, current.offset + delta))
+/**
+ * Scroll an offset by ±delta, clamped into [0, total-viewport]. `total` is
+ * the FOLDED row count (SPEC 0011): raw line counts would dead-stop paging
+ * whenever raw lines fit one screen but folded ones do not.
+ */
+export function scrollBy(offset: number, delta: number, total: number, viewport: number): number {
+  const max = Math.max(0, total - viewport)
+  return Math.min(max, Math.max(0, offset + delta))
 }

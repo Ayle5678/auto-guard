@@ -18,7 +18,7 @@ import type { HostId } from '@auto-guard/cli/installer/profiles'
 import { t } from '../i18n.ts'
 import type { AppState, DialogState, Effect, IntegratedDetection } from '../types.ts'
 import { buildInitArgv, buildPreview, buildRemoveArgv, saveMachineLangSafe } from '../actions.ts'
-import { checkList, clampOffset, moveCursor, panel, splitWidth } from '../ui/kit.ts'
+import { checkList, clampOffset, moveCursor, panel, splitWidth, wrapPanelLines } from '../ui/kit.ts'
 import { seg, theme, type Row } from '../ui/theme.ts'
 
 type RowKind = 'host' | 'lang' | 'rules' | 'apply' | 'list' | 'remove-host' | 'remove-apply'
@@ -109,13 +109,15 @@ export function renderInstaller(state: AppState): Row[] {
   const leftRows = panel(left, leftLines, { title: t(L, 'instTitle'), height: Math.max(3, bodyHeight - 2) })
   const view = state.views.installer ?? { lines: [], offset: 0 }
   const height = Math.max(3, bodyHeight - 2)
-  // Clamp the sticky-bottom offset before slicing (same as the list screens).
-  const offset = clampOffset(view.offset, view.lines.length, height)
-  const visible = view.lines.slice(offset, offset + height)
+  // Wrap before clamping (SPEC 0011): folded long diff lines keep the
+  // sticky-bottom offset and scroll gutter correct.
+  const wrapped = wrapPanelLines(view.lines.map((line) => ({ text: line })), Math.max(1, right - 4))
+  const offset = clampOffset(view.offset, wrapped.length, height)
+  const visible = wrapped.slice(offset, offset + height)
   const rightRows = panel(
     right,
-    view.lines.length ? visible.map((line) => ({ text: line })) : [{ text: t(L, 'instPreviewTitle'), style: theme.muted }],
-    { title: t(L, 'instPreviewTitle'), height, scroll: { offset, total: view.lines.length } },
+    view.lines.length ? visible : [{ text: t(L, 'instPreviewTitle'), style: theme.muted }],
+    { title: t(L, 'instPreviewTitle'), height, scroll: { offset, total: wrapped.length } },
   )
   const body: Row[] = [tabRow]
   for (let i = 0; i < Math.max(leftRows.length, rightRows.length); i++) {

@@ -10,11 +10,16 @@ describe('injectConfigRoot', () => {
 })
 
 describe('execRun', () => {
-  it('routes management commands through runCli with root injected', async () => {
+  it('routes management commands through runCli with root injected, records user-facing argv', async () => {
     const seen: (readonly string[])[] = []
     const receipt = await execRun({ runCli: async (argv) => (seen.push(argv), { code: 0, output: ['ok'] }) }, { kind: 'mgmt', argv: ['guard', 'status'], label: 'guard status' }, '/root', 7)
     expect(seen).toEqual([['guard', 'status', '--config-root', '/root']])
-    expect(receipt).toMatchObject({ id: 7, code: 0, argv: 'guard status --config-root /root', output: ['ok'] })
+    expect(receipt).toMatchObject({ id: 7, code: 0, argv: 'guard status', output: ['ok'] })
+  })
+
+  it('strips even explicit --config-root from the display argv (SPEC 0011)', async () => {
+    const receipt = await execRun({ runCli: async () => ({ code: 0, output: [] }) }, { kind: 'mgmt', argv: ['guard', 'ping', '--config-root', '/focused'], label: 'guard ping' }, '/root', 2)
+    expect(receipt.argv).toBe('guard ping')
   })
 
   it('routes installer commands non-interactively', async () => {

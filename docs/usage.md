@@ -425,16 +425,17 @@ node packages/tui/src/tui.ts         # Node 23+ 免构建直跑
 auto-guard-tui
 ```
 
-**八屏布局**：总览（每宿主状态卡 + 选根 + ping）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（show-key、三步 set-key 向导掩码输入、set-api、语言、历史层）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
+**八屏布局**：总览（每宿主状态卡 + 选根 + ping）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（按 密钥管理 / API 端点 / 偏好 / 维护 分组：show-key、三步 set-key 向导掩码输入、clear-key、set-api、语言、历史层、reload）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
 
 **关键约定**：
 
-- 所有动作经 `runCli` / `runInstallerCommand` 执行——回执与命令行逐字一致（单一语义来源）；
+- 所有动作经 `runCli` / `runInstallerCommand` 执行——回执与命令行逐字一致（单一语义来源）；回执行只显示你输入的命令，TUI 内部注入的 `--config-root` 不出现在任何显示通道；
 - 首次进入守卫 / 审计 / 优化 / 密钥屏自动加载对应只读命令填充输出面板（不进日志屏）；总览屏 ≥110×20 显示 AUTO GUARD 渐变字标；
+- 输出面板只折行、不静默截断（SPEC 0011）：超宽行折到面板宽度续行显示，`PgUp/PgDn` 翻页、`g/G` 滚动首尾（帮助页同款），新回执自动贴底；`←→/hl` 切屏、`↑↓/jk` 移动动作光标互不冲突；
 - `:` 进入命令模式：任意 CLI argv 直通执行（如 `: guard report 30`、`: init list`），这是全命令面的保底通道；
 - 危险操作（clear-all / clear-key / rollback / remove / 安装 apply）必须过确认框，Esc 取消；
 - set-key 三步向导：base → model → key（掩码），Enter 保留现值；key 永不落 argv、不进日志；
 - 双语界面，语言跟随四层解析（`AUTO_GUARD_LANG` > 当前根 `config.lang` > 机器默认 > zh）；`set lang` 即切即生效；
-- 键位（SPEC 0010）：`←→/hl` 切屏 · `↑↓/jk` 移动 · `Enter` 执行 · `Space` 勾选 · `Tab/Shift+Tab` 安装子页 · `1-8` 跳转 · `:` 命令 · `r` 刷新（重跑当前屏自动加载） · `g/G` 滚动 · `q`/`Ctrl+C` 退出（自动恢复终端）。
+- 键位（SPEC 0011）：`←→/hl` 切屏 · `↑↓/jk` 移动 · `Enter` 执行 · `Space` 勾选 · `PgUp/PgDn` 翻页（输出面板/帮助） · `Tab/Shift+Tab` 安装子页 · `1-8` 跳转 · `:` 命令 · `r` 刷新（重跑当前屏自动加载） · `g/G` 滚首/尾 · `q`/`Ctrl+C` 退出（自动恢复终端）。
 
 **限制**：需要真 TTY 与 VT 转义（Windows Terminal / Git Bash / ConEmu / mintty / 常见 SSH 都满足）；非 TTY 或 `TERM=dumb` 启动即拒绝（exit 2，提示改用 CLI）；未检测到的宿主不能在 TUI 里强装（CLI 的 `--host` 路径本身拒绝未检测宿主，fail-closed）。

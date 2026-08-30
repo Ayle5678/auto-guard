@@ -305,6 +305,172 @@ describe('dashboard keys', () => {
   })
 })
 
+describe('output pane wrap (SPEC 0011)', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+  const recentLine = '  08-30 02:10  Bash    cd /d/proj && ./deploy.sh        allow  [cache]'
+
+  it('folds wide receipt lines instead of cutting them: layer tag stays visible', () => {
+    const visited = reduce(state({ screen: 'guard', width: 100 }), { type: 'key', key: key('char', '2') }).state
+    const done = reduce({ ...visited, busy: null }, {
+      type: 'autoload-done',
+      screen: 'guard',
+      receipt: { id: 1, argv: 'guard recent 10', code: 0, output: ['最近 10 条裁决：', recentLine] },
+    }).state
+    const plain = plainOf(render(done))
+    expect(plain).toContain('[cache]')
+    expect(plain).toContain('↳ exit 0')
+  })
+
+  it('log screen folds long lines at narrow widths', () => {
+    const done = reduce(state({ screen: 'log', width: 80, height: 24 }), {
+      type: 'run-done',
+      receipt: { id: 1, argv: 'guard report 7', code: 0, output: ['x'.repeat(86) + 'TAIL-OK'] },
+    }).state
+    expect(plainOf(render(done))).toContain('TAIL-OK')
+  })
+
+  it('installer preview folds long diff lines', () => {
+    const s = state({
+      screen: 'installer',
+      width: 100,
+      views: { installer: { lines: ['y'.repeat(50) + 'PREVIEW-TAIL'], offset: 0 } },
+    })
+    expect(plainOf(render(s))).toContain('PREVIEW-TAIL')
+  })
+
+  it('REGRESSION: sticky-bottom still shows the tail when wrapping grows the total', () => {
+    const visited = reduce(state({ screen: 'guard', width: 80, height: 24 }), { type: 'key', key: key('char', '2') }).state
+    const done = reduce({ ...visited, busy: null }, {
+      type: 'autoload-done',
+      screen: 'guard',
+      receipt: { id: 1, argv: 'guard recent 30', code: 0, output: Array.from({ length: 30 }, (_, i) => `${recentLine} #${i}`) },
+    }).state
+    const plain = plainOf(render(done))
+    expect(plain).toContain('↳ exit 0')
+    expect(plain).toContain('[cache] #29')
+  })
+})
+
+describe('pane scroll + receipt argv (SPEC 0011)', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+
+  it('receipt argv records the user-facing command, execution keeps the root injection', async () => {
+    const { execRun } = await import('../src/actions.ts')
+    const seen: (readonly string[])[] = []
+    const receipt = await execRun(
+      { runCli: async (argv) => (seen.push(argv), { code: 0, output: ['ok'] }) },
+      { kind: 'mgmt', argv: ['guard', 'stats'], label: 's' },
+      '/some/root',
+      1,
+    )
+    expect(receipt.argv).toBe('guard stats')
+    expect(seen[0]).toEqual(['guard', 'stats', '--config-root', '/some/root'])
+  })
+
+  it('g/G/PgUp/PgDn scroll the output pane; arrows keep moving the action cursor', () => {
+    let s = reduce(state({ screen: 'guard', width: 80, height: 24 }), { type: 'key', key: key('char', '2') }).state
+    s = reduce({ ...s, busy: null }, {
+      type: 'autoload-done',
+      screen: 'guard',
+      receipt: { id: 1, argv: 'guard recent 30', code: 0, output: Array.from({ length: 30 }, (_, i) => `line-${i}`) },
+    }).state
+    const toTop = reduce(s, { type: 'key', key: key('char', 'g') })
+    expect(toTop.state.views.guard!.offset).toBe(0)
+    expect(plainOf(render(toTop.state))).toContain('❯ guard recent 30')
+    const paged = reduce(toTop.state, { type: 'key', key: key('pagedown') })
+    expect(paged.state.views.guard!.offset).toBeGreaterThan(0)
+    const moved = reduce(toTop.state, { type: 'key', key: key('down') })
+    expect(moved.state.cursor.guard).toBe(1)
+    expect(moved.state.views.guard!.offset).toBe(0)
+    const toBottom = reduce(paged.state, { type: 'key', key: key('char', 'G') }).state
+    expect(plainOf(render(toBottom))).toContain('↳ exit 0')
+  })
+
+  it('REGRESSION: pages move even when raw lines fit one screen but folded lines do not', () => {
+    let s = reduce(state({ screen: 'guard', width: 80, height: 24 }), { type: 'key', key: key('char', '2') }).state
+    const wide = Array.from({ length: 10 }, (_, i) => `cmd-${i} `.padEnd(20, '·').repeat(3))
+    s = reduce({ ...s, busy: null }, {
+      type: 'autoload-done',
+      screen: 'guard',
+      receipt: { id: 1, argv: 'guard recent 10', code: 0, output: ['header', ...wide] },
+    }).state
+    const toTop = reduce(s, { type: 'key', key: key('char', 'g') }).state
+    const paged = reduce(toTop, { type: 'key', key: key('pagedown') })
+    expect(paged.state.views.guard!.offset).toBeGreaterThan(0)
+  })
+
+  it('help screen scrolls to the tail command-mode line', () => {
+    const toBottom = reduce(state({ screen: 'help', width: 80, height: 24 }), { type: 'key', key: key('char', 'G') }).state
+    expect(plainOf(render(toBottom))).toContain(': <command>')
+    const toTop = reduce(toBottom, { type: 'key', key: key('char', 'g') }).state
+    expect(toTop.views.help!.offset).toBe(0)
+  })
+
+  it('footer advertises scrolling on list and help screens only', () => {
+    expect(plainOf(render(state({ screen: 'guard', width: 100 })))).toContain('PgUp/PgDn')
+    expect(plainOf(render(state({ screen: 'help', width: 100 })))).toContain('PgUp/PgDn')
+    expect(plainOf(render(state({ screen: 'dashboard', width: 100 })))).not.toContain('PgUp/PgDn')
+  })
+})
+
+describe('set screen groups (SPEC 0011)', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+
+  it('renders the four group titles with language under preferences, before maintenance', () => {
+    const plain = plainOf(render(state({ screen: 'set', width: 100, height: 30 })))
+    expect(plain).toContain('API 端点')
+    expect(plain).toContain('偏好')
+    expect(plain).toContain('维护')
+    expect(plain.indexOf('界面语言')).toBeGreaterThan(plain.indexOf('API 端点'))
+    expect(plain.indexOf('界面语言')).toBeLessThan(plain.indexOf('维护'))
+  })
+
+  it('cursor never rests on a group title: starts on the first action', () => {
+    const plain = plainOf(render(state({ screen: 'set', width: 100, height: 30 })))
+    expect(plain).toContain('❯ 查看密钥')
+  })
+
+  it('stepping down from API reset skips the preferences title onto language', () => {
+    let s = state({ screen: 'set', cursor: { set: 7 } }) // reset API (after title at 4, base 5, model 6)
+    s = reduce(s, { type: 'key', key: key('down') }).state
+    expect(s.cursor.set).toBe(9) // language, not the group title at 8
+    const entered = reduce(s, { type: 'key', key: key('enter') })
+    expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'lang', 'en'] } })
+  })
+
+  it('stepping up from the first action wraps to the last (reload), skipping titles', () => {
+    const up = reduce(state({ screen: 'set' }), { type: 'key', key: key('up') }).state
+    const entered = reduce(up, { type: 'key', key: key('enter') })
+    expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'reload'] } })
+  })
+})
+
+describe('help reflow (SPEC 0011)', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+
+  it('command signatures budget the full width: long init flags survive 80 cols', () => {
+    const plain = plainOf(render(state({ screen: 'help', width: 80, height: 40 })))
+    expect(plain).toContain('[--update-rules|--skip-rules]')
+  })
+
+  it('at a short viewport the tail is reachable by scrolling, not deleted', () => {
+    const top = state({ screen: 'help', width: 80, height: 24 })
+    expect(plainOf(render(top))).not.toContain(': <command>')
+    const bottom = reduce(top, { type: 'key', key: key('char', 'G') }).state
+    expect(plainOf(render(bottom))).toContain(': <command>')
+  })
+
+  it('long descriptions wrap with a hanging indent instead of truncating', () => {
+    const plain = plainOf(render(state({ screen: 'help', width: 60, height: 40 })))
+    // The quit hint exceeds the 60-col budget and folds: every character must
+    // survive (pre-fix it was silently cut mid-phrase, no ellipsis).
+    expect(plain).toContain('quit (terminal restored)')
+    expect(plain).toContain('退出并恢复')
+    expect(plain).toContain('终端')
+    for (const row of plain.split('\n')) expect(row.length).toBeLessThanOrEqual(60)
+  })
+})
+
 describe('brand + chrome rendering (SPEC 0010)', () => {
   const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
 

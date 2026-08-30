@@ -4,7 +4,7 @@
  * UI can be snapshot-tested without a terminal (ADR-0014).
  */
 import type { KeyEvent } from '../keys.ts'
-import { fitToWidth, padToWidth, textWidth, truncateToWidth } from './text.ts'
+import { fitToWidth, padToWidth, textWidth, truncateToWidth, wrapToWidth } from './text.ts'
 import { seg, theme, type Row, type Style } from './theme.ts'
 
 // ---------- shared helpers ----------
@@ -129,6 +129,16 @@ export function clampOffset(offset: number, total: number, viewport: number): nu
   return Math.min(Math.max(0, offset), Math.max(0, total - viewport))
 }
 
+/**
+ * Fold pane content to the content width (SPEC 0011): wide lines wrap into
+ * continuation rows that inherit the source style — nothing is silently cut.
+ * Panes wrap BEFORE offset clamping, so sticky-bottom and the scroll gutter
+ * stay correct when folding grows the total.
+ */
+export function wrapPanelLines(lines: readonly PanelLine[], width: number): PanelLine[] {
+  return lines.flatMap((line) => wrapToWidth(line.text, width).map((part) => ({ text: part, style: line.style })))
+}
+
 /** Bordered panel with optional title; content fitted to inner width. */
 export function panel(width: number, lines: readonly PanelLine[], opts: PanelOptions = {}): Row[] {
   const borderStyle = opts.border === 'danger' ? theme.borderDanger : opts.border === 'accent' ? theme.borderAccent : theme.border
@@ -175,11 +185,14 @@ export interface ListEntry {
   hint?: string
   style?: Style
   danger?: boolean
+  /** Group heading: rendered as a title row, never carries the cursor. */
+  header?: boolean
 }
 
 /** Selectable list with `❯ ` cursor; entries may carry a trailing hint. */
 export function listBox(width: number, entries: readonly ListEntry[], cursor: number): Row[] {
   return entries.map((entry, i) => {
+    if (entry.header) return [{ text: fitToWidth(`  ${entry.text}`, width), style: theme.title }] as Row
     const marker = i === cursor ? '❯ ' : '  '
     const hintText = entry.hint ? `  ${entry.hint}` : ''
     const text = fitToWidth(`${marker}${entry.text}${hintText}`, width)

@@ -15,13 +15,14 @@ import { detectRoot, detect, loadRootSummaries, needsInstallerLang, validateWiza
 import { withIntegration } from './screens/installer.ts'
 import { dashboardKey, renderDashboard, visibleRoots } from './screens/dashboard.ts'
 import { installerKey, renderInstaller } from './screens/installer.ts'
-import { renderLog, scrollBy } from './screens/log.ts'
-import { renderHelp } from './screens/help.ts'
-import { listActions, renderListScreen, rootSummary } from './screens/lists.ts'
-import { confirmDialog, emptyInput, footerBar, headerBar, hintRow, inputKey, inputRow, keyHint, moveCursor, navTabs, padFrame, type NavTab } from './ui/kit.ts'
+import { logLines, renderLog, scrollBy } from './screens/log.ts'
+import { helpRowCount, renderHelp } from './screens/help.ts'
+import { listActions, renderListScreen, rootSummary, settledCursor, stepCursor } from './screens/lists.ts'
+import { confirmDialog, emptyInput, footerBar, headerBar, hintRow, inputKey, inputRow, keyHint, moveCursor, navTabs, padFrame, splitWidth, type NavTab } from './ui/kit.ts'
 import { seg, theme, type Row } from './ui/theme.ts'
 import { tildeRoot } from './paths.ts'
 import { isChar, type KeyEvent } from './keys.ts'
+import { wrappedCount } from './ui/text.ts'
 
 export type ListScreen = 'guard' | 'examine' | 'optimize' | 'set'
 
@@ -326,10 +327,15 @@ function screenRouting(state: AppState, key: KeyEvent): { state: AppState; effec
     }
     case 'log':
       return { state: { ...state, views: { ...state.views, log: scrollStep(state, key) } }, effects: [] }
-    case 'help':
-      return { state, effects: [] }
-    default:
+    case 'help': {
+      const scrolled = paneScrollStep(state, key)
+      return scrolled ? { state: scrolled, effects: [] } : { state, effects: [] }
+    }
+    default: {
+      const scrolled = paneScrollStep(state, key)
+      if (scrolled) return { state: scrolled, effects: [] }
       return listScreenKey(state, state.screen, key)
+    }
   }
 }
 
@@ -341,25 +347,64 @@ function scrollStep(state: AppState, key: KeyEvent): { lines: string[]; offset: 
   const view = state.views.log ?? { lines: [], offset: 0 }
   const lines: string[] = state.receipts.flatMap((r) => [`❯ ${r.argv}`, ...r.output.map((l) => `  ${l}`), `  ↳ exit ${r.code}`, ''])
   const viewport = Math.max(3, state.height - 5)
-  const full = { ...view, lines }
-  if (key.name === 'up' || isChar(key, 'k')) return { ...full, offset: scrollBy(full, -1, viewport) }
-  if (key.name === 'down' || isChar(key, 'j')) return { ...full, offset: scrollBy(full, 1, viewport) }
-  if (isChar(key, 'g')) return { ...full, offset: 0 }
-  if (isChar(key, 'G')) return { ...full, offset: Math.max(0, lines.length - viewport) }
-  if (key.name === 'pageup') return { ...full, offset: scrollBy(full, -viewport, viewport) }
-  if (key.name === 'pagedown') return { ...full, offset: scrollBy(full, viewport, viewport) }
-  return full
+  // Totals count FOLDED rows (SPEC 0011) so paging never dead-stops when raw
+  // lines fit one screen but wrapped ones do not; render clamps to truth.
+  const total = lines.reduce((sum, line) => sum + wrappedCount(line, Math.max(1, state.width - 4)), 0)
+  if (key.name === 'up' || isChar(key, 'k')) return { ...view, offset: scrollBy(view.offset, -1, total, viewport) }
+  if (key.name === 'down' || isChar(key, 'j')) return { ...view, offset: scrollBy(view.offset, 1, total, viewport) }
+  if (isChar(key, 'g')) return { ...view, offset: 0 }
+  if (isChar(key, 'G')) return { ...view, offset: 1_000_000 }
+  if (key.name === 'pageup') return { ...view, offset: scrollBy(view.offset, -viewport, total, viewport) }
+  if (key.name === 'pagedown') return { ...view, offset: scrollBy(view.offset, viewport, total, viewport) }
+  return view
 }
 
-/** List-screen keys: cursor move + action activation. */
+// ---------- pane scrolling for list + help screens (SPEC 0011) ----------
+
+const SCROLLABLE_PANES: readonly ScreenId[] = ['guard', 'examine', 'optimize', 'set', 'help']
+
+/** Viewport of a scrollable pane at the current size (mirrors the renderers). */
+function paneViewport(state: AppState): number {
+  return Math.max(1, state.height - (state.screen === 'help' ? 3 : 5))
+}
+
+/** Folded row total of the screen's pane — same math the renderers use. */
+function paneTotal(state: AppState): number {
+  if (state.screen === 'help') return helpRowCount(state)
+  const contentWidth = Math.max(1, splitWidth(state.width).right - 4)
+  return (state.views[state.screen]?.lines ?? []).reduce((sum, line) => sum + wrappedCount(line, contentWidth), 0)
+}
+
+/** PgUp/PgDn/g/G scroll the current screen's pane; null = key not for panes. */
+function paneScrollStep(state: AppState, key: KeyEvent): AppState | null {
+  if (!SCROLLABLE_PANES.includes(state.screen)) return null
+  const screen = state.screen
+  const view = state.views[screen] ?? { lines: [], offset: 0 }
+  // g/G use raw endpoints (0 / huge): render-time clamping keeps them honest
+  // even when folding changes the total between keypress and paint.
+  if (isChar(key, 'g')) return { ...state, ...patchOffset(state, screen, 0) }
+  if (isChar(key, 'G')) return { ...state, ...patchOffset(state, screen, 1_000_000) }
+  let delta: number | null = null
+  if (key.name === 'pageup') delta = -paneViewport(state)
+  else if (key.name === 'pagedown') delta = paneViewport(state)
+  if (delta === null) return null
+  const offset = scrollBy(view.offset, delta, paneTotal(state), paneViewport(state))
+  return { ...state, ...patchOffset(state, screen, offset) }
+}
+
+function patchOffset(state: AppState, screen: ScreenId, offset: number): Partial<AppState> {
+  return { views: { ...state.views, [screen]: { lines: state.views[screen]?.lines ?? [], offset } } }
+}
+
+/** List-screen keys: cursor move (skipping group titles) + action activation. */
 function listScreenKey(state: AppState, screen: ListScreen, key: KeyEvent): { state: AppState; effects: Effect[] } {
   const actions = listActions(state, screen)
-  const cursor = state.cursor[screen] ?? 0
-  if (key.name === 'up' || isChar(key, 'k')) return { state: { ...state, cursor: { ...state.cursor, [screen]: moveCursor(cursor, -1, actions.length) } }, effects: [] }
-  if (key.name === 'down' || isChar(key, 'j')) return { state: { ...state, cursor: { ...state.cursor, [screen]: moveCursor(cursor, 1, actions.length) } }, effects: [] }
+  const cursor = settledCursor(actions, state.cursor[screen])
+  if (key.name === 'up' || isChar(key, 'k')) return { state: { ...state, cursor: { ...state.cursor, [screen]: stepCursor(actions, cursor, -1) } }, effects: [] }
+  if (key.name === 'down' || isChar(key, 'j')) return { state: { ...state, cursor: { ...state.cursor, [screen]: stepCursor(actions, cursor, 1) } }, effects: [] }
   if (key.name === 'enter' || key.name === 'space') {
     const action = actions[cursor]
-    if (!action) return { state, effects: [] }
+    if (!action || action.header) return { state, effects: [] }
     if (action.wizard) return openWizard(state)
     if (action.ask) {
       return {
@@ -461,6 +506,9 @@ export function render(state: AppState): Row[] {
   }
   const busyLabel = state.busy ? t(L, (state.busy.busyKey ?? 'busyRun') as UiKeyLabel) : null
   const lastReceipt = state.receipts[state.receipts.length - 1]
+  // Scrolling exists on list + help panes (SPEC 0011) — advertise it only
+  // where the keys respond (dead keys stay silent and undocumented).
+  const scrollAd = SCROLLABLE_PANES.includes(state.screen) ? [keyHint('PgUp/PgDn', t(L, 'hintScroll'))] : []
   const footerLeft: Row = state.notice
     ? [seg(' '), seg(`❯ ${state.notice}`, theme.accent)]
     : inputOpen
@@ -471,6 +519,7 @@ export function render(state: AppState): Row[] {
             keyHint('←→', t(L, 'hintScreens')),
             keyHint('↑↓', t(L, 'hintSelect')),
             keyHint('Enter', t(L, 'hintRun')),
+            ...scrollAd,
             keyHint(':', t(L, 'hintCommand')),
             keyHint('r', t(L, 'hintRefresh')),
             keyHint('q', t(L, 'hintQuit')),

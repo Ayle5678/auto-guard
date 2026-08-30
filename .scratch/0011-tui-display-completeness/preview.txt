@@ -1,0 +1,116 @@
+===== guard (folded recent: layer tags visible, argv without --config-root) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│enabled : true                              │ │❯ guard recent 30                                            │
+│lang    : zh                                │ │最近 30 条裁决（当前根 ZCode）：                             │
+│config  : C:\Users\demo\.zcode\auto-guard\  │ │  08-30 02:10  Bash         cd /d/proj && ./deploy.sh        │
+│config.json                                 │ │    allow   [cache]                                          │
+│review  : https://api.deepseek.com · deeps  │ │  08-30 02:09  Bash         rm -rf build/                    │
+│eek-v4-flash · ⚠ 无 API Key（fail-closed）  │ │    ask     [recursive-delete]                               │
+╰────────────────────────────────────────────╯ │  08-30 02:07  Read         cat .env                         │
+╭─ 动作 ─────────────────────────────────────╮ │    deny    [sensitive-path]                                 │
+│❯ 关闭守卫（guard off）                     │ │  08-30 02:06  Write        edit src/app.ts                  │
+│  状态（guard status）                      │ │    allow   [edit-tracked]                                   │
+│  最近裁决（guard recent）                  │ │  08-30 02:04  Bash         git push origin main             │
+│  统计（guard stats）                       │ │    ask     [user-confirmed]                                 │
+│  报告（guard report）                      │ │  …（PgUp/PgDn 翻页，g/G 首尾）                              │
+│  连通性（guard ping）                      │ │↳ exit 0                                                     │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+ ❯ → 守卫
+
+===== set (grouped: 密钥管理 / API 端点 / 偏好 / 维护) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│enabled : true                              │ │❯ set show-key                                               │
+│lang    : zh                                │ │已存储 key：sk-••••••••（脱敏）                              │
+│config  : C:\Users\demo\.zcode\auto-guard\  │ │来源：加密 key 存储                                          │
+│config.json                                 │ │环境变量 DEEPSEEK_API_KEY 未设置 → 生效                      │
+│review  : https://api.deepseek.com · deeps  │ │↳ exit 0                                                     │
+│eek-v4-flash · ⚠ 无 API Key（fail-closed）  │ │                                                             │
+╰────────────────────────────────────────────╯ │                                                             │
+╭─ 动作 ─────────────────────────────────────╮ │                                                             │
+│  密钥管理                                  │ │                                                             │
+│❯ 查看密钥（set show-key）                  │ │                                                             │
+│  设置密钥向导（set set-key）               │ │                                                             │
+│  ⚠ 清除密钥（set clear-key）               │ │                                                             │
+│  API 端点                                  │ │                                                             │
+│  API 地址（set set-api base）  https://ap  │ │                                                             │
+│  API 模型（set set-api model）  deepseek-  │ │                                                             │
+│  重置 API（set set-api reset）             │ │                                                             │
+│  偏好                                      │ │                                                             │
+│  界面语言（set lang）  zh                  │ │                                                             │
+│  关闭历史层（set history off）             │ │                                                             │
+│  维护                                      │ │                                                             │
+│  重载说明（set reload）                    │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+ ❯ → 密钥
+
+===== help (scrolled to bottom @100x24: command-mode line reachable) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+    guard ping
+  审计
+    examine on|off
+    examine status
+    examine clear-old
+    examine clear-all
+  优化
+    optimize status
+    optimize analyze
+    optimize list
+    optimize rollback
+  密钥
+    set set-key (wizard)
+    set show-key
+    set clear-key
+    set set-api base|model|reset
+    set lang zh|en
+    set history on|off
+    set reload
+
+  : <command> — anything the CLI can do · 任何 CLI 命令都可执行
+ ←→ 切屏 · ↑↓ 选择 · Enter 执行 · PgUp/PgDn 滚动 · : 命令 · r 刷新 · q 退出
+
+===== guard @80x24 (g → top: folded rows scroll, first line visible) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ────────────────────────╮ ╭─ 输出 ─────────────────────────────────────╮
+│enabled : true                 │ │❯ guard recent 30                           │
+│lang    : zh                   │ │最近 30 条裁决（当前根 ZCode）：            │
+│config  : C:\Users\demo\.zcod  │ │  08-30 02:10  Bash         cd /d/proj &&   │
+│e\auto-guard\config.json       │ │./deploy.sh          allow   [cache]        │
+│review  : https://api.deepsee  │ │  08-30 02:09  Bash         rm -rf build/   │
+│k.com · deepseek-v4-flash · ⚠  │ │                     ask     [recursive-de  │
+╰───────────────────────────────╯ │lete]                                       │
+╭─ 动作 ────────────────────────╮ │  08-30 02:07  Read         cat .env        │
+│❯ 关闭守卫（guard off）        │ │                     deny    [sensitive-pa  │
+│  状态（guard status）         │ │th]                                         │
+│  最近裁决（guard recent）     │ │  08-30 02:06  Write        edit src/app.t  │
+│  统计（guard stats）          │ │s                    allow   [edit-tracked  │
+│  报告（guard report）         │ │]                                           │
+│  连通性（guard ping）         │ │  08-30 02:04  Bash         git push origi  │
+│                               │ │n main               ask     [user-confirm  │
+│                               │ │ed]                                         │
+│                               │ │  …（PgUp/PgDn 翻页，g/G 首尾）             │
+│                               │ │↳ exit 0                                    │
+│                               │ │                                            │
+╰───────────────────────────────╯ ╰────────────────────────────────────────────╯
+ ←→ 切屏 · ↑↓ 选择 · Enter 执行 · PgUp/PgDn 滚动 · : 命令 · r 刷新 · q 退出
+
