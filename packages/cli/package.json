@@ -14,7 +14,8 @@
     "./installer/integration": "./src/installer/integration.ts",
     "./installer/plan": "./src/installer/plan.ts",
     "./installer/rule-update": "./src/installer/rule-update.ts",
-    "./installer/profiles": "./src/installer/profiles.ts"
+    "./installer/profiles": "./src/installer/profiles.ts",
+    "./installer/banner": "./src/installer/banner.ts"
   },
   "bin": {
     "auto-guard": "src/auto-guard.ts"

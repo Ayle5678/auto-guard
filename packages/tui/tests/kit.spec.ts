@@ -29,9 +29,9 @@ describe('kit components', () => {
   it('panel renders exact height with borders and title', () => {
     const rows = panel(20, [{ text: 'hello' }, { text: '中文' }], { title: 'T', height: 3 })
     expect(rows).toHaveLength(5)
-    expect(rowText(rows[0]!)).toBe('┌─ T ' + '─'.repeat(14) + '┐')
+    expect(rowText(rows[0]!)).toBe('╭─ T ' + '─'.repeat(14) + '╮')
     expect(rowText(rows[1]!)).toBe('│hello             │')
-    expect(rowText(rows[4]!)).toBe('└──────────────────┘')
+    expect(rowText(rows[4]!)).toBe('╰──────────────────╯')
   })
 
   it('listBox marks the cursor row and hints', () => {
@@ -78,7 +78,7 @@ describe('kit components', () => {
   })
 
   it('footer shows receipt with exit code', () => {
-    const row = footerBar(60, 'hints', { code: 2, argv: 'guard ping' }, null, 0)
+    const row = footerBar(60, [seg(' hints', theme.muted)], { code: 2, argv: 'guard ping' }, null, 0)
     expect(rowText(row)).toContain('✗')
     expect(rowText(row)).toContain('→ 2')
   })

@@ -31,7 +31,7 @@ export interface PendingRun {
   argv: string[]
   label: string
   /** Busy label key override (i18n). */
-  busyKey?: 'busyPing' | 'busyAnalyze' | 'busyInstall' | 'busyRemove'
+  busyKey?: 'busyRefresh' | 'busyPing' | 'busyAnalyze' | 'busyInstall' | 'busyRemove'
 }
 
 /** Structured snapshot of one host's guard root (dashboard cards). */
@@ -118,12 +118,16 @@ export interface AppState {
   /** Per-screen action cursor. */
   cursor: Partial<Record<ScreenId, number>>
   views: Partial<Record<ScreenId, ViewState>>
+  /** Screens whose read-only autoload already ran (SPEC 0010). */
+  autoloaded: Partial<Record<ScreenId, boolean>>
   installer: InstallerState
   wizard: WizardState | null
   input: InputRequest | null
   dialog: DialogState | null
   busy: PendingRun | null
   receipts: Receipt[]
+  /** Transient footer notice; shown until the next key event (SPEC 0010). */
+  notice?: string
   tick: number
   exitAfterBusies: boolean
 }
@@ -134,6 +138,7 @@ export type AppEvent =
   | { type: 'resized'; width: number; height: number }
   | { type: 'busy-start'; run: PendingRun }
   | { type: 'run-done'; receipt: Receipt }
+  | { type: 'autoload-done'; screen: ScreenId; receipt: Receipt }
   | { type: 'roots'; roots: RootSummary[]; machineLangResolved: boolean }
   | { type: 'tick' }
 
@@ -147,4 +152,9 @@ export interface WizardInput {
 }
 
 /** Side effects the reducer asks the runtime to perform. */
-export type Effect = { type: 'run'; run: PendingRun } | { type: 'wizard'; input: WizardInput } | { type: 'refresh' } | { type: 'quit' }
+export type Effect =
+  | { type: 'run'; run: PendingRun }
+  | { type: 'autoload'; run: PendingRun; screen: ScreenId }
+  | { type: 'wizard'; input: WizardInput }
+  | { type: 'refresh' }
+  | { type: 'quit' }

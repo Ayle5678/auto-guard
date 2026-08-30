@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { renderBanner, showBanner } from '../../src/installer/banner.ts'
+import { renderBanner, renderBannerGrid, showBanner } from '../../src/installer/banner.ts'
 import { runCli } from '../../src/shell.ts'
 import type { InstallerDeps } from '../../src/installer/install.ts'
 
@@ -14,6 +14,19 @@ function fakeHome(): string {
 }
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true })
+})
+
+describe('renderBannerGrid (SPEC 0010)', () => {
+  it('exposes the plain 7+1-row wordmark without ANSI or taglines', () => {
+    const grid = renderBannerGrid()
+    expect(grid).toHaveLength(8)
+    const text = grid.join('\n')
+    expect(text).not.toContain('\u001b[')
+    expect(text).toContain('████╗')
+    expect(text).not.toContain('auto-guard v') // taglines stay in renderBanner
+    // Same glyph asset the installer banner renders.
+    expect(grid).toEqual(renderBanner(true).slice(1, 9))
+  })
 })
 
 describe('init banner', () => {

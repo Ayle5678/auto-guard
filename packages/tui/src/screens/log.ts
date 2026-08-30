@@ -5,7 +5,7 @@
  */
 import { t } from '../i18n.ts'
 import type { AppState } from '../types.ts'
-import { panel } from '../ui/kit.ts'
+import { clampOffset, panel } from '../ui/kit.ts'
 import { theme, type Row, type Style } from '../ui/theme.ts'
 
 /** Flatten receipts into scrollback lines (oldest first, newest at bottom). */
@@ -28,13 +28,14 @@ export function renderLog(state: AppState): Row[] {
   const view = state.views.log ?? { lines: [], offset: 0 }
   const lines = logLines(state)
   const height = Math.max(3, state.height - 5)
-  const visible = lines.slice(view.offset, view.offset + height)
+  const offset = clampOffset(view.offset, lines.length, height)
+  const visible = lines.slice(offset, offset + height)
   return panel(
     state.width,
     lines.length
       ? visible.map((line) => ({ text: line.text, style: line.style }))
       : [{ text: t(L, 'logEmpty'), style: theme.muted }],
-    { title: t(L, 'logTitle'), height, scroll: { offset: view.offset, total: lines.length } },
+    { title: t(L, 'logTitle'), height, scroll: { offset, total: lines.length } },
   )
 }
 

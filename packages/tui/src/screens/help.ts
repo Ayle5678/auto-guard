@@ -10,9 +10,10 @@ import { seg, theme, type Row } from '../ui/theme.ts'
 import { fitToWidth } from '../ui/text.ts'
 
 const KEY_BINDINGS: readonly [string, string][] = [
+  ['←→ / h l', 'switch screen · 切屏'],
   ['↑↓ / j k', 'move · 移动'],
-  ['←→ / h l', 'switch tabs (installer) · 切换子页'],
-  ['1…8', 'switch screen · 切屏'],
+  ['1…8', 'jump to screen · 跳转屏幕'],
+  ['Tab / Shift+Tab', 'installer sub-tabs · 安装子页'],
   ['Enter', 'run / select · 执行 / 选中'],
   ['Space', 'toggle checkbox · 勾选'],
   ['Esc', 'back / cancel · 返回 / 取消'],
@@ -36,13 +37,15 @@ export function renderHelp(state: AppState): Row[] {
   const L: Lang = state.lang
   const { left, right } = splitWidth(state.width, 0.38)
   const rows: Row[] = []
+  // The keys table renders as its own full-width block — budget descriptions
+  // against the whole frame, or bilingual labels truncate at half width.
   const pushPanel = (title: string, entries: readonly [string, string][], width: number) => {
     rows.push([seg(` ${title}`, theme.title)])
     for (const [key, description] of entries) {
-      rows.push([seg(`  ${fitToWidth(key, 14)}`, theme.accent), seg(` ${fitToWidth(description, width - 20)}`, theme.muted)])
+      rows.push([seg(`  ${fitToWidth(key, 16)}`, theme.accent), seg(` ${fitToWidth(description, width - 22)}`, theme.muted)])
     }
   }
-  pushPanel(t(L, 'helpKeysTitle'), KEY_BINDINGS, left)
+  pushPanel(t(L, 'helpKeysTitle'), KEY_BINDINGS, state.width)
   rows.push([{ text: '' }])
   rows.push([seg(` ${t(L, 'helpCmdTitle')}`, theme.title)])
   for (const group of COMMAND_MAP) {

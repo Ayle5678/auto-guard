@@ -18,7 +18,7 @@ import type { HostId } from '@auto-guard/cli/installer/profiles'
 import { t } from '../i18n.ts'
 import type { AppState, DialogState, Effect, IntegratedDetection } from '../types.ts'
 import { buildInitArgv, buildPreview, buildRemoveArgv, saveMachineLangSafe } from '../actions.ts'
-import { checkList, moveCursor, panel, splitWidth } from '../ui/kit.ts'
+import { checkList, clampOffset, moveCursor, panel, splitWidth } from '../ui/kit.ts'
 import { seg, theme, type Row } from '../ui/theme.ts'
 
 type RowKind = 'host' | 'lang' | 'rules' | 'apply' | 'list' | 'remove-host' | 'remove-apply'
@@ -109,11 +109,13 @@ export function renderInstaller(state: AppState): Row[] {
   const leftRows = panel(left, leftLines, { title: t(L, 'instTitle'), height: Math.max(3, bodyHeight - 2) })
   const view = state.views.installer ?? { lines: [], offset: 0 }
   const height = Math.max(3, bodyHeight - 2)
-  const visible = view.lines.slice(view.offset, view.offset + height)
+  // Clamp the sticky-bottom offset before slicing (same as the list screens).
+  const offset = clampOffset(view.offset, view.lines.length, height)
+  const visible = view.lines.slice(offset, offset + height)
   const rightRows = panel(
     right,
     view.lines.length ? visible.map((line) => ({ text: line })) : [{ text: t(L, 'instPreviewTitle'), style: theme.muted }],
-    { title: t(L, 'instPreviewTitle'), height, scroll: { offset: view.offset, total: view.lines.length } },
+    { title: t(L, 'instPreviewTitle'), height, scroll: { offset, total: view.lines.length } },
   )
   const body: Row[] = [tabRow]
   for (let i = 0; i < Math.max(leftRows.length, rightRows.length); i++) {
@@ -129,19 +131,15 @@ export function renderInstaller(state: AppState): Row[] {
   return body
 }
 
-/** Installer keys: ←→ tabs, ↑↓ cursor, Space toggle, Enter activate. */
-export function installerKey(state: AppState, ev: { name: string; ch?: string }): { patch: Partial<AppState>; effects: Effect[]; dialog?: DialogState; preview?: string[] } {
+/** Installer keys: Tab/Shift+Tab sub-tabs, ↑↓ cursor, Space toggle, Enter activate. */
+export function installerKey(state: AppState, ev: { name: string; ch?: string; shift?: boolean }): { patch: Partial<AppState>; effects: Effect[]; dialog?: DialogState; preview?: string[] } {
   const inst = state.installer
   const patch: Partial<AppState> = {}
-  if (ev.name === 'left' || ev.ch === 'h') {
-    const order = ['init', 'status', 'remove'] as const
+  const order = ['init', 'status', 'remove'] as const
+  if (ev.name === 'tab') {
     const index = order.indexOf(inst.tab)
-    return { patch: { installer: { ...inst, tab: order[(index + order.length - 1) % order.length], cursor: 0 } }, effects: [] }
-  }
-  if (ev.name === 'right' || ev.ch === 'l') {
-    const order = ['init', 'status', 'remove'] as const
-    const index = order.indexOf(inst.tab)
-    return { patch: { installer: { ...inst, tab: order[(index + 1) % order.length], cursor: 0 } }, effects: [] }
+    const next = ev.shift ? (index + order.length - 1) % order.length : (index + 1) % order.length
+    return { patch: { installer: { ...inst, tab: order[next]!, cursor: 0 } }, effects: [] }
   }
   const rows = installerRows(state)
   if (ev.name === 'up' || ev.ch === 'k') return { patch: { installer: { ...inst, cursor: moveCursor(inst.cursor, -1, rows.length) } }, effects: [] }
@@ -167,7 +165,7 @@ export function installerKey(state: AppState, ev: { name: string; ch?: string })
   }
   if (row.kind === 'remove-apply' && ev.name === 'enter') {
     const targets = Object.entries(inst.removeChecked).filter(([, on]) => on).map(([id]) => id as HostId)
-    if (!targets.length) return { patch: { views: { ...state.views, installer: { lines: [t(state.lang, 'instNoneChecked')], offset: 0 } } }, effects: [] }
+    if (!targets.length) return { patch: { notice: t(state.lang, 'instNoneChecked') }, effects: [] }
     const dialog: DialogState = {
       message: [t(state.lang, 'confirmRemove')],
       danger: true,
@@ -181,7 +179,7 @@ export function installerKey(state: AppState, ev: { name: string; ch?: string })
   if (row.kind === 'apply' && ev.name === 'enter') {
     const checked = rows.filter((r) => r.kind === 'host' && r.checked).map((r) => r.hostId!) as HostId[]
     if (!checked.length) {
-      return { patch: { views: { ...state.views, installer: { lines: [t(state.lang, 'instNoneChecked')], offset: 0 } } }, effects: [] }
+      return { patch: { notice: t(state.lang, 'instNoneChecked') }, effects: [] }
     }
     const rules = inst.rulesChoice === 'update' ? 'update' : 'skip'
     // First apply persists the language choice as the machine default so the

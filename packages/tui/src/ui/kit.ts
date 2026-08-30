@@ -53,13 +53,13 @@ export interface NavTab {
   key: string
 }
 
-/** Tab row: `1 总览` chips, active on accent background. */
+/** Tab row: active tab on an accent pill, inactive tabs muted (SPEC 0010). */
 export function navTabs(width: number, tabs: readonly NavTab[], active: number): Row {
   const row: Row = [seg(' ')]
   tabs.forEach((tab, i) => {
     if (i > 0) row.push(seg(' '))
-    const text = i === active ? ` ${tab.key} ${tab.label} ` : `${tab.key} ${tab.label}`
-    row.push(seg(i === active ? text : ` ${text}`, i === active ? theme.accentBg : theme.muted))
+    const text = ` ${tab.key} ${tab.label} `
+    row.push(seg(text, i === active ? theme.accentBg : theme.muted))
   })
   return truncateRow(row, width)
 }
@@ -69,8 +69,12 @@ export interface FooterReceipt {
   argv: string
 }
 
-/** Footer: key hints (left, dim) + busy spinner or last receipt (right). */
-export function footerBar(width: number, hints: string, receipt: FooterReceipt | null, busyLabel: string | null, tick: number): Row {
+/**
+ * Footer: keycap-style hints (left, keys bright / labels dim) + busy spinner
+ * or last receipt (right). The left side is a pre-composed Row so the app can
+ * swap in a transient notice (SPEC 0010).
+ */
+export function footerBar(width: number, left: Row, receipt: FooterReceipt | null, busyLabel: string | null, tick: number): Row {
   let right = ''
   let rightStyle: Style = theme.muted
   if (busyLabel) {
@@ -81,10 +85,26 @@ export function footerBar(width: number, hints: string, receipt: FooterReceipt |
     right = `${mark} ${receipt.argv.split(' ').slice(0, 3).join(' ')} → ${receipt.code}`
     rightStyle = receipt.code === 0 ? theme.ok : theme.danger
   }
-  const left = truncateToWidth(` ${hints}`, Math.max(1, width - textWidth(right) - 2), '')
-  const gap = Math.max(1, width - textWidth(left) - textWidth(right))
-  const row: Row = [seg(left, theme.muted), seg(' '.repeat(gap))]
+  const leftWidth = rowWidth(left)
+  const cutLeft = leftWidth > width - textWidth(right) - 2 ? truncateRow(left, Math.max(1, width - textWidth(right) - 2)) : left
+  const gap = Math.max(1, width - rowWidth(cutLeft) - textWidth(right))
+  const row: Row = [...cutLeft, seg(' '.repeat(gap))]
   if (right) row.push(seg(right, rightStyle))
+  return row
+}
+
+/** One keycap hint pair: bright key + dim label. */
+export function keyHint(key: string, label: string): Row {
+  return [seg(key, theme.bold), seg(` ${label}`, theme.muted)]
+}
+
+/** Join hint rows with dim separators and lead/trail padding. */
+export function hintRow(hints: readonly Row[], leading = ' '): Row {
+  const row: Row = [seg(leading)]
+  hints.forEach((hint, i) => {
+    if (i > 0) row.push(seg(' · ', theme.muted))
+    row.push(...hint)
+  })
   return row
 }
 
@@ -104,12 +124,17 @@ export interface PanelOptions {
   scroll?: { offset: number; total: number }
 }
 
+/** Clamp a scroll offset into [0, total-viewport]; huge offsets = bottom. */
+export function clampOffset(offset: number, total: number, viewport: number): number {
+  return Math.min(Math.max(0, offset), Math.max(0, total - viewport))
+}
+
 /** Bordered panel with optional title; content fitted to inner width. */
 export function panel(width: number, lines: readonly PanelLine[], opts: PanelOptions = {}): Row[] {
   const borderStyle = opts.border === 'danger' ? theme.borderDanger : opts.border === 'accent' ? theme.borderAccent : theme.border
   const inner = Math.max(3, width - 2)
   const title = opts.title ? `─ ${opts.title} ` : ''
-  const rows: Row[] = [[seg(`┌${title}${'─'.repeat(Math.max(0, inner - textWidth(title)))}┐`, borderStyle)]]
+  const rows: Row[] = [[seg(`╭${title}${'─'.repeat(Math.max(0, inner - textWidth(title)))}╮`, borderStyle)]]
   const rowsNeeded = opts.height ?? lines.length
   const contentWidth = opts.scroll ? inner - 2 : inner
   // Offsets beyond the end clamp to "bottom" (run-done sticks to bottom).
@@ -124,7 +149,9 @@ export function panel(width: number, lines: readonly PanelLine[], opts: PanelOpt
       const fitted = fitToWidth(line.text, contentWidth)
       style = line.style
       if (opts.scroll) {
-        const bar = i === 0 ? scrollBarTop(scrollOffset, rowsNeeded, opts.scroll.total) : '│'
+        // Gutter shows an indicator only on the first row; blank when the
+        // content fits — a full-height bar reads as a double border.
+        const bar = i === 0 ? scrollBarTop(scrollOffset, rowsNeeded, opts.scroll.total) : ' '
         text = padToWidth(fitted, contentWidth) + ` ${bar}`
       } else {
         text = padToWidth(fitted, inner)
@@ -132,12 +159,12 @@ export function panel(width: number, lines: readonly PanelLine[], opts: PanelOpt
     }
     rows.push([seg('│', borderStyle), seg(text, style), seg('│', borderStyle)])
   }
-  rows.push([seg(`└${'─'.repeat(inner)}┘`, borderStyle)])
+  rows.push([seg(`╰${'─'.repeat(inner)}╯`, borderStyle)])
   return rows
 }
 
 function scrollBarTop(offset: number, viewport: number, total: number): string {
-  if (total <= viewport) return '│'
+  if (total <= viewport) return ' '
   const clamped = Math.min(Math.max(0, offset), Math.max(0, total - viewport))
   const ratio = clamped / Math.max(1, total - viewport)
   return ratio <= 0 ? '↑' : ratio >= 1 ? '↓' : '┃'
@@ -205,7 +232,7 @@ export function confirmDialog(base: readonly Row[], width: number, model: Confir
   const boxWidth = Math.min(width - 4, Math.max(32, longest + 6))
   const inner = Math.max(10, boxWidth - 2)
   const border = model.danger ? theme.borderDanger : theme.borderAccent
-  const box: Row[] = [[seg(`┌${'─'.repeat(inner)}┐`, border)]]
+  const box: Row[] = [[seg(`╭${'─'.repeat(inner)}╮`, border)]]
   for (const message of model.message) {
     box.push([seg('│', border), seg(padToWidth(truncateToWidth(message, inner), inner)), seg('│', border)])
   }
@@ -218,7 +245,7 @@ export function confirmDialog(base: readonly Row[], width: number, model: Confir
   const yesSeg = seg(yes, model.confirmFocused ? (model.danger ? theme.dangerBg : theme.accentBg) : theme.muted)
   const noSeg = seg(no, model.confirmFocused ? theme.muted : theme.selected)
   const buttonSegs: Row = [seg('│', border), seg(' '.repeat(leftPad)), yesSeg, seg(' '), noSeg, seg(' '.repeat(rightPad)), seg('│', border)]
-  box.push(buttonSegs, [seg(`└${'─'.repeat(inner)}┘`, border)])
+  box.push(buttonSegs, [seg(`╰${'─'.repeat(inner)}╯`, border)])
   return overlayCentered(base, width, box)
 }
 
@@ -296,7 +323,8 @@ export function inputDisplay(model: InputModel, width: number): string {
 
 /** A one-line input row: `prompt: value▌` fitted to width. */
 export function inputRow(prompt: string, model: InputModel, width: number): Row {
-  const promptSeg = seg(`${prompt}: `, theme.bold)
+  // A prompt ending in ':' already carries its own separator (command mode).
+  const promptSeg = seg(prompt.endsWith(':') ? `${prompt} ` : `${prompt}: `, theme.bold)
   const room = Math.max(1, width - textWidth(promptSeg.text))
   return [promptSeg, seg(inputDisplay(model, room))]
 }

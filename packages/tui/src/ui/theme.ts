@@ -31,6 +31,8 @@ export interface Style {
   bold?: boolean
   dim?: boolean
   reverse?: boolean
+  /** 256-color foreground, reserved for the brand banner gradient (SPEC 0010). */
+  fg256?: number
 }
 
 /** One run of styled text; the unit screens compose rows from. */
@@ -87,6 +89,7 @@ export function sgrOf(style: Style | undefined, colorEnabled: boolean): string {
   if (style.bold) parts.push('1')
   if (style.dim) parts.push('2')
   if (style.reverse) parts.push('7')
+  if (style.fg256 !== undefined) parts.push(`38;5;${style.fg256}`)
   if (style.fg && style.fg !== 'default') parts.push(String(COLOR_CODES[style.fg][0]))
   if (style.bg && style.bg !== 'default') parts.push(String(COLOR_CODES[style.bg][1]))
   return parts.length ? `\x1b[${parts.join(';')}m` : ''

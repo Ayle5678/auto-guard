@@ -74,6 +74,14 @@ async function main(): Promise<number> {
         dispatch({ type: 'run-done', receipt })
         continue
       }
+      // Read-only autoload (SPEC 0010): same execRun seam, but the receipt
+      // lands only in the screen's output pane — never in the log.
+      if (effect.type === 'autoload') {
+        dispatch({ type: 'busy-start', run: effect.run })
+        const receipt = await execRun({}, effect.run, state.currentRoot, receiptSeq++)
+        dispatch({ type: 'autoload-done', screen: effect.screen, receipt })
+        continue
+      }
       // set-key wizard: the unified CLI branch refuses (documented gap), so
       // the save goes through core ops directly (ADR-0014 decision 3).
       if (effect.type === 'wizard') {

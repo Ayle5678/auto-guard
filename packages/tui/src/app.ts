@@ -1,12 +1,14 @@
 /**
- * App state machine + frame composition (SPEC 0009 / ADR-0014). `reduce` is
- * pure state evolution returning side-effect requests; `render` composes the
- * full frame from pure screen modules. I/O happens only in actions.ts and
+ * App state machine + frame composition (SPEC 0009/0010 / ADR-0014). `reduce`
+ * is pure state evolution returning side-effect requests; `render` composes
+ * the full frame from pure screen modules. I/O happens only in actions.ts and
  * the tui.ts driver loop.
  */
 import { homedir } from 'node:os'
 import { maskKey, type Lang } from '@auto-guard/core'
+import { renderBannerGrid, GRADIENT } from '@auto-guard/cli/installer/banner'
 import { t, resolveUiLang } from './i18n.ts'
+import { tuiVersion } from './version.ts'
 import type { AppEvent, AppState, DialogState, Effect, InputRequest, PendingRun, Receipt, ScreenId, WizardInput } from './types.ts'
 import { SCREEN_ORDER } from './types.ts'
 import { detectRoot, detect, loadRootSummaries, needsInstallerLang, validateWizard, type ActionDeps } from './actions.ts'
@@ -16,7 +18,7 @@ import { installerKey, renderInstaller } from './screens/installer.ts'
 import { renderLog, scrollBy } from './screens/log.ts'
 import { renderHelp } from './screens/help.ts'
 import { listActions, renderListScreen, rootSummary } from './screens/lists.ts'
-import { confirmDialog, emptyInput, footerBar, headerBar, inputKey, inputRow, moveCursor, navTabs, padFrame, type NavTab } from './ui/kit.ts'
+import { confirmDialog, emptyInput, footerBar, headerBar, hintRow, inputKey, inputRow, keyHint, moveCursor, navTabs, padFrame, type NavTab } from './ui/kit.ts'
 import { seg, theme, type Row } from './ui/theme.ts'
 import { tildeRoot } from './paths.ts'
 import { isChar, type KeyEvent } from './keys.ts'
@@ -56,6 +58,7 @@ export function initialState(options: { width: number; height: number; deps?: Ac
     dialog: null,
     busy: null,
     receipts: [],
+    autoloaded: {},
     tick: 0,
     exitAfterBusies: false,
   }
@@ -72,12 +75,15 @@ export function reduce(state: AppState, event: AppEvent): { state: AppState; eff
       return { state: { ...state, busy: event.run }, effects: [] }
     case 'run-done': {
       const receipts = [...state.receipts, event.receipt]
-      // Huge offset = "stick to bottom"; panel() clamps to total - viewport.
-      const view = { lines: [`❯ ${event.receipt.argv}`, ...event.receipt.output, `↳ exit ${event.receipt.code}`], offset: 1_000_000 }
       return {
-        state: { ...state, receipts, busy: null, views: { ...state.views, [state.screen]: view } },
+        state: { ...state, receipts, busy: null, views: { ...state.views, [state.screen]: stickyView(event.receipt) } },
         effects: [{ type: 'refresh' }],
       }
+    }
+    case 'autoload-done': {
+      // Read-only autoload (SPEC 0010): fills the output pane without touching
+      // receipts — the log screen stays a record of user-initiated actions.
+      return { state: { ...state, busy: null, views: { ...state.views, [event.screen]: stickyView(event.receipt) } }, effects: [] }
     }
     case 'roots': {
       const roots = event.roots
@@ -102,29 +108,101 @@ export function reduce(state: AppState, event: AppEvent): { state: AppState; eff
 }
 
 function reduceKey(state: AppState, key: KeyEvent): { state: AppState; effects: Effect[] } {
+  // A notice lives until the next key event (SPEC 0010) — clear it first, so
+  // branches below can raise a fresh one.
+  const clear: AppState = { ...state, notice: undefined }
   // Busy: only quit escapes.
-  if (state.busy) {
-    if (isChar(key, 'q') || (key.name === 'char' && key.ch === 'c' && key.ctrl)) return { state, effects: [{ type: 'quit' }] }
-    return { state, effects: [] }
+  if (clear.busy) {
+    if (isChar(key, 'q') || (key.name === 'char' && key.ch === 'c' && key.ctrl)) return { state: clear, effects: [{ type: 'quit' }] }
+    return { state: clear, effects: [] }
   }
   // Inline input owns every key.
-  if (state.input) return inputKeyRouting(state, key)
+  if (clear.input) return inputKeyRouting(clear, key)
   // Dialog owns every key.
-  if (state.dialog) return dialogKeyRouting(state, key)
+  if (clear.dialog) return dialogKeyRouting(clear, key)
   // Wizard review step owns every key.
-  if (state.wizard) return wizardReviewRouting(state, key)
+  if (clear.wizard) return wizardReviewRouting(clear, key)
   // Global keys.
-  if (isChar(key, 'q') || (key.name === 'char' && key.ch === 'c' && key.ctrl)) return { state, effects: [{ type: 'quit' }] }
+  if (isChar(key, 'q') || (key.name === 'char' && key.ch === 'c' && key.ctrl)) return { state: clear, effects: [{ type: 'quit' }] }
   if (key.name === 'char' && key.ch === ':') {
     const input: InputRequest = { owner: 'command', prompt: ':', model: emptyInput() }
-    return { state: { ...state, input }, effects: [] }
+    return { state: { ...clear, input }, effects: [] }
   }
-  if (isChar(key, 'r')) return { state, effects: [{ type: 'refresh' }] }
+  if (isChar(key, 'r')) return refreshCurrent(clear)
+  // Arrows are the primary screen switch; digits stay as jump shortcuts.
+  if (key.name === 'left' || isChar(key, 'h')) return stepScreen(clear, -1)
+  if (key.name === 'right' || isChar(key, 'l')) return stepScreen(clear, 1)
   if (key.name === 'char' && key.ch && key.ch >= '1' && key.ch <= '8') {
-    const screen = SCREEN_ORDER[Number(key.ch) - 1]!
-    return { state: { ...state, screen }, effects: [{ type: 'refresh' }] }
+    return gotoScreen(clear, SCREEN_ORDER[Number(key.ch) - 1]!)
   }
-  return screenRouting(state, key)
+  return screenRouting(clear, key)
+}
+
+// ---------- screen switching + autoload (SPEC 0010) ----------
+
+function tabLabelOf(state: AppState, screen: ScreenId): string {
+  const tab = NAV_TABS.find((entry) => entry.screen === screen)
+  return tab ? t(state.lang, tab.key) : screen
+}
+
+function gotoScreen(state: AppState, screen: ScreenId): { state: AppState; effects: Effect[] } {
+  const autoload = autoloadEffects(state, screen)
+  return {
+    state: {
+      ...state,
+      screen,
+      notice: t(state.lang, 'noticeTo', { screen: tabLabelOf(state, screen) }),
+      ...(autoload.length ? { autoloaded: { ...state.autoloaded, [screen]: true } } : {}),
+    },
+    effects: [{ type: 'refresh' }, ...autoload],
+  }
+}
+
+function stepScreen(state: AppState, delta: 1 | -1): { state: AppState; effects: Effect[] } {
+  const index = SCREEN_ORDER.indexOf(state.screen)
+  const next = SCREEN_ORDER[(index + delta + SCREEN_ORDER.length) % SCREEN_ORDER.length]!
+  return gotoScreen(state, next)
+}
+
+/** `r`: refresh data and re-run the current screen's autoload. */
+function refreshCurrent(state: AppState): { state: AppState; effects: Effect[] } {
+  const autoloaded = { ...state.autoloaded }
+  delete autoloaded[state.screen]
+  const cleared: AppState = { ...state, notice: t(state.lang, 'noticeRefresh'), autoloaded }
+  return { state: cleared, effects: [{ type: 'refresh' }, ...autoloadEffects(cleared, state.screen)] }
+}
+
+/** Receipt rendered as a view: command line, output, exit footer. */
+function stickyView(receipt: Receipt): { lines: string[]; offset: number } {
+  // Huge offset = "stick to bottom"; panel() clamps to total - viewport.
+  return { lines: [`❯ ${receipt.argv}`, ...receipt.output, `↳ exit ${receipt.code}`], offset: 1_000_000 }
+}
+
+/** Read-only autoload per screen (SPEC 0010): fill the output pane on first visit. */
+export function autoloadRun(state: AppState, screen: ScreenId): PendingRun | null {
+  if (screen === 'installer') {
+    return state.installer.tab === 'status' ? { kind: 'inst', argv: ['list'], label: 'list', busyKey: 'busyRefresh' } : null
+  }
+  if (screen === 'dashboard' || screen === 'log' || screen === 'help') return null
+  if (!rootSummary(state)) return null
+  switch (screen) {
+    case 'guard':
+      return { kind: 'mgmt', argv: ['guard', 'recent', '10'], label: 'guard recent 10', busyKey: 'busyRefresh' }
+    case 'examine':
+      return { kind: 'mgmt', argv: ['examine', 'status'], label: 'examine status', busyKey: 'busyRefresh' }
+    case 'optimize':
+      return { kind: 'mgmt', argv: ['optimize', 'status'], label: 'optimize status', busyKey: 'busyRefresh' }
+    case 'set':
+      return { kind: 'mgmt', argv: ['set', 'show-key'], label: 'set show-key', busyKey: 'busyRefresh' }
+    default:
+      return null
+  }
+}
+
+function autoloadEffects(state: AppState, screen: ScreenId): Effect[] {
+  if (state.autoloaded[screen]) return []
+  const run = autoloadRun(state, screen)
+  return run ? [{ type: 'autoload', run, screen }] : []
 }
 
 // ---------- input routing ----------
@@ -188,7 +266,9 @@ function wizardInput(owner: 'wizard-model' | 'wizard-key' | 'wizard-base', promp
 
 function dialogKeyRouting(state: AppState, key: KeyEvent): { state: AppState; effects: Effect[] } {
   const dialog = state.dialog!
-  if (key.name === 'escape' || isChar(key, 'q')) return { state: { ...state, dialog: null }, effects: [] }
+  if (key.name === 'escape' || isChar(key, 'q')) {
+    return { state: { ...state, dialog: null, notice: t(state.lang, 'noticeCancelled') }, effects: [] }
+  }
   if (key.name === 'left' || key.name === 'right' || key.name === 'tab') {
     return { state: { ...state, dialog: { ...dialog, confirmFocused: !dialog.confirmFocused } }, effects: [] }
   }
@@ -232,7 +312,17 @@ function screenRouting(state: AppState, key: KeyEvent): { state: AppState; effec
       const patch: Partial<AppState> = { ...result.patch }
       if ('dialog' in result) patch.dialog = result.dialog ?? null
       if (result.preview) patch.views = { ...state.views, installer: { lines: result.preview, offset: 0 } }
-      return { state: { ...state, ...patch }, effects: result.effects }
+      let effects = result.effects
+      // Landing on the status sub-tab autoloads `list` into the preview pane.
+      const tab = patch.installer?.tab ?? state.installer.tab
+      if (tab === 'status' && !state.autoloaded.installer) {
+        const [effect] = autoloadEffects(state, 'installer')
+        if (effect) {
+          patch.autoloaded = { ...state.autoloaded, installer: true }
+          effects = [...effects, effect]
+        }
+      }
+      return { state: { ...state, ...patch }, effects }
     }
     case 'log':
       return { state: { ...state, views: { ...state.views, log: scrollStep(state, key) } }, effects: [] }
@@ -349,7 +439,8 @@ export function render(state: AppState): Row[] {
   const summary = rootSummary(state)
   const hostLabel = visibleRoots(state).find((r) => r.root === state.currentRoot)?.label ?? (state.currentRoot ? '' : t(L, 'aggregate'))
   const chips = [
-    { text: t(L, 'title'), style: theme.accentBg },
+    { text: 'AUTO GUARD', style: theme.accentBg },
+    { text: `v${tuiVersion()}`, style: theme.muted },
     ...(hostLabel ? [{ text: hostLabel, style: theme.bold }] : []),
     ...(state.currentRoot ? [{ text: tildeRoot(state.currentRoot), style: theme.muted }] : []),
     { text: L, style: theme.muted },
@@ -370,16 +461,46 @@ export function render(state: AppState): Row[] {
   }
   const busyLabel = state.busy ? t(L, (state.busy.busyKey ?? 'busyRun') as UiKeyLabel) : null
   const lastReceipt = state.receipts[state.receipts.length - 1]
-  const hints = inputOpen ? t(L, 'inputCancelHint') : state.busy ? t(L, 'footerHintsBusy') : t(L, 'footerHints')
-  frame.push(footerBar(width, hints, lastReceipt ? { code: lastReceipt.code, argv: lastReceipt.argv } : null, busyLabel, state.tick))
+  const footerLeft: Row = state.notice
+    ? [seg(' '), seg(`❯ ${state.notice}`, theme.accent)]
+    : inputOpen
+      ? hintRow([keyHint('Enter', t(L, 'hintSubmit')), keyHint('Esc', t(L, 'hintCancel'))])
+      : state.busy
+        ? hintRow([keyHint('q', t(L, 'hintQuit'))])
+        : hintRow([
+            keyHint('←→', t(L, 'hintScreens')),
+            keyHint('↑↓', t(L, 'hintSelect')),
+            keyHint('Enter', t(L, 'hintRun')),
+            keyHint(':', t(L, 'hintCommand')),
+            keyHint('r', t(L, 'hintRefresh')),
+            keyHint('q', t(L, 'hintQuit')),
+          ])
+  frame.push(footerBar(width, footerLeft, lastReceipt ? { code: lastReceipt.code, argv: lastReceipt.argv } : null, busyLabel, state.tick))
   return padFrame(frame, width, height)
 }
 
+// ---------- brand banner (SPEC 0010) ----------
+
+/** Banner needs room for the full 108-col wordmark + tagline + panels below. */
+export function bannerBlock(state: AppState): Row[] {
+  if (state.width < 110 || state.height < 20) return []
+  const rows: Row[] = renderBannerGrid().map((line, i): Row => [seg(line, { fg256: GRADIENT[Math.min(i, GRADIENT.length - 1)] })])
+  rows.push([seg(` auto-guard v${tuiVersion()} · ${t(state.lang, 'tagline')}`, theme.muted)])
+  rows.push([seg('')])
+  return rows
+}
+
+/** Header + tab row + footer chrome rows that surround the body. */
+const CHROME_ROWS = 3
+
 function renderBody(state: AppState, bodyHeight: number): Row[] {
-  const bodyState: AppState = { ...state, height: bodyHeight + 3 }
+  if (state.screen === 'dashboard') {
+    const banner = bannerBlock(state)
+    const bodyState: AppState = { ...state, height: bodyHeight + CHROME_ROWS - banner.length }
+    return [...banner, ...renderDashboard(bodyState)]
+  }
+  const bodyState: AppState = { ...state, height: bodyHeight + CHROME_ROWS }
   switch (state.screen) {
-    case 'dashboard':
-      return renderDashboard(bodyState)
     case 'installer':
       return renderInstaller(bodyState)
     case 'log':
@@ -394,7 +515,7 @@ function renderBody(state: AppState, bodyHeight: number): Row[] {
           ? [seg(state.wizard.error, theme.danger)]
           : [seg(wizardReviewLine(state), theme.warn)]
         const rest = renderListScreen(bodyState, 'set')
-        return [[...lead, seg('  '), seg(t(state.lang, 'inputCancelHint'), theme.muted)], ...rest]
+        return [[...lead, seg('  '), ...keyHint('Esc', t(state.lang, 'hintCancel'))], ...rest]
       }
       return renderListScreen(bodyState, 'set')
     }

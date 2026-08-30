@@ -29,7 +29,7 @@ export function renderDashboard(state: AppState): Row[] {
     const auditChip = root.auditCount === undefined ? t(L, 'dashExamineOff') : t(L, 'dashExamine', { count: root.auditCount })
     return {
       text: root.label,
-      hint: `${stateChip} · ${keyChip} · ${auditChip}`,
+      hint: [stateChip, keyChip, auditChip].filter(Boolean).join(' · '),
       style: root.root === state.currentRoot ? theme.ok : undefined,
     }
   })
@@ -75,7 +75,7 @@ export function dashboardKey(state: AppState, ev: { name: string; ch?: string; c
   if (ev.name === 'down' || ev.ch === 'j') return { patch: { focusRoot: moveCursor(state.focusRoot, 1, roots.length) }, effects: [] }
   const focused = roots[clamp(state.focusRoot, roots.length)]
   if (ev.name === 'enter' && focused?.seeded) {
-    return { patch: { currentRoot: focused.root }, effects: [{ type: 'refresh' }] }
+    return { patch: { currentRoot: focused.root, notice: t(state.lang, 'noticeRoot', { root: focused.label }) }, effects: [{ type: 'refresh' }] }
   }
   if (ev.ch === 'p' && focused?.seeded) {
     const run: PendingRun = {

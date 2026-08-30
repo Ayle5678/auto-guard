@@ -50,6 +50,7 @@ function baseState(over: Partial<AppState> = {}): AppState {
     dialog: null,
     busy: null,
     receipts: [],
+    autoloaded: {},
     tick: 0,
     exitAfterBusies: false,
     ...over,
@@ -77,10 +78,10 @@ describe('installer keys', () => {
     expect(result.patch.installer?.checked).toEqual({ zcode: true })
   })
 
-  it('apply without selection shows the hint instead of a dialog', () => {
+  it('apply without selection raises the footer notice instead of a dialog', () => {
     const result = installerKey({ ...baseState(), installer: { ...baseState().installer, cursor: 6 } }, { name: 'enter' })
     expect(result.dialog).toBeUndefined()
-    expect(result.patch.views?.installer?.lines).toEqual(['请先勾选至少一个宿主'])
+    expect(result.patch.notice).toBe('请先勾选至少一个宿主')
   })
 
   it('apply with selection produces preview + confirm dialog with canonical argv', () => {
@@ -100,11 +101,14 @@ describe('installer keys', () => {
     expect(onRules.patch.installer?.rulesChoice).toBe('update')
   })
 
-  it('tabs cycle with wrap-around', () => {
+  it('tabs cycle with wrap-around via Tab / Shift+Tab (SPEC 0010)', () => {
+    const next = installerKey(baseState(), { name: 'tab' })
+    expect(next.patch.installer?.tab).toBe('status')
+    const prevFromInit = installerKey(baseState(), { name: 'tab', shift: true })
+    expect(prevFromInit.patch.installer?.tab).toBe('remove')
+    // Arrows no longer switch sub-tabs — they are the global screen switch.
     const right = installerKey(baseState(), { name: 'right' })
-    expect(right.patch.installer?.tab).toBe('status')
-    const leftFromInit = installerKey(baseState(), { name: 'left' })
-    expect(leftFromInit.patch.installer?.tab).toBe('remove')
+    expect(right.patch.installer).toBeUndefined()
   })
 })
 

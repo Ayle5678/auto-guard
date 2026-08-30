@@ -1,0 +1,302 @@
+===== dashboard (banner @110x30) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+  ████╗     ██╗   ██╗   ██████╗     ████╗         ██████╗   ██╗   ██╗     ████╗     ██████╗     ██████╗
+██╔═══██╗   ██║   ██║   ╚═██╔═╝   ██╔═══██╗     ██╔═════╝   ██║   ██║   ██╔═══██╗   ██╔═══██╗   ██╔═══██╗
+██║   ██║   ██║   ██║     ██║     ██║   ██║     ██║         ██║   ██║   ██║   ██║   ██████╔═╝   ██║   ██║
+████████║   ██║   ██║     ██║     ██║   ██║     ██║ ████╗   ██║   ██║   ████████║   ██╔═══██╗   ██║   ██║
+██╔═══██║   ██║   ██║     ██║     ██║   ██║     ██║ ══██║   ██║   ██║   ██╔═══██║   ██║   ██║   ██║   ██║
+██║   ██║   ██║   ██║     ██║     ██║   ██║     ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║   ██║
+██║   ██║   ╚═████╔═╝     ██║     ╚═████╔═╝     ╚═████╔═╝   ╚═████╔═╝   ██║   ██║   ██║   ██║   ██████╔═╝
+╚═╝   ╚═╝     ╚═══╝       ╚═╝       ╚═══╝         ╚═══╝       ╚═══╝     ╚═╝   ╚═╝   ╚═╝   ╚═╝   ╚═════╝
+ auto-guard v0.3.0 · 守卫控制台 · 缓存式命令审查
+
+╭─ 宿主配置根 ────────────────────────────────────────╮ ╭─ ZCode ────────────────────────────────────────────╮
+│  DeepSeek Harness  ● on · key✗ · 审计关             │ │★ 当前根 — C:/Users/demo/.zcode/auto-guard          │
+│  Pi  ● on · key✗ · 审计 561                         │ │enabled : true                                      │
+│❯ ZCode  ● on · key✓ · 审计 2087                     │ │lang    : zh                                        │
+│  Claude Code  ● on · key✗ · 审计关                  │ │config  : C:\Users\demo\.zcode\auto-guard\config.jso│
+│  OpenCode  未播种 · 审计关                          │ │n                                                   │
+│  Qoder  ● on · key✓ · 审计 344                      │ │review  : https://api.deepseek.com · deepseek-v4-fla│
+│                                                     │ │sh · ⚠ 无 API Key（fail-closed）                    │
+│                                                     │ │examine : on · history: on                          │
+│                                                     │ │审计库记录总数：2087                                │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+╰─────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────╯
+
+
+ ←→ 切屏 · ↑↓ 选择 · Enter 执行 · : 命令 · r 刷新 · q 退出
+
+===== guard (autoloaded recent + notice) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│enabled : true                              │ │❯ guard recent 10 --config-root C:\Users\demo\.zcode\auto-g  │
+│lang    : zh                                │ │最近 10 条裁决（当前根 ZCode）：                             │
+│config  : C:\Users\demo\.zcode\auto-guard\  │ │  08-30 02:10  Bash    cd /d/proj && ./deploy.sh        all  │
+│config.json                                 │ │  08-30 02:09  Bash    rm -rf build/                    ask  │
+│review  : https://api.deepseek.com · deeps  │ │  08-30 02:07  Read    cat .env                          de  │
+│eek-v4-flash · ⚠ 无 API Key（fail-closed）  │ │  08-30 02:06  Write   edit src/app.ts                   al  │
+╰────────────────────────────────────────────╯ │  08-30 02:04  Bash    git push origin main              as  │
+╭─ 动作 ─────────────────────────────────────╮ │↳ exit 0                                                     │
+│❯ 关闭守卫（guard off）                     │ │                                                             │
+│  状态（guard status）                      │ │                                                             │
+│  最近裁决（guard recent）                  │ │                                                             │
+│  统计（guard stats）                       │ │                                                             │
+│  报告（guard report）                      │ │                                                             │
+│  连通性（guard ping）                      │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+ ❯ → 守卫
+
+===== examine (status panel + autoloaded status) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│守卫 : ● on                                 │ │❯ examine status --config-root C:\Users\demo\.zcode\auto-gu  │
+│审计 : ● on                                 │ │审计层 : on                                                  │
+│历史层 : ● on                               │ │审计库 : audit.db（2087 条）                                 │
+│审计记录 : 2087                             │ │历史层 : on                                                  │
+╰────────────────────────────────────────────╯ │保留 : 30 天（clear-old）                                    │
+╭─ 动作 ─────────────────────────────────────╮ │↳ exit 0                                                     │
+│❯ 关闭审计（examine off）                   │ │                                                             │
+│  审计状态（examine status）                │ │                                                             │
+│  清理 30 天前（examine clear-old）         │ │                                                             │
+│  ⚠ 清空审计（examine clear-all）           │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+ ❯ → 审计
+
+===== set (autoloaded show-key) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│enabled : true                              │ │❯ set show-key --config-root C:\Users\demo\.zcode\auto-guar  │
+│lang    : zh                                │ │已存储 key：sk-••••••••（脱敏）                              │
+│config  : C:\Users\demo\.zcode\auto-guard\  │ │来源：加密 key 存储                                          │
+│config.json                                 │ │环境变量 DEEPSEEK_API_KEY 未设置 → 生效                      │
+│review  : https://api.deepseek.com · deeps  │ │↳ exit 0                                                     │
+│eek-v4-flash · ⚠ 无 API Key（fail-closed）  │ │                                                             │
+╰────────────────────────────────────────────╯ │                                                             │
+╭─ 动作 ─────────────────────────────────────╮ │                                                             │
+│❯ 查看密钥（set show-key）                  │ │                                                             │
+│  设置密钥向导（set set-key）               │ │                                                             │
+│  ⚠ 清除密钥（set clear-key）               │ │                                                             │
+│  API 地址（set set-api base）  https://ap  │ │                                                             │
+│  API 模型（set set-api model）  deepseek-  │ │                                                             │
+│  重置 API（set set-api reset）             │ │                                                             │
+│  界面语言（set lang）  zh                  │ │                                                             │
+│  关闭历史层（set history off）             │ │                                                             │
+│  重载说明（set reload）                    │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+ ❯ → 密钥
+
+===== installer status (autoloaded list) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+  安装   状态   移除
+╭─ 安装器 ────────────────────────────────────────────╮ ╭─ 写入预览 ─────────────────────────────────────────╮
+│状态                                                 │ │❯ list                                              │
+│❯ [ ] ▶ 状态 (auto-guard list)                       │ │dsh      : 已集成（settings.json 注入）             │
+│                                                     │ │pi       : 已集成                                   │
+│                                                     │ │zcode    : 已集成（hooks 注入）                     │
+│                                                     │ │claude   : 已集成                                   │
+│                                                     │ │qoder    : 已集成                                   │
+│                                                     │ │↳ exit 0                                            │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+│                                                     │ │                                                    │
+ ←→ 切屏 · ↑↓ 选择 · Enter 执行 · : 命令 · r 刷新 · q 退出
+
+===== log (receipts) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 命令日志 ─────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯ guard ping --config-root C:\Users\demo\.zcode\auto-guard                                                  │
+│  pong 200 OK · 412ms · deepseek-v4-flash                                                                   │
+│  ↳ exit 0                                                                                                  │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ❯ → 日志                                                                       ✓ guard ping --config-root → 0
+
+===== help =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+ 键位
+  ←→ / h l         switch screen · 切屏
+  ↑↓ / j k         move · 移动
+  1…8              jump to screen · 跳转屏幕
+  Tab / Shift+Tab  installer sub-tabs · 安装子页
+  Enter            run / select · 执行 / 选中
+  Space            toggle checkbox · 勾选
+  Esc              back / cancel · 返回 / 取消
+  :                command mode · 命令模式
+  r                refresh · 刷新
+  g / G            scroll top / bottom · 滚动首/尾
+  p                ping (dashboard) · 连通性
+  q / Ctrl+C       quit (terminal restored) · 退出并恢复终端
+
+ 动作 ↔ 等价 CLI 命令
+  安装
+    init [--host …] [--update-rules|--skip-rules] [--lang]
+    list
+    remove [--host …]
+  守卫
+    guard on|off
+    guard status
+    guard recent [n]
+    guard stats
+    guard report [days]
+    guard ping
+  审计
+ ❯ → 帮助                                                                       ✓ guard ping --config-root → 0
+
+===== command mode =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 状态 ─────────────────────────────────────╮ ╭─ 输出 ──────────────────────────────────────────────────────╮
+│enabled : true                              │ │❯ guard recent 10 --config-root C:\Users\demo\.zcode\auto-g  │
+│lang    : zh                                │ │最近 10 条裁决（当前根 ZCode）：                             │
+│config  : C:\Users\demo\.zcode\auto-guard\  │ │  08-30 02:10  Bash    cd /d/proj && ./deploy.sh        all  │
+│config.json                                 │ │  08-30 02:09  Bash    rm -rf build/                    ask  │
+│review  : https://api.deepseek.com · deeps  │ │  08-30 02:07  Read    cat .env                          de  │
+│eek-v4-flash · ⚠ 无 API Key（fail-closed）  │ │  08-30 02:06  Write   edit src/app.ts                   al  │
+╰────────────────────────────────────────────╯ │  08-30 02:04  Bash    git push origin main              as  │
+╭─ 动作 ─────────────────────────────────────╮ │↳ exit 0                                                     │
+│❯ 关闭守卫（guard off）                     │ │                                                             │
+│  状态（guard status）                      │ │                                                             │
+│  最近裁决（guard recent）                  │ │                                                             │
+│  统计（guard stats）                       │ │                                                             │
+│  报告（guard report）                      │ │                                                             │
+│  连通性（guard ping）                      │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+│                                            │ │                                                             │
+╰────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────╯
+: guard report 30▌
+ Enter 提交 · Esc 取消                                                          ✓ guard ping --config-root → 0
+
+===== dashboard (banner hidden @100x30) =====
+ AUTO GUARD   v0.3.0   ZCode   C:/Users/demo/.zcode/auto-guard   zh   ● on
+  1 总览   2 守卫   3 审计   4 优化   5 密钥   6 安装   7 日志   8 帮助
+╭─ 宿主配置根 ───────────────────────────────────╮ ╭─ ZCode ───────────────────────────────────────╮
+│  DeepSeek Harness  ● on · key✗ · 审计关        │ │★ 当前根 — C:/Users/demo/.zcode/auto-guard     │
+│  Pi  ● on · key✗ · 审计 561                    │ │enabled : true                                 │
+│❯ ZCode  ● on · key✓ · 审计 2087                │ │lang    : zh                                   │
+│  Claude Code  ● on · key✗ · 审计关             │ │config  : C:\Users\demo\.zcode\auto-guard\confi│
+│  OpenCode  未播种 · 审计关                     │ │g.json                                         │
+│  Qoder  ● on · key✓ · 审计 344                 │ │review  : https://api.deepseek.com · deepseek-v│
+│                                                │ │4-flash · ⚠ 无 API Key（fail-closed）          │
+│                                                │ │examine : on · history: on                     │
+│                                                │ │审计库记录总数：2087                           │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+│                                                │ │                                               │
+╰────────────────────────────────────────────────╯ ╰───────────────────────────────────────────────╯
+
+
+ ←→ 切屏 · ↑↓ 选择 · Enter 执行 · : 命令 · r 刷新 · q 退出            ✓ guard ping --config-root → 0
+
+===== dashboard (banner hidden @40x12) =====
+ AUTO GUARD   v0.3.0   ZCode
+  1 总览   2 守卫   3 审计   4 优化   5
+╭─ 宿主配置根 ───────────╮ ╭─ ZCode ───╮
+│  DeepSeek Harness  ●   │ │★ 当前根 — │
+│  Pi  ● on · key✗ · 审  │ │C:/Users/de│
+│❯ ZCode  ● on · key✓ ·  │ │mo/.zcode/a│
+│  Claude Code  ● on ·   │ │uto-guard  │
+│  OpenCode  未播种 ·    │ │enabled : t│
+╰────────────────────────╯ ╰───────────╯
+
+
+ ←→ 切屏  ✓ guard ping --config-root → 0
+
