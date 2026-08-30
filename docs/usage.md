@@ -425,7 +425,7 @@ node packages/tui/src/tui.ts         # Node 23+ 免构建直跑
 auto-guard-tui
 ```
 
-**八屏布局**：总览（每宿主状态卡 + 选根 + ping）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（按 密钥管理 / API 端点 / 偏好 / 维护 分组：show-key、三步 set-key 向导掩码输入、clear-key、set-api、语言、历史层、reload）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
+**八屏布局**：总览（每宿主状态卡 + 选根 + ping + 界面语言切换行）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（按 密钥管理 / API 端点 / 偏好 / 维护 分组：show-key、三步 set-key 向导掩码输入、clear-key、set-api、历史层、reload）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
 
 **关键约定**：
 

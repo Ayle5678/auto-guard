@@ -68,9 +68,9 @@ export function listActions(state: AppState, screen: 'guard' | 'examine' | 'opti
         { id: 'rollback', label: tr('actRollback'), danger: true, run: () => pending('optimize rollback', ['optimize', 'rollback']) },
       ]
     case 'set': {
-      const nextLang = config?.lang === 'en' ? 'zh' : 'en'
       // Grouped for intent (SPEC 0011): keys / endpoint / preferences /
-      // maintenance — language is a preference, not key configuration.
+      // maintenance. Language lives on the DASHBOARD (user feedback) — `set
+      // lang` stays reachable via `:` command mode.
       const actions: ActionItem[] = [
         { id: 'group-keys', header: tr('groupKeys') },
         { id: 'show-key', label: tr('actShowKey'), run: () => pending('set show-key', ['set', 'show-key']) },
@@ -93,12 +93,6 @@ export function listActions(state: AppState, screen: 'guard' | 'examine' | 'opti
         },
         { id: 'set-api-reset', label: tr('actSetApiReset'), run: () => pending('set set-api reset', ['set', 'set-api', 'reset']) },
         { id: 'group-prefs', header: tr('groupPrefs') },
-        {
-          id: 'lang',
-          label: tr('actLang'),
-          hint: config?.lang ?? '—',
-          run: () => pending(`set lang ${nextLang}`, ['set', 'lang', nextLang]),
-        },
       ]
       if (config?.historyEnabled) {
         actions.push({ id: 'history', label: tr('actHistoryOff'), run: () => pending('set history off', ['set', 'history', 'off']) })

@@ -17,6 +17,11 @@ export function visibleRoots(state: AppState): AppState['roots'] {
   return state.roots.filter((root) => root.installed)
 }
 
+/** Language toggle row label (bilingual via actLang); cycles zh ⇄ en. */
+export function nextUiLang(lang: AppState['lang']): AppState['lang'] {
+  return lang === 'en' ? 'zh' : 'en'
+}
+
 export function renderDashboard(state: AppState): Row[] {
   const L = state.lang
   const bodyWidth = state.width
@@ -33,6 +38,8 @@ export function renderDashboard(state: AppState): Row[] {
       style: root.root === state.currentRoot ? theme.ok : undefined,
     }
   })
+  // Last row = language toggle (SPEC 0011 follow-up): Enter cycles zh ⇄ en.
+  entries.push({ text: t(L, 'actLang'), hint: `${L} ⇄ ${nextUiLang(L)}`, style: undefined })
   const listHeight = Math.max(3, bodyHeight - 4)
   const listLines = listBox(left - 4, entries, clamp(state.focusRoot, entries.length)).map((row) => ({
     text: row.map((s) => s.text).join(''),
@@ -68,12 +75,24 @@ function clamp(index: number, length: number): number {
   return length <= 0 ? 0 : Math.min(index, length - 1)
 }
 
-/** Dashboard keys: ↑↓ focus, Enter select root, p ping focused seeded root. */
+/** Dashboard keys: ↑↓ focus (hosts + language row), Enter select/toggle,
+ * p ping focused seeded root. */
 export function dashboardKey(state: AppState, ev: { name: string; ch?: string; ctrl?: boolean }): { patch: Partial<AppState>; effects: Effect[] } {
   const roots = visibleRoots(state)
-  if (ev.name === 'up' || ev.ch === 'k') return { patch: { focusRoot: moveCursor(state.focusRoot, -1, roots.length) }, effects: [] }
-  if (ev.name === 'down' || ev.ch === 'j') return { patch: { focusRoot: moveCursor(state.focusRoot, 1, roots.length) }, effects: [] }
-  const focused = roots[clamp(state.focusRoot, roots.length)]
+  // Host cards plus the trailing language-toggle row (SPEC 0011 follow-up).
+  const rows = roots.length + 1
+  if (ev.name === 'up' || ev.ch === 'k') return { patch: { focusRoot: moveCursor(state.focusRoot, -1, rows) }, effects: [] }
+  if (ev.name === 'down' || ev.ch === 'j') return { patch: { focusRoot: moveCursor(state.focusRoot, 1, rows) }, effects: [] }
+  const index = clamp(state.focusRoot, rows)
+  if (index >= roots.length) {
+    // Language row: toggle through the same `set lang` seam (single source).
+    if (ev.name === 'enter' || ev.name === 'space') {
+      const next = nextUiLang(state.lang)
+      return { patch: {}, effects: [{ type: 'run', run: { kind: 'mgmt', argv: ['set', 'lang', next], label: `set lang ${next}`, busyKey: 'busyRefresh' } }] }
+    }
+    return { patch: {}, effects: [] }
+  }
+  const focused = roots[index]
   if (ev.name === 'enter' && focused?.seeded) {
     return { patch: { currentRoot: focused.root, notice: t(state.lang, 'noticeRoot', { root: focused.label }) }, effects: [{ type: 'refresh' }] }
   }

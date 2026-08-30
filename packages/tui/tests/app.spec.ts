@@ -289,6 +289,8 @@ describe('render', () => {
 })
 
 describe('dashboard keys', () => {
+  const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
+
   it('Enter selects the focused seeded root and refreshes', () => {
     const result = dashboardKey(state(), { name: 'enter' })
     expect(result.patch.currentRoot).toBe(root)
@@ -302,6 +304,20 @@ describe('dashboard keys', () => {
       type: 'run',
       run: { kind: 'mgmt', argv: ['guard', 'ping'], root },
     })
+  })
+
+  it('language row renders after the host cards and toggles via Enter (SPEC 0011 follow-up)', () => {
+    const plain = plainOf(render(state({ width: 100, height: 30 })))
+    expect(plain).toContain('界面语言')
+    expect(plain).toContain('zh ⇄ en')
+    // one host card + language row: one `down` lands on the language row
+    let s = state()
+    s = reduce(s, { type: 'key', key: key('down') }).state
+    const entered = reduce(s, { type: 'key', key: key('enter') })
+    expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'lang', 'en'] } })
+    // Enter on a host card still selects the root, not the language
+    const hostSelected = reduce(state(), { type: 'key', key: key('enter') }).state
+    expect(hostSelected.currentRoot).toBe(root)
   })
 })
 
@@ -456,7 +472,7 @@ describe('rendering regressions (SPEC 0011)', () => {
     const frame = render(state({ screen: 'set', width: 100, height: 30 }))
     const plainRows = frame.map((row) => rowToString(row, false))
     expect(plainRows.join('\n')).not.toContain('\x1b[')
-    expect(plainRows.join('\n')).toContain('界面语言')
+    expect(plainRows.join('\n')).toContain('密钥管理')
     expect(plainRows).toHaveLength(30)
   })
 
@@ -486,14 +502,14 @@ describe('rendering regressions (SPEC 0011)', () => {
 describe('set screen groups (SPEC 0011)', () => {
   const plainOf = (frame: ReturnType<typeof render>): string => frame.map((row) => row.map((s) => s.text).join('')).join('\n')
 
-  it('renders the four group titles in order with language under preferences, before maintenance', () => {
+  it('renders the four group titles in order; language is NOT a set action anymore', () => {
     const plain = plainOf(render(state({ screen: 'set', width: 100, height: 30 })))
     // The four titles are unique strings (action labels never contain them).
     const marks = ['密钥管理', 'API 端点', '偏好', '维护'].map((title) => plain.indexOf(title))
     expect(marks.every((index) => index >= 0)).toBe(true)
     expect([...marks].sort((a, b) => a - b)).toEqual(marks)
-    expect(plain.indexOf('界面语言')).toBeGreaterThan(marks[2]!)
-    expect(plain.indexOf('界面语言')).toBeLessThan(marks[3]!)
+    // Language moved to the dashboard (user feedback, SPEC 0011 follow-up).
+    expect(plain).not.toContain('界面语言')
   })
 
   it('cursor never rests on a group title: starts on the first action', () => {
@@ -501,12 +517,12 @@ describe('set screen groups (SPEC 0011)', () => {
     expect(plain).toContain('❯ 查看密钥')
   })
 
-  it('stepping down from API reset skips the preferences title onto language', () => {
+  it('stepping down from API reset skips the preferences title onto history', () => {
     let s = state({ screen: 'set', cursor: { set: 7 } }) // reset API (after title at 4, base 5, model 6)
     s = reduce(s, { type: 'key', key: key('down') }).state
-    expect(s.cursor.set).toBe(9) // language, not the group title at 8
+    expect(s.cursor.set).toBe(9) // history, not the group title at 8
     const entered = reduce(s, { type: 'key', key: key('enter') })
-    expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'lang', 'en'] } })
+    expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'history', 'on'] } })
   })
 
   it('stepping up from the first action wraps to the last (reload), skipping titles', () => {
