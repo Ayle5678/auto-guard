@@ -30,7 +30,7 @@
 
 1. hooks 条目 schema（是否 `{"matcher","hooks":[{"type","command","timeout"}]}` Claude 形态；type 是 command 还是 process；timeout 单位）。
 2. PreToolUse payload 字段与裁决协议（exit code？stdout JSON？`hookSpecificOutput`？）——在 `D:\Program Files\Qoder\resources\` 的 asar/已解包代码里 grep "PreToolUse"/"hookSpecificOutput"/"permissionDecision"，或 WebSearch 官方文档。
-3. **PermissionRequest / PermissionDenied 语义**：若 hook 能自动响应权限请求，则 Qoder 可能同样支持"守卫委托宿主权限系统"形态（同 ADR-0011 思路）。
+3. **PermissionRequest / PermissionDenied 语义**：若 hook 能自动响应权限请求，则 Qoder 可能同样支持"守卫委托宿主权限系统"形态（同 ADR-0015 思路）。
 4. 工具注册名（Bash/Read/Write/Edit 还是别名）。
 5. Windows 下 hook command 执行方式（shell？直接 spawn？）。
 6. IDE 版本与 hooks 最低版本要求。

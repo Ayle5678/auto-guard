@@ -1,5 +1,7 @@
 # opencode 经宿主权限评估接入：permission.ask 委托原生 ask，spawn node 进程隔离 bun
 
+> **编号勘误（2026-08-30）**：本决策原误编 0011，与「语言设置四层解析 + 每包消息目录」撞号，顺延为 **0015**；全仓引用已同步（README、docs/usage、.scratch/0004-host-claude-opencode、.scratch/0005）。
+
 > **实现期修订（2026-08-29，工单 03）**：对 opencode 1.18.19 编译产物与 v1.18.19 源码核实——`permission.ask` plugin hook **只有类型定义、宿主从不派发**（全部 `trigger()` 调用点枚举无此事件，同 [issue #7006](https://github.com/anomalyco/opencode/issues/7006)）。本决策的裁决语义全部保留，交付机制换为：插件 `event` hook 监听 `permission.asked` 总线事件（`"*.": "ask"` permission 规则使其触发）→ spawn `node hook-cli.js` 裁决 → `client.permission.reply` 答复（allow→once、deny→reject+理由、ask→不答复落 TUI）。`permission.ask` hook 实现保留为前向兼容。核实过程与 metadata 键名见 `.scratch/0004-host-claude-opencode/research/opencode-plugin-api.md` 实现期补核段。
 
 opencode 的守卫点不是工具分发前的进程 hook，而是宿主权限系统：安装器显式写入 permission 规则（bash/edit/read → `"*": "ask"`，插入各工具对象首位，用户既有规则在前故优先），守卫插件在宿主权限评估处运行完整裁决管线——allow/deny 直接答复，guard 自身 ask 不答复、落 opencode 原生 TUI（一次/本会话总是/拒绝）。用户在 TUI 选"本会话总是"后同模式调用经宿主放行、不再进守卫——与 zcode 委托宿主权限系统同性质，接受。插件本体跑在 opencode 的 bun 进程内，但每次裁决 spawn `node host-opencode/dist/hook-cli.js`，core 不进 bun 进程，与 claude/zcode 的进程 hook 形态完全同构。

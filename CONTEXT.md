@@ -16,6 +16,14 @@ _Avoid_: 集成层、driver、bridge
 一个宿主声明自己支持哪些交互特性（ask 风格、通知通道、用户命令拦截、UI 有无）的对象；核心据此调整行为，而不是 if 宿主名。
 _Avoid_: feature flags、兼容开关
 
+**宿主运行时（Host Runtime）**:
+hook 形态宿主（PreToolUse / permission.asked：stdin 读一次事件、裁决、emit 一次、退出）共享的适配运行时（`packages/host-runtime`）：打包 hook 管线、组合根接线、管理 CLI、输出序列化与语言目录，以宿主描述符为唯一输入。进程内宿主（Pi、DSH）不经它，仅复用其组合根 helper。
+_Avoid_: 适配器基类、宿主框架、shared（泛指时）
+
+**宿主描述符（Host Descriptor）**:
+一个 hook 宿主全部差异的纯数据声明：hostId、配置根目录、守卫工具名表、路径/内容字段拼写、会话与工作区 env 名、宿主能力值、出口序列化器槽。新 hook 宿主 = 写一个描述符文件，不改运行时代码。
+_Avoid_: 宿主 profile（那是安装器的检测/写入数据）、配置文件（那是用户侧的）
+
 **权限预设（Permission Preset）**:
 DSH 特有的会话级权限配置选择；选择 `auto-guard` 预设是 DSH 宿主的唯一启停开关。
 _Avoid_: 模式、开关（泛指时）

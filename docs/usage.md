@@ -200,7 +200,7 @@ auto-guard init --host claude --yes            # 重新写入即恢复
 #### opencode 宿主专属说明
 
 - **启动器修复**：npm 安装 opencode-ai 时若 postinstall 未执行，`opencode --version` 会报 "postinstall script was not run"。一行修复：`node <npm 全局目录>/node_modules/opencode-ai/postinstall.mjs`。检测以文件证据为主，启动器损坏不影响安装器。
-- **ask 体验**：守卫 ask 落 opencode 原生 TUI 三态——**一次 / 本会话总是 / 拒绝**。选「本会话总是」后，同模式调用经宿主放行、**不再进守卫**（ADR-0011 接受的宿主委托语义）；用户既有 permission allow 规则放行的调用同样不进守卫。
+- **ask 体验**：守卫 ask 落 opencode 原生 TUI 三态——**一次 / 本会话总是 / 拒绝**。选「本会话总是」后，同模式调用经宿主放行、**不再进守卫**（ADR-0015 接受的宿主委托语义）；用户既有 permission allow 规则放行的调用同样不进守卫。
 - **remove 保留项**：`auto-guard remove` 只撤 `plugin` 数组条目；permission 里插入的 `"*": "ask"` **保留**（无法区分归属）。彻底清理请手工删除各工具对象首位的该键。
 
 #### qoder 宿主专属说明
@@ -406,7 +406,8 @@ auto-guard remove --host zcode
 - [新宿主接入指南](new-host.md)：一条 profile + 一个适配层包（ADR-0008）
 - [CLI 指南](cli.md)：管理命令速查表（英文）
 - [ADR-0008](adr/0008-installer-profiles-explicit-and-reversible.md)：安装器设计决策
-- [ADR-0011](adr/0011-opencode-permission-ask-delegation.md)：opencode 权限系统委托（含 1.18.x 事件通道实现期修订）
+- [ADR-0015](adr/0015-opencode-permission-ask-delegation.md)：opencode 权限系统委托（含 1.18.x 事件通道实现期修订）
+- [ADR-0017](adr/0017-platform-support-windows-macos.md)：平台支持（Windows + macOS；跨平台代码纪律）
 
 ---
 

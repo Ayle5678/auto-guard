@@ -85,7 +85,7 @@ export function buildInitPlan(profile: HostProfile, options: PlanOptions): HostP
   let changed = false
   for (const op of action.ops) {
     if (op.kind === 'permission-ask-rules') {
-      // ADR-0011: "*" must land FIRST in each tool object (last matching
+      // ADR-0015: "*" must land FIRST in each tool object (last matching
       // rule wins, user rules after it keep priority). A non-object value
       // (global "allow"/"deny" string) is the user's own choice — never
       // overwritten, surfaced as a note instead.

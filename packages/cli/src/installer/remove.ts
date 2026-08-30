@@ -71,7 +71,7 @@ export function removeHost(profile: HostProfile, options: RemoveOptions): Remove
   let removed = 0
   for (const op of action.ops) {
     // permission-ask-rules ops are never reverted: the inserted "*": "ask"
-    // cannot be attributed to us once mixed with user rules (ADR-0011 docs).
+    // cannot be attributed to us once mixed with user rules (ADR-0015 docs).
     if (op.kind === 'permission-ask-rules') continue
     const arr = arrayAt(record, op.arrayPath, false)
     if (!arr) continue

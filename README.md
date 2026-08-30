@@ -9,7 +9,7 @@ One decision engine, six thin host adapters:
 - **`@auto-guard/host-pi`** — Pi Coding Agent extension (`tool_call` / `user_bash`, four-state ask).
 - **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin (one process per call, disk session state, decision history).
 - **`@auto-guard/host-claude`** — Claude Code PreToolUse hook adapter (settings.json hooks, NotebookEdit coverage, native confirmation box).
-- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md).
+- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0015](docs/adr/0011-opencode-permission-ask-delegation.md).
 - **`@auto-guard/host-qoder`** — Qoder (international IDE) PreToolUse hook adapter (Claude-compatible hook protocol, dual tool-naming mapping, native confirmation box).
 - **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
 - **`@auto-guard/tui`** — full-screen interactive management console (`auto-guard-tui`, SPEC 0009 / ADR-0014): zero-dep hand-rolled ANSI TUI covering the whole command surface — installer + guard/set/examine/optimize — plus a `:` command mode for anything the CLI can do. Built for hosts without a settings UI (zcode/claude/opencode/qoder/pi); dsh users welcome too. Every action runs through `runCli`/`runInstallerCommand` (single semantic source); non-TTY starts are refused (exit 2).
@@ -99,7 +99,7 @@ Each adapter only translates host events into `GuardRequest` and decisions back 
 | Packaging | dsh plugin (client.js + typert + cordis.patch.yml) | pi extensions (jiti runs TS directly) | plugin manifest + hooks.json + prebuilt dist | installer writes `~/.claude/settings.json` hooks (nothing else shipped) | installer appends `plugin` entry (dist dir) + permission rules | installer writes `~/.qoder/settings.json` hooks (nothing else shipped) |
 | Audit store | SQLCipher (full-db encryption) | SQLCipher (falls back to Light) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) | Light (node:sqlite + field-level AES-GCM) |
 
-Known coverage caveat (opencode, ADR-0011): your own permission rules that `allow` a pattern bypass the guard entirely, and picking **always** in the TUI adds such a rule for the session — the guard's coverage equals the host's ask surface.
+Known coverage caveat (opencode, ADR-0015): your own permission rules that `allow` a pattern bypass the guard entirely, and picking **always** in the TUI adds such a rule for the session — the guard's coverage equals the host's ask surface.
 
 ### `auto-guard` (packages/host-dsh) — DeepSeek Harness plugin
 
@@ -147,12 +147,12 @@ Known coverage caveat (opencode, ADR-0011): your own permission rules that `allo
 
 ### `@auto-guard/host-opencode` — OpenCode permission-system adapter
 
-- Integrates through opencode's permission system (ADR-0011): the installer writes `"*": "ask"` rules at the FIRST position of `bash` / `edit` / `read` under `permission` (object syntax is last-matching-rule-wins, so user rules keep priority), and appends the dist dir to `plugin`.
+- Integrates through opencode's permission system (ADR-0015): the installer writes `"*": "ask"` rules at the FIRST position of `bash` / `edit` / `read` under `permission` (object syntax is last-matching-rule-wins, so user rules keep priority), and appends the dist dir to `plugin`.
 - The plugin watches `permission.asked` events and spawns `node` per decision; the verdict maps allow→once, deny→reject, ask→no reply (native TUI handles once / always / reject).
 - Coverage caveat: permission rules that `allow` a pattern bypass the guard entirely — picking **always** in the TUI adds such a rule for the session; the guard's coverage equals the host's ask surface.
 - `auto-guard remove` keeps the inserted `"*": "ask"` rules (ownership cannot be distinguished) — delete them by hand for a fully clean uninstall.
 - **Semantic difference vs claude / zcode**: their PreToolUse hooks run outside the permission system, so full-access modes (bypassPermissions / full access) still get full-coverage review. OpenCode has no such channel — the guard lives **inside** the permission system, and the `"*": "ask"` rules are the guard's entry point. Do **not** change them to `allow`: no ask rules means no `permission.asked` events, and the guard goes blind (effectively uninstalled).
-- **Version anchor & maintenance stance**: this adapter was delivered against opencode 1.18.19 — at that version the `permission.ask` plugin hook had type definitions but was never dispatched by the host ([issue #7006](https://github.com/anomalyco/opencode/issues/7006); its implementation is kept for forward compatibility), and the actual channel, the `permission.asked` event, has an undocumented shape. **This project does not track newer opencode releases.** If an opencode upgrade breaks the guard (no review prompts / events stop firing), roll back or patch the adapter yourself. Forking it — or having an AI rework it against [ADR-0011](docs/adr/0011-opencode-permission-ask-delegation.md) and the [new-host guide](docs/new-host.md) — is explicitly welcome; the integration logic is small and concentrated in `src/plugin.ts`.
+- **Version anchor & maintenance stance**: this adapter was delivered against opencode 1.18.19 — at that version the `permission.ask` plugin hook had type definitions but was never dispatched by the host ([issue #7006](https://github.com/anomalyco/opencode/issues/7006); its implementation is kept for forward compatibility), and the actual channel, the `permission.asked` event, has an undocumented shape. **This project does not track newer opencode releases.** If an opencode upgrade breaks the guard (no review prompts / events stop firing), roll back or patch the adapter yourself. Forking it — or having an AI rework it against [ADR-0015](docs/adr/0011-opencode-permission-ask-delegation.md) and the [new-host guide](docs/new-host.md) — is explicitly welcome; the integration logic is small and concentrated in `src/plugin.ts`.
 
 ## Install
 

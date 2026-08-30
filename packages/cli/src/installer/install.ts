@@ -68,7 +68,7 @@ export function resolvePackagePaths(): PackagePaths {
       distSessionStart: join(dir('@auto-guard/host-claude'), 'dist', 'session-start.js'),
     },
     // opencode loads the plugin from the dist directory (index.js entry);
-    // the directory also carries hook-cli.js spawned per decision (ADR-0011).
+    // the directory also carries hook-cli.js spawned per decision (ADR-0015).
     opencode: { distPluginDir: join(dir('@auto-guard/host-opencode'), 'dist') },
     qoder: {
       distHookCli: join(dir('@auto-guard/host-qoder'), 'dist', 'hook-cli.js'),

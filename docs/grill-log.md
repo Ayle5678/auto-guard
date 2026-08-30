@@ -212,3 +212,35 @@
 **Q11（验收后追加）语言切换归位总览？**
 ➡️ 自答：是——用户验收 0011 后拍板「语言选择放在总览，不该在密钥页」。总览屏宿主卡列表**末行**加「界面语言」行（hint 显示 `zh ⇄ en`），光标移上 Enter/Space 切换；语义不变：仍经 `runCli` 执行 `set lang`（单一事实源），run-done 的 refresh 重载 roots 后界面语言按四层解析刷新。密钥屏偏好组只剩历史层；`l` 键保持全局切屏不可挪用，故不设专用快捷键（行 + Enter 即界面）。命令模式 `: set lang en` 不变。
 拒绝项：`l` 快捷键（已被全局切屏占用）；语言做成 header chip 交互（不可发现、无鼠标）。
+
+## Round 11 — 架构评审①：宿主运行时收敛 + qoder delete_file（2026-08-30，ADR-0016 / SPEC 0012 / SPEC 0013）
+
+> 起因：improve-codebase-architecture 全仓扫描产出四个 deepening 候选（①hook 宿主共享运行时 ②裁决管线显式化 ③TUI 屏幕接口统一 ④宿主清单单事实源），用户拍板「都可以做」，按推荐序先收敛 ①。本轮为**用户逐题拍板**（非自答），两轮 frontier + 事实查证收敛。②—④排队后续 grill。HTML 报告落临时目录（architecture-review-20260830-*.html）。
+
+**Q1 四份 hook 宿主拷贝收敛成什么形状？**
+➡️ 用户拍板：新包 `@auto-guard/host-runtime`，`createHookHost(宿主描述符)` 唯一入口（hookMain/sessionMain/cliMain/emit）；描述符八字段纯数据 + 出口序列化器槽 + 可选目录扩展，不加第七个槽；opencode 经序列化器槽加入（`{status,reason}` 契约，plugin.ts 留守）；语言层以 zcode 版为基底、三宿主补齐双语（中文兜底保证默认输出逐字节不变）；宿主包保留薄门面、安装器 profile 零改动（用户侧安装难度零变化）；pi/dsh 仅复用 `buildGuardDeps`（放 host-runtime 单独导出，放 core 会模糊 ADR-0002 的「core 只出 decide + 类型」）；SPEC 0013 五票迁移，逐字节 pin 留作迁移检查点、04 票删。理由锚点：拷贝税是事实——语言层只落 3/6 宿主、conformance 把 qoder≡claude 钉死逐字节相同等于把重复制度化；四宿主真实差异实测仅各 ~30–60 行数据。
+拒绝项：共享代码下沉 core（违反 ADR-0002）；连 pi/dsh 一起收编（进程内形态，seam 是 decide+注入件，为统一而统一）；安装器直指运行时、宿主包消失（已装用户全量迁移，零对价）。
+
+**Q2 dsh/pi/zcode 形态迥异，一个运行时罩得住吗？**
+➡️ 澄清：运行时只服务 **hook 形态**（stdin 读一次事件→裁决→emit→退出），四个 adapter 已坐在同一 seam 上；dsh/pi 是**进程内形态**，走 core 的 decide seam（ADR-0002 本就如此），只复用组合根 helper。不是一个运行时适配所有宿主，而是两形态两 seam——用户确认此边界。
+
+**Q3 qoder delete_file 怎么守卫——合成普通 `rm` 还是 `rm -rf` 两段式？**
+➡️ 用户选 A（普通 `rm "<path>"` 合成，单次 LLM 必审、永不静默放行、敏感路径降级、fail-closed）：两段式复核是 ADR-0012 为**递归目录删除**定制的纪律，单文件删除不匹配；B 使 qoder 比等价 bash `rm` 更严（制造跨宿主不一致，conformance 主张恰是等价）；`[删除理由]` 标记嵌命令字符串的协议在 path 字段上无处安放。递归能力未知数如实记录：证实可删目录则一行映射升级（`rm`→`rm -rf`，两段式自动生效）。要整体收紧删除纪律的正确杠杆是规则层（真 rm 与合成 rm 同时变严）。合成命令是本仓首个先例，独立成 SPEC 0012、先行合并，不混入 0013。
+拒绝项：B（上述三条）；顺手混进运行时迁移（首个合成先例应独立测试独立评审）。
+
+**Q4 README 承诺的 read/write 路径敏感审查是不是没做？**
+➡️ 查证结论（事实，非决策）：**已全部实现**——core `decideFile` 对 write/edit/read 统一只过敏感路径门禁（命中 ask、内容永不送 LLM、纯同步），六宿主守卫工具表全含 read 类工具；唯一未覆盖是 qoder `delete_file`（README 两语均已披露的 v1 限制），正是 Q3 处理的对象。无需额外补做。
+
+## Round 12 — 平台支持：macOS（2026-08-30，ADR-0017 / SPEC 0014）
+
+> 起因：用户问「代码多是针对 Windows，mac 用户能用吗」。子代理逐文件审计结论：产品代码跨平台纪律成立——全部 win32 分支均有 POSIX 回退（detect/integration/guard-service/command 四处），配置根全走 `homedir()+join`，安装器模板为**安装期**字面路径替换（`${…}` 是占位不是 shell 依赖），加密纯 node:crypto（无 DPAPI/注册表），TUI 纯 ANSI，原生依赖 optional + 可降级。四个疏漏：smoke-zcode 只设 USERPROFILE、`engines >= 20` 低于实际（TS 直跑 + node:sqlite + 原生依赖 ≥22）、docs 无 mac 章节、README「≥20 / zero external deps」双声明不准。
+
+**Q1 mac 支持到什么档位？**
+➡️ 用户拍板开 spec：**Windows + macOS 双平台，v1 = 修复已知疏漏 + 机会性真机验证**（不买 mac CI、不承诺全宿主矩阵）；验证结论回写前对外标注「代码审计通过、真机验证中」。Linux 不承诺也不禁止。
+拒绝项：Windows-only（跨平台纪律已在代码里成立，放弃无对价）；全面 mac CI 矩阵（宿主 mac 配置路径等事实未知，成本前置不理性）；静默 best-effort 不写文档（Node 20 用户必踩 engines 坑，文档必须诚实）。
+
+**Q2 平台纪律的检查点是什么？**
+➡️ 自答：win32 分支必有 POSIX 回退；路径只许 `homedir()+join`；安装器写值为安装期替换的字面路径；新增原生依赖必须 optional + 可降级——进 code-review 清单（ADR-0017 Consequences）。
+
+**Q3 engines 下限写多少？**
+➡️ 自答：候选 **22.18**（type stripping 默认开启与 `node:sqlite` 无标志取大；原生可选依赖 ≥22 已满足），由 SPEC 0014 工单 01 实测钉死（该版本真跑 init/ping/smoke），不拍脑袋写死在 ADR。

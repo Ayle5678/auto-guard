@@ -5,7 +5,7 @@
  * file to touch and the content templates — so adding a host usually means
  * adding a profile (plus its @auto-guard/host-* adapter), not installer
  * logic. The one exception so far is a host needing a new KIND of write
- * (opencode's permission rules, ADR-0011): op kinds are closed here, and a
+ * (opencode's permission rules, ADR-0015): op kinds are closed here, and a
  * new kind touches plan/integration/remove/validate together by design.
  * Templates are JSON strings with ${TOKEN} placeholders resolved against the
  * discovered @auto-guard/host-* package locations; the installer only ever
@@ -56,7 +56,7 @@ export interface ArrayAppendOp {
 
 /**
  * Insert `"*": "ask"` at the FIRST position of each tool object under
- * `permission` (ADR-0011): opencode's object syntax is last-matching-rule-
+ * `permission` (ADR-0015): opencode's object syntax is last-matching-rule-
  * wins, so our catch-all must precede user rules, which then take priority.
  * Existing `"*"` keys are left untouched (idempotent no-op); remove never
  * deletes them (ownership cannot be distinguished — documented behavior).

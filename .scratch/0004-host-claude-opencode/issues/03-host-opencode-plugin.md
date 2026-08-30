@@ -20,6 +20,6 @@ Acceptance:
 
 ## 实施期偏差说明（2026-08-29）
 
-- **机制修订（ADR-0011 修订）**：permission.ask hook 在 1.18.x 从不派发（编译产物核实，同 issue #7006 结论）；实际通道为 `event` hook 监听 `permission.asked` 总线事件 + `client.permission.reply`（allow→once / deny→reject+理由 / ask→不答复落 TUI）。permission.ask hook 实现保留作前向兼容。tool.execute.before 兜底不再需要（metadata 键名已核实：bash={command}、edit={filepath,diff}、read={} 路径在 patterns）。
+- **机制修订（ADR-0015 修订）**：permission.ask hook 在 1.18.x 从不派发（编译产物核实，同 issue #7006 结论）；实际通道为 `event` hook 监听 `permission.asked` 总线事件 + `client.permission.reply`（allow→once / deny→reject+理由 / ask→不答复落 TUI）。permission.ask hook 实现保留作前向兼容。tool.execute.before 兜底不再需要（metadata 键名已核实：bash={command}、edit={filepath,diff}、read={} 路径在 patterns）。
 - **类型引用**：未加 `@opencode-ai/plugin` devDependency，改为零依赖结构类型（`opencode-plugin-types.ts`，host-pi 的 pi-sdk.d.ts 先例）——避免为纯类型引入网络安装。
 - **node 绝对路径**：实际为 `AUTO_GUARD_NODE` 环境变量覆盖、缺省 PATH 解析 `node`（shell:false；Windows CreateProcess 自动补 .exe）；绝对路径无法跨机器硬编码，环境变量提供同等确定性。

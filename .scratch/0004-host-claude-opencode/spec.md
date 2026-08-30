@@ -24,7 +24,7 @@
 - 配置根：`~/.claude/auto-guard/`（ADR-0003 惯例，每宿主独立）。
 - **已知风险**：本机 cc-switch / clawd 曾把 settings.json 的 hooks 整体清掉（`settings.json.orig/.bak` 证据，现存三个清理备份）。v1 对策 = 文档警示 + init 完成后验证提示（提示用户运行 `guard ping` 确认 hook 活着），不做自动守护。
 
-### OpenCode（permission.ask 委托，见 ADR-0011）
+### OpenCode（permission.ask 委托，见 ADR-0015）
 
 - 集成点不是进程 hook 而是宿主权限系统：安装器往 `~/.config/opencode/opencode.json` 写 permission 规则（`bash`/`edit`/`read` → `"*": "ask"`），守卫插件在 `permission.ask` hook 中跑完整裁决管线。
 - ask 落点：guard 自身的 ask **不改写** `output.status`，落 opencode 原生 TUI（一次 / 本会话总是 / 拒绝）。用户选"本会话总是"后同模式调用经宿主放行、不再进守卫——与 zcode 委托宿主权限系统同性质，接受。
@@ -40,7 +40,7 @@
 - 两新宿主接入 conformance 等价性矩阵与 fail-closed 矩阵。
 - fail-closed 纪律：不可解析 payload → ask（claude）/ 宿主 ask（opencode）；守卫进程崩溃时 claude 侧 catch-all 输出 **ask 级**决策（原生确认框 = 人工闸门），opencode 侧插件 catch 后不 throw、不答复落原生 TUI（不得 throw——throw 会被宿主当作工具错误而非权限裁决）。〔实施期校正 2026-08-29：原文「deny 级」为笔误——deny 级会在守卫自身故障时硬阻断一切，且 claude 被定义为 zcode 镜像（zcode 先例即 ask）；行为以 ask 为准，fail-closed-ladder 测试钉死〕
 
-Design: ADR-0011（opencode permission.ask 委托与进程隔离）。
+Design: ADR-0015（opencode permission.ask 委托与进程隔离）。
 
 ## Issues
 

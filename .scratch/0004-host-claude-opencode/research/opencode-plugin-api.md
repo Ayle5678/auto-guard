@@ -1,12 +1,12 @@
 # research: OpenCode 插件与权限 API（2026-08-29 实测 + 官方文档；实现期补核 2026-08-29）
 
-本机状态与 API 事实，支撑 spec 0004 与 ADR-0011。来源：本机 `~/.config/opencode/node_modules/@opencode-ai/plugin@1.18.9` 类型定义、`@opencode-ai/sdk` 类型、全局包 opencode-ai@1.18.19、opencode.ai/docs。
+本机状态与 API 事实，支撑 spec 0004 与 ADR-0015。来源：本机 `~/.config/opencode/node_modules/@opencode-ai/plugin@1.18.9` 类型定义、`@opencode-ai/sdk` 类型、全局包 opencode-ai@1.18.19、opencode.ai/docs。
 
 ## 实现期补核（2026-08-29，工单 03 期间）
 
 - **`permission.ask` hook 在 1.18.19 从未触发**：对编译产物 `opencode-windows-x64/bin/opencode.exe`（179MB）做字符串枚举，全部 `trigger("…")` 调用点为：`shell.env`、`tool.execute.before/after`、`tool.definition`、`chat.*`、`command.execute.before`、`file.open`、`tab.new`、`experimental.*` —— **无 `permission.ask`**（源码 v1.18.19 tag 同样没有）。与 [issue #7006](https://github.com/anomalyco/opencode/issues/7006) 一致：类型定义有、宿主不派发。内嵌 README 列出 `permission.ask` 属文档性列表。
 - **实际可用的裁决通道**：插件 `event` hook 收到全部总线事件（编译产物确认：`V.event?.({event:{id,type,properties}})`），其中 `permission.asked` 事件属性为 V1 形态 `{id, sessionID, permission, patterns, metadata, always, tool:{messageID, callID}}`；`PluginInput.client` 是完整 SDK client，`client.permission.reply({requestID, reply:"once"|"always"|"reject", message?})` 可编程答复（v2 SDK `Permission.reply` 确认）。
-- **结论（ADR-0011 修订）**：守卫经 `event` hook 监听 `permission.asked`，spawn hook-cli 裁决后 allow→reply once、deny→reply reject（message=理由，作为 feedback 回给 agent）、ask→不答复落原生 TUI。`permission.ask` hook 实现保留作前向兼容（未来版本若开始派发即自动生效）。installer 仍写 `"*":"ask"` permission 规则——它是产生 `permission.asked` 事件与 TUI ask 面的来源。
+- **结论（ADR-0015 修订）**：守卫经 `event` hook 监听 `permission.asked`，spawn hook-cli 裁决后 allow→reply once、deny→reply reject（message=理由，作为 feedback 回给 agent）、ask→不答复落原生 TUI。`permission.ask` hook 实现保留作前向兼容（未来版本若开始派发即自动生效）。installer 仍写 `"*":"ask"` permission 规则——它是产生 `permission.asked` 事件与 TUI ask 面的来源。
 - **metadata 运行时键名（源码 dev 分支 tool 实现）**：bash → `{command}`（external_directory 变体另带 directories/patterns）；edit → `{filepath, diff}`（**小写 filepath**，绝对路径）；read → `{}`（**空**，路径在 patterns[0]，worktree 相对）。适配链：bash 取 metadata.command ?? patterns[0]；edit/read 取 metadata.filepath ?? join(worktree, patterns[0])。
 - 启动器已修复：`node C:/Users/Administrator/AppData/Roaming/npm/node_modules/opencode-ai/postinstall.mjs` 后 `opencode --version` → 1.18.19。
 
@@ -46,7 +46,7 @@ export type Permission = {
 - opencode.json `"permission"`：全局值或按工具对象；动作 `"allow" | "ask" | "deny"`。
 - 对象语法 `{"*": "ask", "git *": "allow"}`：`*` 匹零或多字符、`?` 恰一字符；**后者匹配者优先**（last matching rule wins）——auto-guard 的 `"*": "ask"` 必须插到对象首位。
 - 内置权限键：`read`、`edit`（覆盖 edit/write/patch）、`bash`、`glob`、`grep`、`task`、`skill`、`webfetch`、`websearch`、`external_directory`、`doom_loop` 等；默认大多 allow，`read` 自带 `.env` deny 规则。
-- TUI ask 三态：**once / reject / always**（always = 本会话内同模式放行，之后绕过守卫——ADR-0011 接受的宿主委托语义）。
+- TUI ask 三态：**once / reject / always**（always = 本会话内同模式放行，之后绕过守卫——ADR-0015 接受的宿主委托语义）。
 - 文档 permissions 页未提及 permission.ask hook 的触发时序（相对配置规则），实现期需真机核实：仅 ask 规则触发，还是 deny/allow 也触发。
 
 ## 插件注册（官方 docs/plugins）
