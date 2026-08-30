@@ -4,6 +4,8 @@
 
 面向 AI 编码 agent 的**命令审查安全网**。在宿主执行命令或读写文件之前，auto-guard 用分层静态规则、多级缓存、学习规则、审计历史与一次性 LLM 审查（默认 DeepSeek）给出 **allow / deny / ask** 裁决。它设计为叠在 full-access 模式之上：危险命令直接拦，常规命令毫秒级放行，只有真正拿不准的才交给 LLM 或人工。
 
+![auto-guard TUI 管理控制台（中文界面）](docs/images/tui-zh.png)
+
 ## 开发缘由
 
 - full-access 模式用着爽但心里没底。现有的 LLM 审批机制（Claude Code 的 auto mode、Codex 的 auto-review）每条命令都过一遍模型，又慢又费 token。

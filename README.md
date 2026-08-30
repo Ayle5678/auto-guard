@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 A **command-review safety net for AI coding agents**. Before the host executes a command or reads/writes a file, auto-guard decides **allow / deny / ask** using layered static rules, caches, learned rules, audit history and a one-shot LLM review (DeepSeek by default). It is meant to sit on top of full-access mode: dangerous commands are blocked, routine ones pass in milliseconds, and only genuinely uncertain cases reach the LLM or a human.
 
+![auto-guard TUI — full-screen management console (English UI)](docs/images/tui-en.png)
+
 ## Why
 
 - Full-access mode is productive but scary. Existing LLM-based approval mechanisms (Claude Code auto mode, Codex auto-review) send every command to a model, which is slow and expensive.
