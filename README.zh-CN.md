@@ -14,12 +14,19 @@
 
 ## 安装
 
-统一安装器三分钟上手（Node ≥ 22.18，实测下限；core 本体零运行时依赖——SQLCipher 审计库是可选原生依赖，缺失时自动降级）：
+auto-guard **没有发布到 npm**——本仓库是 private 的 pnpm workspace，包之间用 `workspace:*` 互相依赖（该协议只在 workspace 内可解析），所以 `npm i -g git+…` 也装不了。clone 本仓库后用 Node ≥ 22.18 直接跑 TypeScript 入口即可（core 本体零运行时依赖——SQLCipher 审计库是可选原生依赖，缺失时自动降级）。Windows 与 macOS 步骤完全一致：
 
 ```bash
-auto-guard init        # 检测本机宿主、复选框勾选、写入集成
-# …或非交互：auto-guard init --host pi,zcode --yes
+git clone https://github.com/Ayle5678/auto-guard.git
+cd auto-guard
+pnpm install
+pnpm build                                   # 产出 dist/——zcode/claude/opencode/qoder/codex 的 hooks 指向它
+node packages/cli/src/auto-guard.ts init     # 安装器：检测本机宿主、复选框勾选、写入集成
+node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
+# 非交互：node packages/cli/src/auto-guard.ts init --host pi,zcode --yes
 ```
+
+下文把 `node packages/cli/src/auto-guard.ts <命令>` 简写为 `auto-guard <命令>`（构建后也可用 `node packages/cli/dist/auto-guard.js`）。想把简写变成真正的全局命令，按 [CLI 指南](docs/cli.md) 软链入口脚本即可。
 
 > **平台支持**（[ADR-0017](docs/adr/0017-platform-support-windows-macos.md)）：Windows + macOS。macOS 已通过逐文件代码审计（2026-08-30），真机验证进行中——验证结论回写前不标「已验证」。Linux 不承诺也不禁止（同为 POSIX 路径与回退，未验证）。
 
@@ -204,10 +211,10 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 用 `--config-root` 选宿主（→ 环境变量 `AUTO_GUARD_CONFIG_ROOT` → 自动探测，见[配置](#配置)）：
 
 ```bash
-npx @auto-guard/cli guard status                                  # 多宿主状态总览
-npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # 指向单个宿主
-# 本仓库开发树（Node 22.18+ 可直跑 TS）：node packages/cli/src/auto-guard.ts <命令>
-# 或构建产物：pnpm build && node packages/cli/dist/auto-guard.js <命令>
+auto-guard guard status                                  # 多宿主状态总览
+auto-guard set set-key --config-root ~/.pi/auto-guard    # 指向单个宿主
+# `auto-guard` 即 node packages/cli/src/auto-guard.ts <命令>（Node 22.18+ 可直跑 TS）
+# 或构建产物：node packages/cli/dist/auto-guard.js <命令>
 ```
 
 ### 各宿主自带 CLI —— 构建期绑定配置根，免 flag
@@ -227,8 +234,8 @@ ZCode、Claude Code、OpenCode、Qoder 四个适配层还各自带一个 `dist/c
 
 两个带 UI 的宿主日常不需要终端：
 
-- **dsh**——开关就是权限选择器里的 `auto-guard` 预设（唯一开关）；配置走专属设置页（分组字段、key 打码、维护按钮：立即分析 / 查看规则 / 回滚 / 状态 / 清理审计 / 导出 / 新建审计库 / 统计），本地与 **Typert remote** 均可操作。命令行仍可管这个根的审计与学习：`npx @auto-guard/cli examine on --config-root ~/.dsh/auto-guard`（`guard on/off` 对 dsh 无效——开关只在预设）。
-- **pi**——命令面全在会话内：`/guard`（on/off/status/stats）、`/guard-set`（`set-key` 回显关闭向导 / show-key / clear-key / set-api / reload）、`/guard-examine`、`/guard-optimize`。终端等价写法：`npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard`。
+- **dsh**——开关就是权限选择器里的 `auto-guard` 预设（唯一开关）；配置走专属设置页（分组字段、key 打码、维护按钮：立即分析 / 查看规则 / 回滚 / 状态 / 清理审计 / 导出 / 新建审计库 / 统计），本地与 **Typert remote** 均可操作。命令行仍可管这个根的审计与学习：`auto-guard examine on --config-root ~/.dsh/auto-guard`（`guard on/off` 对 dsh 无效——开关只在预设）。
+- **pi**——命令面全在会话内：`/guard`（on/off/status/stats）、`/guard-set`（`set-key` 回显关闭向导 / show-key / clear-key / set-api / reload）、`/guard-examine`、`/guard-optimize`。终端等价写法：`auto-guard set set-key --config-root ~/.pi/auto-guard`。
 
 宿主特有的两点：
 

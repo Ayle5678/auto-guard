@@ -14,12 +14,19 @@ A **command-review safety net for AI coding agents**. Before the host executes a
 
 ## Install
 
-Three-minute quickstart with the unified installer (Node ≥ 22.18, measured floor; the core itself has zero runtime dependencies — the SQLCipher audit store is an optional native dependency that falls back automatically when absent):
+auto-guard is **not on npm** — the repo is a private pnpm workspace whose packages depend on each other via `workspace:*` (only resolvable inside the workspace), so `npm i -g git+…` cannot work either. Clone the repo and run the TypeScript entries directly with Node ≥ 22.18 (the core has zero runtime dependencies; the SQLCipher audit store is an optional native dependency that falls back automatically when absent). Windows and macOS work exactly the same:
 
 ```bash
-auto-guard init        # detects installed hosts, checkbox multi-select, writes integrations
-# … or non-interactive: auto-guard init --host pi,zcode --yes
+git clone https://github.com/Ayle5678/auto-guard.git
+cd auto-guard
+pnpm install
+pnpm build                                   # produces dist/ — the zcode/claude/opencode/qoder/codex hooks point at it
+node packages/cli/src/auto-guard.ts init     # installer: detects installed hosts, checkbox multi-select, writes integrations
+node packages/tui/src/tui.ts                 # the same command surface as a full-screen TUI
+# non-interactive: node packages/cli/src/auto-guard.ts init --host pi,zcode --yes
 ```
+
+Throughout this README, `auto-guard <command>` is shorthand for `node packages/cli/src/auto-guard.ts <command>` (or `node packages/cli/dist/auto-guard.js <command>` once built). To turn the shorthand into a real global command, symlink the entry scripts per the [CLI guide](docs/cli.md).
 
 > **Platform support** ([ADR-0017](docs/adr/0017-platform-support-windows-macos.md)): Windows + macOS. macOS passed the file-by-file code audit (2026-08-30); real-machine verification is in progress — this note upgrades to "verified" only once that concludes. Linux is neither promised nor forbidden (same POSIX paths and fallbacks, unverified).
 
@@ -207,10 +214,10 @@ One command surface everywhere: the installer (`init` / `list` / `remove`) plus 
 Pick the host with `--config-root` (→ `AUTO_GUARD_CONFIG_ROOT` env → auto-detect; see [Configuration](#configuration)):
 
 ```bash
-npx @auto-guard/cli guard status                                  # multi-host overview
-npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # target one host
-# in this repo (Node 22.18+ runs TS directly): node packages/cli/src/auto-guard.ts <command>
-# or the build output: pnpm build && node packages/cli/dist/auto-guard.js <command>
+auto-guard guard status                                  # multi-host overview
+auto-guard set set-key --config-root ~/.pi/auto-guard    # target one host
+# `auto-guard` = node packages/cli/src/auto-guard.ts <command>   (Node 22.18+ runs TS directly)
+# or, after pnpm build: node packages/cli/dist/auto-guard.js <command>
 ```
 
 ### Per-host CLI — pre-bound, no flag needed
@@ -230,8 +237,8 @@ Both entry points expose the same actions: `guard on|off|status|recent [n]|stats
 
 The two UI hosts never need a terminal:
 
-- **dsh** — the `auto-guard` permission preset toggles the guard (the only switch); the dedicated settings page (grouped fields, masked key, maintenance buttons: analyze now / view rules / rollback / status / trim audit / export / new audit DB / stats) configures it, locally or via **Typert remote**. The CLI still covers audit and learning against this root: `npx @auto-guard/cli examine on --config-root ~/.dsh/auto-guard` (`guard on/off` is a no-op here — the preset is the switch).
-- **pi** — the full surface lives in-session: `/guard` (on/off/status/stats), `/guard-set` (`set-key` echo-disabled wizard / show-key / clear-key / set-api / reload), `/guard-examine`, `/guard-optimize`. Terminal equivalent: `npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard`.
+- **dsh** — the `auto-guard` permission preset toggles the guard (the only switch); the dedicated settings page (grouped fields, masked key, maintenance buttons: analyze now / view rules / rollback / status / trim audit / export / new audit DB / stats) configures it, locally or via **Typert remote**. The CLI still covers audit and learning against this root: `auto-guard examine on --config-root ~/.dsh/auto-guard` (`guard on/off` is a no-op here — the preset is the switch).
+- **pi** — the full surface lives in-session: `/guard` (on/off/status/stats), `/guard-set` (`set-key` echo-disabled wizard / show-key / clear-key / set-api / reload), `/guard-examine`, `/guard-optimize`. Terminal equivalent: `auto-guard set set-key --config-root ~/.pi/auto-guard`.
 
 Two host-specific notes:
 
