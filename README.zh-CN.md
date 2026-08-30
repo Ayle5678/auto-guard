@@ -153,12 +153,14 @@
 
 ## 安装
 
-统一安装器三分钟上手（Node ≥ 20、零外部依赖）：
+统一安装器三分钟上手（Node ≥ 22.18，实测下限；core 本体零运行时依赖——SQLCipher 审计库是可选原生依赖，缺失时自动降级）：
 
 ```bash
 auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 # …或非交互：auto-guard init --host pi,zcode --yes
 ```
+
+> **平台支持**（[ADR-0017](docs/adr/0017-platform-support-windows-macos.md)）：Windows + macOS。macOS 已通过逐文件代码审计（2026-08-30），真机验证进行中——验证结论回写前不标「已验证」。Linux 不承诺也不禁止（同为 POSIX 路径与回退，未验证）。
 
 交互 `init` 先展示块状大字头图（tagline 双语），随后弹双语提问（请选择语言 / Select language——`1` 中文默认、`2` English）。选择立即落盘为机器默认（`~/.auto-guard/config.json`）——之后再跑 `init` 不再提问，`remove` 也保留该偏好。全产品双语（安装器、管理 CLI、引擎提示、宿主会话提示、LLM 裁决理由），统一四层解析：环境变量 `AUTO_GUARD_LANG` → 各宿主 `set lang <zh|en>` → 机器默认 → 中文兜底；`[删除理由]` 是协议标记，永远保持中文。
 
@@ -188,7 +190,7 @@ auto-guard init        # 检测本机宿主、复选框勾选、写入集成
 ```bash
 npx @auto-guard/cli guard status                                  # 多宿主状态总览
 npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # 指向单个宿主
-# 本仓库开发树（Node 23+ 可直跑 TS）：node packages/cli/src/auto-guard.ts <命令>
+# 本仓库开发树（Node 22.18+ 可直跑 TS）：node packages/cli/src/auto-guard.ts <命令>
 # 或构建产物：pnpm build && node packages/cli/dist/auto-guard.js <命令>
 ```
 

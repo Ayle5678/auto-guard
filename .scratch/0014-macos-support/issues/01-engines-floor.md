@@ -8,10 +8,12 @@ What to build:
 
 Blocked by: —
 
-Status: ready-for-agent
+Status: done（2026-08-30，darwin arm64 实测）
 
 Acceptance:
 
-- [ ] 钉死版本上 init / guard ping / smoke 各一例通过
-- [ ] 全包 engines 一致；README 双语声明与实际一致
-- [ ] `grep -r '"node": ">=20"' --include=package.json` 无残留
+- [x] 钉死版本上 init / guard ping / smoke 各一例通过——Node 22.18.0 实跑：`init --host zcode --yes` exit 0（hooks 写入 + `.auto-guard/config.json` 落盘）、`guard status` / `guard ping` 结构化输出（ping 按设计 fail-closed 报缺 key）、smoke-pi / smoke-dsh / smoke-zcode 全 PASS；反向验证：20.19.5 与 22.17.1 的 `init` 均 `ERR_UNKNOWN_FILE_EXTENSION .ts` 硬失败，22.18 即精确下限，与候选一致。`node:sqlite` 在 22.18 无标志可用（仅 ExperimentalWarning）
+- [x] 全包 engines 一致；README 双语声明与实际一致——root + 11 包 `engines.node` 同步 `>=22.18.0`；README.md:159 / README.zh-CN.md:156 改为「Node ≥ 22.18，实测下限；core 零运行时依赖 + SQLCipher 审计为可选原生依赖、缺失自动降级」
+- [x] `grep -r '"node": ">=20"' --include=package.json` 无残留（0 条）
+
+顺带对齐（同一事实的其余表述）：usage.md 三处「Node ≥ 20 / Node 23+」→ 22.18 口径；smoke-pi / smoke-dsh 的 "needs Node >= 23" 注释与 skip 文案 → 22.18。

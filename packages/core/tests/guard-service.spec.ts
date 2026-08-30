@@ -1326,6 +1326,12 @@ describe('GuardService: directory delete review flow', () => {
 })
 
 describe('GuardService: Remove-Item runtime directory detection', () => {
+  // `\` separates paths only on Windows; the runtime's stat-based target
+  // resolution mirrors the platform shell, so the relative targets below must
+  // use the native separator for the fixture directories to be found.
+  const relDirTarget = process.platform === 'win32' ? '.\\target-dir' : './target-dir'
+  const relFileTarget = process.platform === 'win32' ? '.\\target-file.txt' : './target-file.txt'
+
   it('routes a non-recursive Remove-Item targeting a directory into the directory delete flow', async () => {
     const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
     const ws = mkdtempSync(join(tmpdir(), 'pi-guard-rm-'))
@@ -1333,7 +1339,7 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       mkdirSync(join(ws, 'target-dir'))
       const { service, dir } = setup({ llm })
       try {
-        const d = await service.decide(shell('Remove-Item .\\target-dir', { workspace: ws }))
+        const d = await service.decide(shell(`Remove-Item ${relDirTarget}`, { workspace: ws }))
         expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
         expect(llm.calls).toHaveLength(0)
       } finally {
@@ -1351,7 +1357,7 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       mkdirSync(join(ws, 'target-dir'))
       const { service, dir } = setup({ llm })
       try {
-        const d = await service.decide(shell('Remove-Item -Force .\\target-dir', { workspace: ws }))
+        const d = await service.decide(shell(`Remove-Item -Force ${relDirTarget}`, { workspace: ws }))
         expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
         expect(llm.calls).toHaveLength(0)
       } finally {
@@ -1387,7 +1393,7 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       writeFileSync(join(ws, 'target-file.txt'), 'x')
       const { service, dir } = setup({ llm })
       try {
-        const d = await service.decide(shell('Remove-Item .\\target-file.txt', { workspace: ws }))
+        const d = await service.decide(shell(`Remove-Item ${relFileTarget}`, { workspace: ws }))
         expect(d).toMatchObject({ kind: 'allow', source: 'llm' })
       } finally {
         rmSync(dir, { recursive: true, force: true })

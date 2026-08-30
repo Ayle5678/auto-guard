@@ -1,6 +1,7 @@
 // End-to-end smoke: run the built ZCode PreToolUse hook against a fake
-// allow-listed payload inside an isolated USERPROFILE. Expects empty stdout
-// (allow = silent) and exit code 0.
+// allow-listed payload inside an isolated home (USERPROFILE + HOME both set —
+// mac/Linux resolve ~ via HOME). Expects empty stdout (allow = silent) and
+// exit code 0.
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,7 +22,7 @@ const payload = JSON.stringify({
   tool_input: { command: 'git status' },
 })
 
-const result = spawnSync(process.execPath, [hookCli], { input: payload, encoding: 'utf8', env: { ...process.env, USERPROFILE: home } })
+const result = spawnSync(process.execPath, [hookCli], { input: payload, encoding: 'utf8', env: { ...process.env, USERPROFILE: home, HOME: home } })
 const ok = result.status === 0 && result.stdout.trim() === ''
 console.log(`[smoke-zcode] exit=${result.status} stdout=${JSON.stringify(result.stdout.trim())} → ${ok ? 'PASS (allow silent)' : 'FAIL'}`)
 if (!ok) {

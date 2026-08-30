@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GUARDED_PERMISSION_TYPES, normalizeHookInput, payloadFromAsked, payloadFromSdkPermission, toGuardRequest } from '../src/opencode-adapter.ts'
 import type { PermissionAskedProperties } from '../src/opencode-plugin-types.ts'
 
-const WT = 'D:/work/demo'
+const WT = '/work/demo'
 
 function asked(overrides: Partial<PermissionAskedProperties> = {}): PermissionAskedProperties {
   return { id: 'perm_1', sessionID: 'ses_1', permission: 'bash', patterns: [], metadata: {}, ...overrides }
@@ -27,14 +27,14 @@ describe('payloadFromAsked', () => {
   })
 
   it('maps edit with metadata.filepath and diff as content', () => {
-    const payload = payloadFromAsked(asked({ permission: 'edit', metadata: { filepath: 'D:/w/a.ts', diff: '-old+new' } }), WT)
+    const payload = payloadFromAsked(asked({ permission: 'edit', metadata: { filepath: '/w/a.ts', diff: '-old+new' } }), WT)
     expect(payload?.tool_name).toBe('edit')
-    expect(payload?.tool_input).toEqual({ file_path: 'D:/w/a.ts', content: '-old+new' })
+    expect(payload?.tool_input).toEqual({ file_path: '/w/a.ts', content: '-old+new' })
   })
 
   it('resolves a worktree-relative pattern against the worktree for read (metadata is empty upstream)', () => {
     const payload = payloadFromAsked(asked({ permission: 'read', patterns: ['src/.env'] }), WT)
-    expect(String(payload?.tool_input.file_path).replaceAll('\\', '/')).toBe('D:/work/demo/src/.env')
+    expect(String(payload?.tool_input.file_path).replaceAll('\\', '/')).toBe('/work/demo/src/.env')
   })
 
   it('returns undefined for unguarded permission types', () => {
@@ -46,11 +46,19 @@ describe('payloadFromAsked', () => {
 describe('payloadFromSdkPermission', () => {
   it('maps the SDK Permission shape (permission.ask forward-compat path)', () => {
     const payload = payloadFromSdkPermission(
-      { id: 'p1', type: 'edit', pattern: ['a.ts'], sessionID: 's1', messageID: 'm1', title: 't', metadata: { filepath: 'D:/w/a.ts' } },
+      { id: 'p1', type: 'edit', pattern: ['a.ts'], sessionID: 's1', messageID: 'm1', title: 't', metadata: { filepath: '/w/a.ts' } },
       WT,
     )
     expect(payload?.tool_name).toBe('edit')
-    expect(payload?.tool_input.file_path).toBe('D:/w/a.ts')
+    expect(payload?.tool_input.file_path).toBe('/w/a.ts')
+  })
+
+  // Windows runner only: drive-letter paths are absolute under win32 path
+  // semantics (the host's real inputs there) and must pass through unjoined.
+  // (Leading semicolon: the previous `})` would otherwise be parsed as a call.)
+  ;(process.platform === 'win32' ? it : it.skip)('keeps a drive-letter absolute filepath verbatim (win32)', () => {
+    const payload = payloadFromAsked(asked({ permission: 'edit', metadata: { filepath: 'D:/w/a.ts', diff: '-old+new' } }), 'D:/work/demo')
+    expect(payload?.tool_input).toEqual({ file_path: 'D:/w/a.ts', content: '-old+new' })
   })
 
   it('accepts a string pattern', () => {
@@ -58,7 +66,7 @@ describe('payloadFromSdkPermission', () => {
       { id: 'p1', type: 'read', pattern: 'a.ts', sessionID: 's1', messageID: 'm1', title: 't', metadata: {} },
       WT,
     )
-    expect(String(payload?.tool_input.file_path).replaceAll('\\', '/')).toBe('D:/work/demo/a.ts')
+    expect(String(payload?.tool_input.file_path).replaceAll('\\', '/')).toBe('/work/demo/a.ts')
   })
 })
 
@@ -70,9 +78,9 @@ describe('toGuardRequest (hook CLI stdin side)', () => {
   })
 
   it('maps edit file paths with content', () => {
-    const result = toGuardRequest(normalizeHookInput({ tool_name: 'edit', tool_input: { file_path: 'D:/a.ts', content: 'x' } }))
+    const result = toGuardRequest(normalizeHookInput({ tool_name: 'edit', tool_input: { file_path: '/a.ts', content: 'x' } }))
     expect(result.kind).toBe('guardable')
-    if (result.kind === 'guardable') expect(result.request).toMatchObject({ tool: 'edit', filePath: 'D:/a.ts', content: 'x' })
+    if (result.kind === 'guardable') expect(result.request).toMatchObject({ tool: 'edit', filePath: '/a.ts', content: 'x' })
   })
 
   it('flags missing bash command as unreviewable (fail closed → TUI)', () => {

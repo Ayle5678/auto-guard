@@ -6,13 +6,13 @@ auto-guard 是缓存式自动命令审查工具（Cached Auto Command Review）�
 
 ## 1. 运行方式
 
-三种等价入口（Node ≥ 20，零外部依赖）：
+三种等价入口（Node ≥ 22.18，实测下限；core 零运行时依赖，SQLCipher 审计库为可选原生依赖、缺失自动降级）：
 
 ```bash
 # 1) npx（发布后）
 npx @auto-guard/cli <命令>
 
-# 2) 本仓库开发树（Node 23+ 可直跑 TS）
+# 2) 本仓库开发树（Node 22.18+ 可直跑 TS）
 node packages/cli/src/auto-guard.ts <命令>
 
 # 3) 构建产物
@@ -113,7 +113,7 @@ auto-guard init --host pi,zcode --yes
 
 - `--host` 逗号分隔，可用值 `dsh` `pi` `zcode` `claude` `opencode` `qoder`；写了未知值会报错并列出可用值。
 - `--yes` 跳过 diff 确认；**备份仍然强制执行**，不会被跳过。
-- `--lang <zh|en>` 指定输出语言（也接受 `zh-CN` / `en-US` 这类区域写法），或设环境变量 `AUTO_GUARD_LANG=en`。非交互场景不提问：未指定时依次看环境变量、机器默认（`~/.auto-guard/config.json`），都没有则沿用中文，保证既有管道 / CI 输出不变。`--lang` 同时会更新机器默认。
+- `--lang <zh|en>` 指定输出语言（也接受 `zh-CN` / `en-US` 这类区域写法），或设环境变量 `AUTO_GUARD_LANG`（POSIX：`export AUTO_GUARD_LANG=en`；PowerShell：`$env:AUTO_GUARD_LANG = "en"`）。非交互场景不提问：未指定时依次看环境变量、机器默认（`~/.auto-guard/config.json`），都没有则沿用中文，保证既有管道 / CI 输出不变。`--lang` 同时会更新机器默认。
 - 指定的宿主必须被检测到，否则退出码 2 并提示先安装宿主（安装器**从不代装宿主**）。检测是启发式，确认无误要强制接入时，用交互模式手动勾选并确认路径。
 - 典型输出：
 
@@ -420,7 +420,7 @@ auto-guard remove --host zcode
 ```bash
 # 本仓库开发树
 node packages/tui/dist/tui.js        # 先 pnpm build
-node packages/tui/src/tui.ts         # Node 23+ 免构建直跑
+node packages/tui/src/tui.ts         # Node 22.18+ 免构建直跑
 
 # 安装为 bin 后
 auto-guard-tui
@@ -439,4 +439,4 @@ auto-guard-tui
 - 双语界面，语言跟随四层解析（`AUTO_GUARD_LANG` > 当前根 `config.lang` > 机器默认 > zh）；`set lang` 即切即生效；
 - 键位（SPEC 0011）：`←→/hl` 切屏 · `↑↓/jk` 移动 · `Enter` 执行 · `Space` 勾选 · `PgUp/PgDn` 翻页（输出面板/帮助） · `Tab/Shift+Tab` 安装子页 · `1-8` 跳转 · `:` 命令 · `r` 刷新（重跑当前屏自动加载） · `g/G` 滚首/尾 · `q`/`Ctrl+C` 退出（自动恢复终端）。
 
-**限制**：需要真 TTY 与 VT 转义（Windows Terminal / Git Bash / ConEmu / mintty / 常见 SSH 都满足）；非 TTY 或 `TERM=dumb` 启动即拒绝（exit 2，提示改用 CLI）；未检测到的宿主不能在 TUI 里强装（CLI 的 `--host` 路径本身拒绝未检测宿主，fail-closed）。
+**限制**：需要真 TTY 与 VT 转义（macOS Terminal / iTerm2、Windows Terminal / Git Bash / ConEmu / mintty / 常见 SSH 都满足）；非 TTY 或 `TERM=dumb` 启动即拒绝（exit 2，提示改用 CLI）；未检测到的宿主不能在 TUI 里强装（CLI 的 `--host` 路径本身拒绝未检测宿主，fail-closed）。

@@ -156,12 +156,14 @@ Known coverage caveat (opencode, ADR-0015): your own permission rules that `allo
 
 ## Install
 
-Three-minute quickstart with the unified installer (Node ≥ 20, zero external deps):
+Three-minute quickstart with the unified installer (Node ≥ 22.18, measured floor; the core itself has zero runtime dependencies — the SQLCipher audit store is an optional native dependency that falls back automatically when absent):
 
 ```bash
 auto-guard init        # detects installed hosts, checkbox multi-select, writes integrations
 # … or non-interactive: auto-guard init --host pi,zcode --yes
 ```
+
+> **Platform support** ([ADR-0017](docs/adr/0017-platform-support-windows-macos.md)): Windows + macOS. macOS passed the file-by-file code audit (2026-08-30); real-machine verification is in progress — this note upgrades to "verified" only once that concludes. Linux is neither promised nor forbidden (same POSIX paths and fallbacks, unverified).
 
 Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English). The choice is persisted to the machine default (`~/.auto-guard/config.json`) immediately — later inits never re-ask and `remove` keeps it. The whole product is bilingual (installer, management CLI, engine messages, host-session prompts, LLM decision reasons); resolution everywhere: `AUTO_GUARD_LANG` env → per-host `set lang <zh|en>` → machine default → zh fallback. The `[删除理由]` marker is protocol and stays Chinese.
 
@@ -191,7 +193,7 @@ Pick the host with `--config-root` (→ `AUTO_GUARD_CONFIG_ROOT` env → auto-de
 ```bash
 npx @auto-guard/cli guard status                                  # multi-host overview
 npx @auto-guard/cli set set-key --config-root ~/.pi/auto-guard    # target one host
-# in this repo (Node 23+ runs TS directly): node packages/cli/src/auto-guard.ts <command>
+# in this repo (Node 22.18+ runs TS directly): node packages/cli/src/auto-guard.ts <command>
 # or the build output: pnpm build && node packages/cli/dist/auto-guard.js <command>
 ```
 

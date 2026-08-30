@@ -9,7 +9,7 @@
     "auto-guard-tui": "src/tui.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
   },
   "dependencies": {
     "@auto-guard/cli": "workspace:*",

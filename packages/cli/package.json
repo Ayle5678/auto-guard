@@ -21,7 +21,7 @@
     "auto-guard": "src/auto-guard.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
   },
   "dependencies": {
     "@auto-guard/core": "workspace:*",

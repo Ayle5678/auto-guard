@@ -13,6 +13,15 @@ Blocked by: —
 
 Status: ready-for-human
 
+## Comments
+
+### 2026-08-30 实施票 01–03 时顺带取得的 mac 数据点（darwin arm64，非人验结论）
+
+- **测试套件**：全仓 903 个测试首次在 mac 全量通过（此前仅在 Windows 跑过）；修了两类测试平台适配——core 的 Remove-Item 用例与 opencode / conformance 夹具的 `D:` 盘符路径（POSIX 上 `path.isAbsolute` 不认盘符，被 join 进 workspace；产品代码对两平台各自的真实输入均正确，属夹具问题）。
+- **原生依赖**：`better-sqlite3-multiple-ciphers@13` 在本机 darwin arm64 + Node 24 源码编译成功，`audit-sqlcipher.spec` 12 用例全过——但这是本机编译，**不等于 npm 有 darwin 预编译发布**（该问项仍需人验：npm 平台矩阵查询 + 无预编译时的 LightAuditStore 降级实测）。
+- **Node 下限**：22.18.0 / 22.17.1 / 20.19.5 三版本实测数据见票 01（对 TUI / 宿主项无人验影响，但完整链路 clone→install→build→init 已在本机走通，pnpm 需经 corepack）。
+- 未覆盖（仍需人 + GUI 实测）：Qoder / ZCode mac 配置位置、dsh / pi mac 安装可用性、claude / opencode PATH 检测命中、Claude Code hook shell 行为、Terminal.app / iTerm2 的 TUI 实测。
+
 Acceptance:
 
 - [ ] 六项各有结论回写 Comments（含证据：路径存在性截图/输出、版本号）

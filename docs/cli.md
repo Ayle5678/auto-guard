@@ -57,3 +57,19 @@ Set-Alias auto-guard "$env:USERPROFILE\.auto-guard\bin\auto-guard.cmd"
 ```
 
 or run via npx: `npx @auto-guard/cli guard status --config-root "$env:USERPROFILE\.zcode\auto-guard"`.
+
+## macOS (zsh / bash)
+
+Requires Node ≥ 22.18 on your PATH (`node --version` to check — the bin runs the TS source directly, no build step). From a clone of this repo, symlink both entries into `~/.local/bin`:
+
+```bash
+git clone <this repo> && cd auto-guard
+chmod +x packages/cli/src/auto-guard.ts packages/tui/src/tui.ts
+mkdir -p ~/.local/bin
+ln -s "$PWD/packages/cli/src/auto-guard.ts" ~/.local/bin/auto-guard
+ln -s "$PWD/packages/tui/src/tui.ts" ~/.local/bin/auto-guard-tui
+# ~/.local/bin must be on PATH (zsh is the macOS default shell):
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+or run via npx: `npx @auto-guard/cli guard status --config-root ~/.zcode/auto-guard`.

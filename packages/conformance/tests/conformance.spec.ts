@@ -296,7 +296,7 @@ describe('shared reviewer contract across hosts', () => {
 })
 
 describe('adapter translation equivalence: one logical call, six dialects (qoder twice — short + long names), one GuardRequest (ticket 05 / spec 0005)', () => {
-  const WS = 'D:/work/demo'
+  const WS = '/work/demo'
   const SES = 'ses_conf'
 
   it('bash git status translates identically on all adapters', () => {
@@ -333,19 +333,19 @@ describe('adapter translation equivalence: one logical call, six dialects (qoder
     }
   })
 
-  it('a sensitive .env write translates identically on all adapters', () => {    const expected: GuardRequest = { tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
-    const pi = piToGuardRequest({ tool: 'write', filePath: 'D:/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS })
-    const dsh = dshToGuardRequest({ name: 'write', arguments: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' }, signal: new AbortController().signal, agent: { session: { id: SES, header: { cwd: WS } } } })
-    const zcode = zcodeToGuardRequest(zcodeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
-    const claude = claudeToGuardRequest(claudeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
+  it('a sensitive .env write translates identically on all adapters', () => {    const expected: GuardRequest = { tool: 'write', filePath: '/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS }
+    const pi = piToGuardRequest({ tool: 'write', filePath: '/work/demo/.env', content: 'SECRET=1', session: SES, workspace: WS })
+    const dsh = dshToGuardRequest({ name: 'write', arguments: { file_path: '/work/demo/.env', content: 'SECRET=1' }, signal: new AbortController().signal, agent: { session: { id: SES, header: { cwd: WS } } } })
+    const zcode = zcodeToGuardRequest(zcodeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: '/work/demo/.env', content: 'SECRET=1' } }), WS)
+    const claude = claudeToGuardRequest(claudeNormalize({ session_id: SES, tool_name: 'Write', tool_input: { file_path: '/work/demo/.env', content: 'SECRET=1' } }), WS)
     const opencodePayload = payloadFromAsked(
-      { id: 'p2', sessionID: SES, permission: 'edit', patterns: ['.env'], metadata: { filepath: 'D:/work/demo/.env', diff: 'SECRET=1' } },
+      { id: 'p2', sessionID: SES, permission: 'edit', patterns: ['.env'], metadata: { filepath: '/work/demo/.env', diff: 'SECRET=1' } },
       WS,
     )!
     // opencode's edit permission covers the write path; the guard sees edit.
     const opencode = opencodeToGuardRequest(opencodeNormalize(JSON.parse(JSON.stringify(opencodePayload))), WS)
     // Qoder's long internal name for the write path must translate the same.
-    const qoder = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'create_file', tool_input: { file_path: 'D:/work/demo/.env', content: 'SECRET=1' } }), WS)
+    const qoder = qoderToGuardRequest(qoderNormalize({ session_id: SES, tool_name: 'create_file', tool_input: { file_path: '/work/demo/.env', content: 'SECRET=1' } }), WS)
     const asRequest = (r: unknown): GuardRequest => (r as { request?: GuardRequest }).request ?? (r as GuardRequest)
     expect(asRequest(pi)).toMatchObject({ ...expected, tool: 'write' })
     expect(asRequest(dsh)).toMatchObject(expected)

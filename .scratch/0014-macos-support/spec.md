@@ -18,9 +18,9 @@ Design: ADR-0017。无 CONTEXT.md 增补——平台矩阵是工程姿态不是�
 
 ## Issues
 
-- 01-engines-floor.md — engines 下限实测钉死 + README 双声明修正
-- 02-smoke-home-fix.md — smoke-zcode 补 HOME + 全脚本核对
-- 03-docs-macos.md — mac 安装文档 + 终端矩阵 + 支持状态标注
-- 04-real-mac-verification.md — 真机验证清单与回写（需人 + 一台 mac）
+- 01-engines-floor.md — engines 下限实测钉死 + README 双声明修正（done 2026-08-30：实测钉 `>=22.18.0`）
+- 02-smoke-home-fix.md — smoke-zcode 补 HOME + 全脚本核对（done 2026-08-30）
+- 03-docs-macos.md — mac 安装文档 + 终端矩阵 + 支持状态标注（done 2026-08-30）
+- 04-real-mac-verification.md — 真机验证清单与回写（需人 + 一台 mac；open——实施票顺带的 mac 数据点已记入其 Comments）
 
-Status: open
+Status: open（仅余 04 人验票）
