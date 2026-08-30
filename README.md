@@ -1,21 +1,8 @@
 # auto-guard
 
+English | [简体中文](README.zh-CN.md)
+
 A **command-review safety net for AI coding agents**. Before the host executes a command or reads/writes a file, auto-guard decides **allow / deny / ask** using layered static rules, caches, learned rules, audit history and a one-shot LLM review (DeepSeek by default). It is meant to sit on top of full-access mode: dangerous commands are blocked, routine ones pass in milliseconds, and only genuinely uncertain cases reach the LLM or a human.
-
-One decision engine, six thin host adapters:
-
-- **`@auto-guard/core`** — zero-host-dependency engine: decision pipeline, rules, caches, key hydration, audit, history, learned rules, management operations. Only Node built-ins (ADR-0002).
-- **`auto-guard` (packages/host-dsh)** — DeepSeek Harness plugin (`tools/pre-execute`, permission-preset switch, SQLCipher audit, settings UI + Typert remote).
-- **`@auto-guard/host-pi`** — Pi Coding Agent extension (`tool_call` / `user_bash`, four-state ask).
-- **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin (one process per call, disk session state, decision history).
-- **`@auto-guard/host-claude`** — Claude Code PreToolUse hook adapter (settings.json hooks, NotebookEdit coverage, native confirmation box).
-- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked`, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0015](docs/adr/0011-opencode-permission-ask-delegation.md).
-- **`@auto-guard/host-qoder`** — Qoder (international IDE) PreToolUse hook adapter (Claude-compatible hook protocol, dual tool-naming mapping, native confirmation box).
-- **`@auto-guard/host-codex`** — OpenAI Codex CLI hooks adapter (Claude-compatible `hooks.json` protocol, apply_patch patch-text path extraction; ask-class verdicts land as deny — codex discards the unsupported `"ask"` decision, SPEC 0015).
-- **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
-- **`@auto-guard/tui`** — full-screen interactive management console (`auto-guard-tui`, SPEC 0009 / ADR-0014): zero-dep hand-rolled ANSI TUI covering the whole command surface — installer + guard/set/examine/optimize — plus a `:` command mode for anything the CLI can do. Built for hosts without a settings UI (zcode/claude/opencode/qoder/codex/pi); dsh users welcome too. Every action runs through `runCli`/`runInstallerCommand` (single semantic source); non-TTY starts are refused (exit 2).
-
-All six hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
 
 ## Why
 
@@ -23,11 +10,42 @@ All six hosts run the same pipeline with the same defaults and the same rule fil
 - In practice most agent shell commands are safe, simple and highly repetitive. So the review prompt is minimal (no context payload), and anything already adjudicated is served from one of several caches. Measured over short-term daily use, **review cost stays around 1–4% of total spend** and keeps dropping as history accumulates.
 - Latency is dominated by the layers, not the LLM: whitelist and cache hits return without any model call, so the guard is effectively invisible.
 
+## Install
+
+Three-minute quickstart with the unified installer (Node ≥ 22.18, measured floor; the core itself has zero runtime dependencies — the SQLCipher audit store is an optional native dependency that falls back automatically when absent):
+
+```bash
+auto-guard init        # detects installed hosts, checkbox multi-select, writes integrations
+# … or non-interactive: auto-guard init --host pi,zcode --yes
+```
+
+> **Platform support** ([ADR-0017](docs/adr/0017-platform-support-windows-macos.md)): Windows + macOS. macOS passed the file-by-file code audit (2026-08-30); real-machine verification is in progress — this note upgrades to "verified" only once that concludes. Linux is neither promised nor forbidden (same POSIX paths and fallbacks, unverified).
+
+Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English). The choice is persisted to the machine default (`~/.auto-guard/config.json`) immediately — later inits never re-ask and `remove` keeps it. The whole product is bilingual (installer, management CLI, engine messages, host-session prompts, LLM decision reasons); resolution everywhere: `AUTO_GUARD_LANG` env → per-host `set lang <zh|en>` → machine default → zh fallback. The `[删除理由]` marker is protocol and stays Chinese.
+
+Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent (a block-letter banner with a top-to-bottom cyan→blue→violet gradient and an ANSI-Shadow-style double-line extrusion heads the run on interactive terminals; `NO_COLOR` degrades it to plain text). Start a new session in each installed host afterwards (ZCode / Claude Code / Qoder / Codex hooks have no hot reload) and check `auto-guard guard status`, which renders a status overview of every installed host. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
+
+> **⚠ Claude Code users**: tools like **cc-switch / clawd** rewrite `~/.claude/settings.json` wholesale and can wipe the hooks. If the guard goes silent, check that file first, then re-run `auto-guard init --host claude` to restore. Run `node <host-claude>/dist/cli.js guard ping` to verify the hook is alive.
+
+> **⚠ Codex users**: after installing, run `/hooks` once in Codex and trust the two auto-guard entries — untrusted hooks are skipped silently, so the guard looks enabled while doing nothing. Ask-class verdicts land as **denials**: Codex's hook protocol cannot surface a confirmation prompt yet (SPEC 0015).
+
+> **⚠ OpenCode users**: (1) if `opencode --version` reports "postinstall script was not run", fix with `node <global npm>/node_modules/opencode-ai/postinstall.mjs`; (2) `auto-guard remove` keeps the inserted `"*": "ask"` permission rules (ownership cannot be distinguished) — delete them by hand if you want a fully clean uninstall.
+
+Each host's native channel stays fully supported and coexists with the installer:
+
+- **ZCode**: install the plugin (manifest + hooks live in `packages/host-zcode`); `dist/` is prebuilt.
+- **Pi**: register the extension (`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`).
+- **DSH**: install the plugin (`packages/host-dsh`); the `auto-guard` permission preset turns the guard on.
+- **Claude Code / OpenCode / Qoder**: installer-only by design (settings.json merge / `plugin` entry + permission rules). Hermes was investigated and deferred — see `.scratch/0004-host-claude-opencode/research/`; the Qoder protocol deep-dive lives in `.scratch/0005-host-qoder/research/`.
+
+Adding a host means one profile plus one adapter package — no installer changes ([guide](docs/new-host.md)).
+
 ## Positioning
 
 - **Safety net, not a sandbox.** The guard does not restrict the filesystem; it adjudicates on top of full access and tries not to interrupt normal work. It is not an absolute security boundary — a prompt-injected LLM verdict is possible, which is why high-risk commands are never cached and sensitive file content is never sent for review.
 - **Fail-closed everywhere.** Reviewer timeout, missing API key, missing UI — every abnormal path lands on deny or human confirmation, never on silent allow. (An explicit user off-switch always wins; that is the one exception.)
 - **Keys never in the repo.** API keys resolve env var → encrypted store (AES-256-GCM, machine-bound) → legacy plaintext field (read-only, never rewritten).
+- **Bring your own cheap reviewer.** The review call is one minimal prompt (no context payload) to any OpenAI-compatible endpoint under a dedicated API key — point `apiBase` + `set-api` at a pay-as-you-go provider (DeepSeek, opencode Zen, …) with a small model, and review spend runs on its own meter: pay for what actually gets reviewed, and rule/cache verdicts cost nothing.
 
 ## Decision pipeline (shared by all hosts)
 
@@ -82,6 +100,21 @@ Each decision carries a source tag you can see in notifications: `[Allowlist]`, 
 - **Learned rules** — an offline deterministic analysis of the audit DB distills repeatedly-safe commands into cacheable templates (`learned-rules.json`, lowest priority, never static-allow; every write is backed up and rollbackable). Runs manually or automatically every 15 days; off by default.
 - **Guard stats** — in-session counters per layer (LLM calls, cache/rule/history hits). Memory only, reset each session.
 - **Audit store** — optional (off by default) local encrypted SQLite of shell-command verdicts: redacted before write, never records file tools or execution output. It is the data source for the history layer and rule learning.
+
+## One decision engine, seven thin host adapters
+
+- **`@auto-guard/core`** — zero-host-dependency engine: decision pipeline, rules, caches, key hydration, audit, history, learned rules, management operations. Only Node built-ins (ADR-0002).
+- **`auto-guard` (packages/host-dsh)** — DeepSeek Harness plugin (`tools/pre-execute`, permission-preset switch, SQLCipher audit, settings UI + Typert remote).
+- **`@auto-guard/host-pi`** — Pi Coding Agent extension (`tool_call` / `user_bash`, four-state ask).
+- **`@auto-guard/host-zcode`** — ZCode PreToolUse hook plugin (one process per call, disk session state, decision history).
+- **`@auto-guard/host-claude`** — Claude Code PreToolUse hook adapter (settings.json hooks, NotebookEdit coverage, native confirmation box).
+- **`@auto-guard/host-opencode`** — OpenCode permission-system adapter (plugin watches `permission.asked` events, spawns `node` per decision, native TUI ask; guard surface = host ask surface, not full coverage — see [adapter status](#auto-guardhost-opencode--opencode-permission-system-adapter)) — see [ADR-0015](docs/adr/0011-opencode-permission-ask-delegation.md).
+- **`@auto-guard/host-qoder`** — Qoder (international IDE) PreToolUse hook adapter (Claude-compatible hook protocol, dual tool-naming mapping, native confirmation box).
+- **`@auto-guard/host-codex`** — OpenAI Codex CLI hooks adapter (Claude-compatible `hooks.json` protocol, apply_patch patch-text path extraction; ask-class verdicts land as deny — codex discards the unsupported `"ask"` decision, SPEC 0015).
+- **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
+- **`@auto-guard/tui`** — full-screen interactive management console (`auto-guard-tui`, SPEC 0009 / ADR-0014): zero-dep hand-rolled ANSI TUI covering the whole command surface — installer + guard/set/examine/optimize — plus a `:` command mode for anything the CLI can do. Built for hosts without a settings UI (zcode/claude/opencode/qoder/codex/pi); dsh users welcome too. Every action runs through `runCli`/`runInstallerCommand` (single semantic source); non-TTY starts are refused (exit 2).
+
+All seven hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
 
 ## Host adapters
 
@@ -162,36 +195,6 @@ Known coverage caveat (opencode, ADR-0015): your own permission rules that `allo
 - **Ask lands as deny**: codex parses `permissionDecision:"ask"` but does not support it — the hook run is marked failed and the tool call **continues** (fail-open). The adapter therefore never emits `"ask"` (capability `headlessFallback: 'deny'`, the dsh precedent): ask-class verdicts reach the model as a deny whose reason explains the fallback and how to proceed (run manually / add to userConfirmed).
 - **Trust gate**: non-managed hooks must be trusted once via `/hooks` in the CLI before they run — untrusted hooks are skipped silently (the guard looks enabled but is not). The codex binary bundled inside ChatGPT.app (desktop) shares `~/.codex` and the same hook runtime, so the same hooks.json covers app sessions too; its in-app trust flow is not yet verified on a real machine.
 - Verified live against codex-cli 0.151.0 (2026-08-30): an apply_patch touching `.env` was blocked with the reason reaching the model, `git status` static-allowed silently, and both decisions landed in `~/.codex/auto-guard/decision-history.jsonl`.
-
-## Install
-
-Three-minute quickstart with the unified installer (Node ≥ 22.18, measured floor; the core itself has zero runtime dependencies — the SQLCipher audit store is an optional native dependency that falls back automatically when absent):
-
-```bash
-auto-guard init        # detects installed hosts, checkbox multi-select, writes integrations
-# … or non-interactive: auto-guard init --host pi,zcode --yes
-```
-
-> **Platform support** ([ADR-0017](docs/adr/0017-platform-support-windows-macos.md)): Windows + macOS. macOS passed the file-by-file code audit (2026-08-30); real-machine verification is in progress — this note upgrades to "verified" only once that concludes. Linux is neither promised nor forbidden (same POSIX paths and fallbacks, unverified).
-
-Interactive `init` leads with the block-letter banner (bilingual tagline) and a bilingual prompt (请选择语言 / Select language — `1` 中文, `2` English). The choice is persisted to the machine default (`~/.auto-guard/config.json`) immediately — later inits never re-ask and `remove` keeps it. The whole product is bilingual (installer, management CLI, engine messages, host-session prompts, LLM decision reasons); resolution everywhere: `AUTO_GUARD_LANG` env → per-host `set lang <zh|en>` → machine default → zh fallback. The `[删除理由]` marker is protocol and stays Chinese.
-
-Every write is shown as a diff first, backs the target up to `*.auto-guard.bak`, and is verified after writing — re-running `init` is idempotent (a block-letter banner with a top-to-bottom cyan→blue→violet gradient and an ANSI-Shadow-style double-line extrusion heads the run on interactive terminals; `NO_COLOR` degrades it to plain text). Start a new session in each installed host afterwards (ZCode / Claude Code / Qoder / Codex hooks have no hot reload) and check `auto-guard guard status`, which renders a status overview of every installed host. `auto-guard list` shows detection evidence and integration status; `auto-guard remove [--host …]` uninstalls (restores backups; your `~/.<host>/auto-guard/` data is kept). Details: [usage manual](docs/usage.md) · [CLI guide](docs/cli.md) · [troubleshooting](docs/troubleshooting.md).
-
-> **⚠ Claude Code users**: tools like **cc-switch / clawd** rewrite `~/.claude/settings.json` wholesale and can wipe the hooks. If the guard goes silent, check that file first, then re-run `auto-guard init --host claude` to restore. Run `node <host-claude>/dist/cli.js guard ping` to verify the hook is alive.
-
-> **⚠ Codex users**: after installing, run `/hooks` once in Codex and trust the two auto-guard entries — untrusted hooks are skipped silently, so the guard looks enabled while doing nothing. Ask-class verdicts land as **denials**: Codex's hook protocol cannot surface a confirmation prompt yet (SPEC 0015).
-
-> **⚠ OpenCode users**: (1) if `opencode --version` reports "postinstall script was not run", fix with `node <global npm>/node_modules/opencode-ai/postinstall.mjs`; (2) `auto-guard remove` keeps the inserted `"*": "ask"` permission rules (ownership cannot be distinguished) — delete them by hand if you want a fully clean uninstall.
-
-Each host's native channel stays fully supported and coexists with the installer:
-
-- **ZCode**: install the plugin (manifest + hooks live in `packages/host-zcode`); `dist/` is prebuilt.
-- **Pi**: register the extension (`packages/host-pi/package.json` → `"pi": {"extensions": ["./src/index.ts"]}`).
-- **DSH**: install the plugin (`packages/host-dsh`); the `auto-guard` permission preset turns the guard on.
-- **Claude Code / OpenCode / Qoder**: installer-only by design (settings.json merge / `plugin` entry + permission rules). Hermes was investigated and deferred — see `.scratch/0004-host-claude-opencode/research/`; the Qoder protocol deep-dive lives in `.scratch/0005-host-qoder/research/`.
-
-Adding a host means one profile plus one adapter package — no installer changes ([guide](docs/new-host.md)).
 
 ## Command-line operations
 
