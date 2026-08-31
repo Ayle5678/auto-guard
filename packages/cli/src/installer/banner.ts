@@ -55,11 +55,13 @@ function buildLetter(ch: string): Cell[][] {
       }
     }
   }
-  // 横钩边：下缘暴露 → 下一行 ══；接左侧笔画用 ╔，接上一格钩边用 ══，否则 ╚ 起头。盖掉同行竖钩边。
+  // 横钩边：下缘暴露 → 下一行 ══；接左侧笔画用 ╔，接上一格横向钩边用 ══，
+  // 左侧是竖向阴影（║/╗）或空处则 ╚ 起头（拐弯归拐弯，不与别笔的竖影连成横线）。盖掉同行竖钩边。
   for (let r = 0; r < GLYPH_H; r++) {
     for (let c = 0; c < W; c++) {
       if (solid(r, c) && !solid(r + 1, c)) {
-        const afterUnderside = grid[r + 1]![c - 1]?.kind === 'line'
+        const prev = grid[r + 1]![c - 1]
+        const afterUnderside = prev?.kind === 'line' && prev.chars[1] !== ' '
         const afterSolid = solid(r + 1, c - 1)
         grid[r + 1]![c] = { kind: 'line', chars: afterUnderside ? '══' : afterSolid ? '╔═' : '╚═' }
       }
