@@ -57,10 +57,10 @@ describe('config: loading', () => {
     expect(defaults.analyzeStatePath).toBe(join(dir, 'analyze-state.json'))
   })
 
-  it('defaults cache capacities to 100 session / 1000 persistent entries', () => {
+  it('defaults cache capacities to 300 session / 1000 persistent entries', () => {
     const dir = tmp()
     const defaults = defaultsFor(dir)
-    expect(defaults.sessionCacheSize).toBe(100)
+    expect(defaults.sessionCacheSize).toBe(300)
     expect(defaults.persistentCacheSize).toBe(1000)
   })
 

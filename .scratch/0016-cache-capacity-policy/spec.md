@@ -64,3 +64,7 @@ Status: done（2026-08-31 当日交付：4 工单全部完成，容量 100+1000�
 - 02-write-policy-history.md — core：历史层停写会话缓存 + 快速路径不写缓存不变量测试
 - 03-host-wiring.md — 宿主接线：host-dsh/host-pi/host-runtime 构造点传 persistentCacheSize + DSH 默认拷贝
 - 04-docs-sync.md — CONTEXT.md 词条 + README 双语配置表同步
+
+## Comments
+
+- 2026-08-31 追加（用户当日复核）：会话缓存默认 100 → **每会话 300 条**；内存实现（SessionLruCache）改为按会话分区——每个并发会话独享完整容量，Further Notes 中「进程内宿主多会话共享 100 条不做特殊处理」作废。新增闲置规则：**单会话缓存超过一天无新增写入即整体清除**（内存实现 sweepIdle；磁盘实现本就由 pruneSessions 的 24h 闲置剪枝覆盖，未改动）。持久缓存 TTL 不变：low 30 天 / medium 7 天 / high 永不入缓存。总预算表述从「1100」改为「1000 跨会话 + 每会话 300」。

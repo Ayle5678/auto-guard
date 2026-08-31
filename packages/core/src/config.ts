@@ -39,7 +39,7 @@ export function defaultGuardConfig(dir: string): GuardConfig {
     notifyAsk: 'context',
     fileTrackerDefault: 'ask',
     fileTrackerWindowSec: 5,
-    sessionCacheSize: 100,
+    sessionCacheSize: 300,
     persistentCacheSize: 1000,
     alwaysReviewCacheTtlMinutes: 30,
     examineEnabled: false,

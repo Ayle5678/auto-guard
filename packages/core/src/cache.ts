@@ -43,62 +43,120 @@ export interface SessionCacheLike {
   readonly size: number
 }
 
-/** In-memory LRU keyed by `session|workspace|commandShape`. */
+/** A session idle (no new writes) longer than this loses its whole partition — mirrors the disk model's pruneSessions window. */
+const SESSION_IDLE_TTL_MS = 24 * 60 * 60 * 1000
+
+/** One session's LRU partition plus the freshness clock used for idle eviction. */
+interface SessionPartition {
+  entries: Map<string, CacheEntry>
+  lastWriteAt: number
+}
+
+/**
+ * In-memory LRU keyed by `session|workspace|commandShape`, partitioned by
+ * session: every concurrent session gets its own full `maxSize` budget, so
+ * one busy session can never evict another's entries. Hook hosts reach the
+ * same guarantees structurally (one DiskSessionCache per session directory,
+ * pruned by pruneSessions). A partition untouched by writes for a day is
+ * dropped wholesale, so dead sessions cannot accumulate in a long-lived
+ * host process.
+ */
 export class SessionLruCache implements SessionCacheLike {
-  private readonly map = new Map<string, CacheEntry>()
+  private readonly sessions = new Map<string, SessionPartition>()
   private readonly maxSize: number
 
-  constructor(maxSize = 100) {
+  constructor(maxSize = 300) {
     this.maxSize = maxSize
   }
 
+  /** The session's own LRU; the leading `|`-separated key segment is the session id. */
+  private partitionOf(key: string): SessionPartition {
+    const session = sessionSegmentOf(key)
+    let partition = this.sessions.get(session)
+    if (!partition) {
+      partition = { entries: new Map(), lastWriteAt: now() }
+      this.sessions.set(session, partition)
+    }
+    return partition
+  }
+
+  /** Drop partitions with no new writes for over a day. Runs on every access; the session count is small. */
+  private sweepIdle(): void {
+    const t = now()
+    for (const [session, partition] of this.sessions) {
+      if (t - partition.lastWriteAt > SESSION_IDLE_TTL_MS) this.sessions.delete(session)
+    }
+  }
+
+  /** Lookup without creating a partition for unknown sessions. */
+  private peekPartition(key: string): SessionPartition | undefined {
+    return this.sessions.get(sessionSegmentOf(key))
+  }
+
   get(key: string): CacheEntry | undefined {
-    const entry = this.map.get(key)
-    if (!entry) return undefined
+    this.sweepIdle()
+    const session = sessionSegmentOf(key)
+    const partition = this.sessions.get(session)
+    const entry = partition?.entries.get(key)
+    if (!entry || !partition) return undefined
     if (entry.expiresAt <= now()) {
-      this.map.delete(key)
+      partition.entries.delete(key)
+      if (partition.entries.size === 0) this.sessions.delete(session)
       return undefined
     }
     // Re-insert to mark as most recently used.
-    this.map.delete(key)
-    this.map.set(key, entry)
+    partition.entries.delete(key)
+    partition.entries.set(key, entry)
     return entry
   }
 
   set(key: string, entry: CacheEntry): void {
-    this.map.delete(key)
-    this.map.set(key, entry)
-    while (this.map.size > this.maxSize) {
-      const oldest = this.map.keys().next().value
+    this.sweepIdle()
+    const partition = this.partitionOf(key)
+    partition.lastWriteAt = now()
+    partition.entries.delete(key)
+    partition.entries.set(key, entry)
+    while (partition.entries.size > this.maxSize) {
+      const oldest = partition.entries.keys().next().value
       if (oldest === undefined) break
-      this.map.delete(oldest)
+      partition.entries.delete(oldest)
     }
   }
 
   has(key: string): boolean {
-    return this.map.has(key)
+    this.sweepIdle()
+    return this.peekPartition(key)?.entries.has(key) ?? false
   }
 
   /** Drop one key (used to avoid caching high-risk/always-review commands). */
   delete(key: string): void {
-    this.map.delete(key)
+    const partition = this.peekPartition(key)
+    if (!partition) return
+    partition.entries.delete(key)
+    if (partition.entries.size === 0) this.sessions.delete(sessionSegmentOf(key))
   }
 
   /** Drop every entry belonging to one session. */
   clearSession(session: string): void {
-    const prefix = `${session}|`
-    for (const key of this.map.keys()) {
-      if (key.startsWith(prefix)) this.map.delete(key)
-    }
+    this.sessions.delete(session)
   }
 
   clear(): void {
-    this.map.clear()
+    this.sessions.clear()
   }
 
   get size(): number {
-    return this.map.size
+    this.sweepIdle()
+    let total = 0
+    for (const partition of this.sessions.values()) total += partition.entries.size
+    return total
   }
+}
+
+/** Leading key segment is the session; keys without one share a single partition (matches the disk implementation's opaque behavior). */
+function sessionSegmentOf(key: string): string {
+  const end = key.indexOf('|')
+  return end >= 0 ? key.slice(0, end) : '<shared>'
 }
 
 export interface PersistentCacheData {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -41,6 +41,65 @@ describe('SessionLruCache', () => {
     expect(cache.get('s1|w1|cmd')).toBeUndefined()
     expect(cache.get('s1|w2|cmd')).toBeUndefined()
     expect(cache.get('s2|w1|cmd')).toBeDefined()
+  })
+
+  it('gives every session its own full capacity so concurrent sessions never evict each other', () => {
+    const cache = new SessionLruCache(2)
+    for (const cmd of ['a', 'b']) cache.set(`s1|w|${cmd}`, { ...base, decision: 'allow' })
+    for (const cmd of ['a', 'b']) cache.set(`s2|w|${cmd}`, { ...base, decision: 'allow' })
+    // A shared LRU of 2 would have evicted s1's entries by now.
+    expect(cache.get('s1|w|a')).toBeDefined()
+    expect(cache.get('s1|w|b')).toBeDefined()
+    expect(cache.get('s2|w|a')).toBeDefined()
+    expect(cache.get('s2|w|b')).toBeDefined()
+    // Each partition still evicts within itself.
+    cache.set('s1|w|c', { ...base, decision: 'allow' })
+    expect(cache.get('s1|w|a')).toBeUndefined()
+    expect(cache.get('s2|w|a')).toBeDefined()
+  })
+
+  it('drops a whole session partition after a day without new writes', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+      const cache = new SessionLruCache(10)
+      cache.set('s1|w|cmd', { ...base, decision: 'allow' })
+      cache.set('s2|w|cmd', { ...base, decision: 'allow' })
+
+      // > 24h with no new writes in s1; s2 wrote again inside the window.
+      vi.setSystemTime(new Date('2026-01-01T12:00:00Z'))
+      cache.set('s2|w|cmd2', { ...base, decision: 'allow' })
+      vi.setSystemTime(new Date('2026-01-02T00:01:00Z'))
+
+      expect(cache.get('s1|w|cmd')).toBeUndefined()
+      expect(cache.get('s2|w|cmd')).toBeDefined()
+      expect(cache.has('s1|w|cmd')).toBe(false)
+      expect(cache.size).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a write refreshes the idle clock but a hit does not', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+      const cache = new SessionLruCache(10)
+      cache.set('s1|w|cmd', { ...base, decision: 'allow' })
+      cache.set('s2|w|cmd', { ...base, decision: 'allow' })
+
+      // 23h in: a write in s1 refreshes its clock, s2 only gets cache hits.
+      vi.setSystemTime(new Date('2026-01-01T23:00:00Z'))
+      cache.set('s1|w|cmd2', { ...base, decision: 'allow' })
+      expect(cache.get('s2|w|cmd')).toBeDefined()
+
+      // 25h after the original writes: s1 survived (fresh write 2h ago), s2 did not.
+      vi.setSystemTime(new Date('2026-01-02T01:00:00Z'))
+      expect(cache.get('s1|w|cmd')).toBeDefined()
+      expect(cache.get('s2|w|cmd')).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not return expired entries and deletes them on read', () => {
