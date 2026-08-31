@@ -4,3 +4,4 @@ dist/
 .vitest/
 *.auto-guard.bak
 .DS_Store
+.codegraph
