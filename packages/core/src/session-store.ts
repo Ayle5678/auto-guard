@@ -42,7 +42,7 @@ export class DiskSessionCache implements SessionCacheLike {
   private readonly path: string
   private readonly maxSize: number
 
-  constructor(dir: string, maxSize = 256) {
+  constructor(dir: string, maxSize = 100) {
     this.path = join(dir, 'cache.json')
     this.maxSize = maxSize
     this.hydrate()

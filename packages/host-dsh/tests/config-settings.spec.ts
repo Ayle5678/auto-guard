@@ -56,6 +56,11 @@ describe('config: new user-config fields', () => {
     expect(DEFAULT_CONFIG.learnedCacheableMinTotal).toBe(8)
     expect(DEFAULT_CONFIG.analyzeIntervalDays).toBe(15)
   })
+
+  it('defaults cache capacities to 100 session / 1000 persistent entries', () => {
+    expect(DEFAULT_CONFIG.sessionCacheSize).toBe(100)
+    expect(DEFAULT_CONFIG.persistentCacheSize).toBe(1000)
+  })
 })
 
 describe('config: DSH settings migration', () => {

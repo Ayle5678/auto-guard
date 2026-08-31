@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { buildSessionKey, buildWorkspaceKey, PersistentCache, SessionLruCache } from '../src/cache.ts'
 import { FileTracker } from '../src/file-tracker.ts'
 import { GuardService, prepareDeletionMarker } from '../src/guard-service.ts'
+import { TemplateCache } from '../src/template-cache.ts'
 import { memorySink } from '../src/persist-map.ts'
 import { loadRules } from '../src/rules.ts'
 import type { GuardConfig, GuardRequest, LlmReviewResult } from '../src/types.ts'
@@ -48,6 +49,7 @@ function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
     fileTrackerDefault: 'ask',
     fileTrackerWindowSec: 5,
     sessionCacheSize: 16,
+    persistentCacheSize: 1000,
     alwaysReviewCacheTtlMinutes: 30,
     examineEnabled: false,
     auditDbPath: '~/.pi/auto-guard/audit.db',
@@ -1542,5 +1544,79 @@ describe('GuardService: LLM JSON parsing', () => {
     const { parseReviewJson } = await import('../src/review-parse.ts')
     expect(parseReviewJson('not json')).toBeUndefined()
     expect(parseReviewJson('{"decision":"lol","risk":"low","reason":""}')).toBeUndefined()
+  })
+})
+
+describe('GuardService: cache write policy (spec 0016)', () => {
+  it('writes nothing to either cache for static-allow and user-confirmed hits', async () => {
+    const { service, sessionCache, persistentCache, dir } = setup()
+    try {
+      for (const cmd of ['ls', 'ls', 'git push', 'git push']) {
+        const d = await service.decide(shell(cmd))
+        expect(d.kind).toBe('allow')
+      }
+      expect(sessionCache.size).toBe(0)
+      expect(persistentCache.size).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('writes nothing to either cache for learned template hits', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-guard-svc-'))
+    try {
+      const config = makeConfig()
+      config.rulesPath = join(dir, 'rules.json')
+      config.defaultRulesPath = join(dir, 'defaults.json')
+      config.cachePath = join(dir, 'cache.json')
+      const sessionCache = new SessionLruCache(config.sessionCacheSize)
+      const persistentCache = new PersistentCache(config.cachePath)
+      const templateCache = new TemplateCache()
+      templateCache.setCacheablePatterns([{ pattern: 'python -m pytest * -q', reason: 'learned template' }])
+      // Seed the learned entry the way an earlier LLM allow would have.
+      templateCache.set('python -m pytest variant.py -q', {
+        decision: 'allow',
+        risk: 'low',
+        reason: 'learned allow',
+        cachedAt: Date.now(),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      })
+      const service = new GuardService({
+        config,
+        rules: loadRules(config.rulesPath, config.defaultRulesPath),
+        sessionCache,
+        persistentCache,
+        llmReviewer: new StubReviewer({ decision: 'allow', risk: 'low', reason: 'seems fine' }),
+        fileTracker: new FileTracker(config.fileTrackerWindowSec * 1000),
+        templateCache,
+      })
+
+      for (let i = 0; i < 2; i++) {
+        const d = await service.decide(shell('python -m pytest variant.py -q'))
+        expect(d).toMatchObject({ kind: 'allow', source: 'learned', cached: true })
+      }
+      expect(sessionCache.size).toBe(0)
+      expect(persistentCache.size).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('still writes session + persistent caches after an LLM allow of an unknown command, merged to one entry each', async () => {
+    const { service, sessionCache, persistentCache, dir } = setup()
+    try {
+      const d = await service.decide(shell('totally-unknown --flag x'))
+      expect(d).toMatchObject({ kind: 'allow', source: 'llm' })
+      expect(sessionCache.size).toBe(1)
+      expect(persistentCache.size).toBe(1)
+
+      const repeat = await service.decide(shell('totally-unknown --flag x'))
+      expect(repeat).toMatchObject({ kind: 'allow', source: 'session-cache', cached: true })
+      // Identical command merges: no second entry in either cache.
+      expect(sessionCache.size).toBe(1)
+      expect(persistentCache.size).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -43,6 +43,7 @@ function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
     fileTrackerDefault: 'ask',
     fileTrackerWindowSec: 5,
     sessionCacheSize: 16,
+    persistentCacheSize: 1000,
     alwaysReviewCacheTtlMinutes: 30,
     examineEnabled: true,
     auditDbPath: '~/.pi/auto-guard/audit.db',
@@ -68,7 +69,7 @@ function shell(command: string): GuardRequest {
 }
 
 describe('GuardService: history layer', () => {
-  it('serves a history hit before LLM and writes session cache', async () => {
+  it('serves every repeat from the history layer without writing session cache', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pi-guard-hist-svc-'))
     try {
       const dbPath = join(dir, 'audit.db')
@@ -108,10 +109,15 @@ describe('GuardService: history layer', () => {
       expect(first).toMatchObject({ kind: 'allow', source: 'history', risk: 'low' })
       expect(service.stats.historyHits).toBe(1)
       expect(llm.calls).toHaveLength(0)
+      // Spec 0016: history hits write no cache — slots stay for LLM-reviewed
+      // conclusions, and each repeat re-queries the local audit store.
+      expect(sessionCache.size).toBe(0)
+      expect(persistentCache.size).toBe(0)
 
       const second = await service.decide(shell('grep hello e.txt'))
-      expect(second).toMatchObject({ kind: 'allow', source: 'session-cache', cached: true })
-      expect(service.stats.historyHits).toBe(1)
+      expect(second).toMatchObject({ kind: 'allow', source: 'history', risk: 'low' })
+      expect(service.stats.historyHits).toBe(2)
+      expect(sessionCache.size).toBe(0)
       expect(llm.calls).toHaveLength(0)
 
       history.close()

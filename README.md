@@ -75,9 +75,10 @@ command (bash / pwsh)
                           safe; any uncertain leaf sends the whole pipeline to the LLM once
   → Static allowlist      default + user-confirmed rules; token-level guard scan for dangerous
     (+ user-confirmed)    flags (git branch -D, find -exec …); substitution/redirect never static
-  → Session cache         LRU keyed by session×workspace×command shape
+  → Session cache         LRU (100 entries by default), keyed by session×workspace×command shape
   → Persistent cache      cross-session, workspace-isolated, TTL by risk (low 30d / medium 7d /
-                          high never); LLM denies never enter
+                          high never); 1000-entry cap with least-recently-used eviction, identical
+                          commands merged into one entry; LLM denies never enter
   → Template cache        learned approvals match parameter variants (--days 7 ≈ --days 8)
   → History layer         recent low-risk allows of the same skeleton with zero denies → allow
   → LLM fallback          unknown commands; any failure fails closed
@@ -271,7 +272,8 @@ Single superset schema; every host seeds the same keys into its own config root 
 | `headlessMode` | `deny` | ask fallback without UI (pi/dsh capability layers) |
 | `notifyAllow` / `notifyDeny` / `notifyAsk` | `page` / `context` / `context` | routing per decision kind |
 | `lowRiskTtlDays` / `mediumRiskTtlDays` | `30` / `7` | persistent-cache TTL (high risk never cached) |
-| `sessionCacheSize` | `256` | LRU entries |
+| `sessionCacheSize` | `100` | session LRU entries |
+| `persistentCacheSize` | `1000` | cross-session persistent cache entries (LRU eviction at cap) |
 | `alwaysReviewCacheTtlMinutes` | `30` | short-lived session TTL for always-review allows |
 | `fileTrackerDefault` / `fileTrackerWindowSec` | `ask` / `5` | write-then-execute tracker |
 | `examineEnabled` | `false` | audit log (off by default) |

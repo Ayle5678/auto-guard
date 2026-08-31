@@ -27,6 +27,7 @@ function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
     fileTrackerDefault: 'ask',
     fileTrackerWindowSec: 5,
     sessionCacheSize: 256,
+    persistentCacheSize: 1000,
     alwaysReviewCacheTtlMinutes: 30,
     examineEnabled: false,
     auditDbPath: '~/.pi/auto-guard/audit.db',

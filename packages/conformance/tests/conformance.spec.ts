@@ -112,7 +112,7 @@ function bootstraps(): Bootstrap[] {
       rules,
       lang: lang0,
       sessionCache,
-      persistentCache: new PersistentCache(config.cachePath),
+      persistentCache: new PersistentCache(config.cachePath, config.persistentCacheSize),
       llmReviewer: reviewer,
       fileTracker: new FileTracker(config.fileTrackerWindowSec * 1000, state === 'disk' ? createTrackerStore(join(dir, 'sessions', 's0'), config.fileTrackerWindowSec * 1000) : undefined),
       historyStore: history,

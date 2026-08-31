@@ -954,7 +954,9 @@ export class GuardService {
     if (splitShellCommand(command).some((segment) => isHighRiskStateChangingCommand(segment))) return undefined
     const decision = this.historyStore.decide(command, this.config.historyMinTotal, this.config.historyMinLlm)
     if (!decision) return undefined
-    this.writeSessionCache(request, command, { kind: 'allow', risk: decision.risk, reason: decision.reason })
+    // History hits write no cache: the audit store already serves the repeat
+    // LLM-free, and session slots are reserved for LLM-reviewed conclusions
+    // (spec 0016 — only record what rules / learned rules / history miss).
     return decision
   }
 
