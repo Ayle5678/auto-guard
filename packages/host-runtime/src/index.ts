@@ -12,6 +12,7 @@ export type {
   OutcomeMeta,
   WireSerializer,
 } from './descriptor.ts'
+export { hasAskEscapeHatch } from './descriptor.ts'
 export { synthesizeShellCommand, parsePatchPaths } from './extraction.ts'
 export type { HookInput, GuardableExtraction, HostExtraction } from './extraction.ts'
 export { createExtraction } from './extraction.ts'

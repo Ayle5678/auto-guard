@@ -255,3 +255,16 @@
 ➡️ `ToolMapping.patchCommand` 纯数据槽 + `GuardRequest.paths` 可选多路径，core `decideFile` **遍历全路径**——文件工具唯一的守卫就是敏感路径门，只查首路径等于给补丁留后门。补丁文本缺失/零头部 → unreviewable（fail-closed）。内容纪律不变：decideFile 从不读内容。拒绝项：整个补丁当 bash 命令跑 shell 管线（补丁正文含 `;`/换行，复合拆分产出垃圾子命令）；把解析写进 codex 包（下一个补丁宿主得再抄一遍）。
 **Q3 集成通道选哪个？allow 要不要短路宿主审批？PermissionRequest 要不要接？**
 ➡️ **独立 `~/.codex/hooks.json`**（纯 array-append，ADR-0008 门槛内零安装器改动），不碰 TOML 内联层——避免合并告警，复用既有写入器。**allow = 静默**（与 zcode/claude 同位：守卫纯加法，不代替宿主审批；full-access 模式下 deny 是唯一安全网）。**PermissionRequest 不接（v1）**：PreToolUse deny 已覆盖全量访问模式，审批层短路是独立特性，值得独立 spec。信任门（`/hooks` 内容哈希制，未信任静默跳过）如实写进 postInstall 警示——「看似开启实则没跑」比失效更危险。桌面 App 与 CLI 共享 `~/.codex` 与同一 hook 运行时（已核对内置二进制），同一集成覆盖；App 内信任 UI 未实机验证，文档如实标注。
+
+## Round 14 — zcode ask 逃生舱：重开 Q11 的窄口径（2026-08-31，ADR-0019 / SPEC 0017）
+
+> 起因：用户实测反馈——zcode 宿主对守卫 ask 只渲染三按钮（同意 / 本会话都同意 / 拒绝），没有「本会话都拒绝」，也没有附理由说明需求的输入框。Q11 当时不补四态的前提是「宿主原生弹窗够用」，实测不成立，但弹窗本身仍不可扩展（严格 zod schema + 无 TTY 子进程）。
+
+**Q1 弹窗内能不能加第四个按钮 / 文本框？**
+➡️ 不能，方案不存在：出线协议只有 `permissionDecision` 三值 + reason 文本，hook 是无 TTY 子进程（`hasUI: false`）。可控面只有 reason 文案、会话缓存、守卫自有 CLI/TUI。拒绝项：往 stdout 塞未文档化字段赌宿主 schema（`wire.ts` 已核实会被整体丢弃）；hook 里画 TUI（无 TTY，且污染宿主终端）。
+**Q2 「本会话都拒绝」怎么落地？**
+➡️ ask 出线时旁路落盘 pending ask（键 = `rememberAsk` 写入键，同键 upsert 防宿主放行后重复污染），CLI `guard ask allow/deny [--reason]` 复用 `rememberAsk` 写会话缓存（`expiresAt = MAX_SAFE_INTEGER`，随会话 24h 剪枝，「本会话」保真）；deny 命中时用户 reason 进模型上下文。拒绝项：重复 ask 自动升级 deny（守卫看不见弹窗结果，无法区分「拒绝过」与「同意过一次」，误杀合法 once 流）；写 rules.json（跨会话语义 + 用户所有物，违背 ADR-0008/0013 显式性）；ask 整体改 deny（丢一键同意，净倒退）。
+**Q3 「附理由说明需求」怎么闭环？**
+➡️ 弹窗内永远不可能有输入框——真话是：对话本身就是输入框。守卫能做的是把闭环铺通：ask reason 文末提示出路（仅 native 宿主）；deny-session 的 reason 在后续命中时作为 `permissionDecisionReason` 进模型上下文，模型按理由调整而不是原样重试。补充（2026-08-31 查证后修订）：ZCode 官方 hook 文档核实 `additionalContext` 注入对话、可与 PreToolUse permission decision 共存——ask 出线时预注射模型指引（拒绝后按理由调整不重试 / 本会话拒绝可走 `guard ask deny --reason`），把它从「未核实收益不实」升级为决策 4（ADR-0019）；它仍是守卫→模型通道，替代不了用户输入。拒绝项：把它当输入框用（方向反了，用户无法借此打字）。
+**Q4 Q11 算不算被推翻？**
+➡️ 窄口径重开：四态记忆给 zcode 补上（弹窗外的守卫自有通道），但「ask 委托宿主原生弹窗」的出线方式不变、能力声明不变——Q11 反对的「为统一而统一改弹窗内体验」仍然成立。pi/codex 行为零变化（落盘与文案门控 `askStyle === 'native'`）。

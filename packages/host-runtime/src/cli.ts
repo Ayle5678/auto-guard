@@ -15,13 +15,17 @@
  * Usage: node dist/cli.js <group> <action> [args]
  */
 import { createInterface } from 'node:readline'
+import { join } from 'node:path'
 import {
   analysisIntervalMs,
   clearApiKey,
   createAuditStore,
   DeepSeekReviewer,
+  deletePendingAsk,
+  DiskSessionCache,
   hasStoredApiKey,
   hydrateApiKey,
+  listPendingAsks,
   loadAnalyzeState,
   loadAuditPassword,
   loadApiKey,
@@ -30,6 +34,8 @@ import {
   maskKey,
   resolveProcessLang,
   saveApiKey,
+  sessionMemoryEntry,
+  truncateOneLine,
   analyzeLearnedRules,
   applyHistoryToggle,
   applySetApi,
@@ -103,6 +109,8 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
         space.saveConfig(config)
         return 0
       }
+      case 'ask':
+        return askCommand(rest, config, lang)
       case 'status': {
         print(statusLines(config, kit.readStatus(), `${space.autoGuardDir}/config.json`, undefined, lang).join('\n'))
         return 0
@@ -150,6 +158,82 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
         print(message(lang, 'guardUsage'))
         return 1
     }
+  }
+
+  /**
+   * `guard ask` — the ADR-0019 escape hatch: resolve the pending asks the hook
+   * recorded into the session cache, so the SAME command stops asking for the
+   * rest of the session. deny's reason travels to the model on every repeat.
+   */
+  function askCommand(rest: readonly string[], config: ReturnType<HostConfigSpace['loadConfig']>, lang: Lang): number {
+    const sub = rest[0] ?? 'list'
+    const sessionsDir = join(space.autoGuardDir, 'sessions')
+    if (sub === 'list') {
+      const entries = listPendingAsks(sessionsDir)
+      if (!entries.length) {
+        print(message(lang, 'askListEmpty'))
+        return 0
+      }
+      const rows = entries.map((entry, index) =>
+        message(lang, 'askRow', {
+          index: index + 1,
+          time: localTimestamp(entry.record.askedAt),
+          command: truncateOneLine(entry.record.command, 80),
+          risk: entry.record.risk ?? '-',
+          workspace: truncateOneLine(entry.record.workspace ?? '-', 40),
+        }),
+      )
+      print([message(lang, 'askListHeader', { count: entries.length }), ...rows].join('\n'))
+      return 0
+    }
+    if (sub === 'allow' || sub === 'deny') {
+      const value = rest[1]
+      const index = Number(value)
+      if (!Number.isInteger(index) || index < 1) {
+        print(message(lang, 'askInvalidIndex', { value: value ?? '' }))
+        return 1
+      }
+      const entries = listPendingAsks(sessionsDir)
+      const entry = entries[index - 1]
+      if (!entry) {
+        print(message(lang, 'askStaleIndex', { index }))
+        return 2
+      }
+      const reason = sub === 'deny' ? reasonFrom(rest) : undefined
+      const dir = join(sessionsDir, entry.dirName)
+      // The exact entry a pi four-state choice writes: alive until session end.
+      new DiskSessionCache(dir, config.sessionCacheSize).set(entry.record.key, sessionMemoryEntry(sub === 'allow' ? 'allow' : 'deny', reason))
+      deletePendingAsk(dir, entry.record.key)
+      if (sub === 'allow') {
+        print(message(lang, 'askResolvedAllow', { command: truncateOneLine(entry.record.command, 80) }))
+      } else if (reason) {
+        print(message(lang, 'askResolvedDenyWithReason', { command: truncateOneLine(entry.record.command, 80), reason }))
+      } else {
+        print(message(lang, 'askResolvedDeny', { command: truncateOneLine(entry.record.command, 80) }))
+      }
+      return 0
+    }
+    print(message(lang, 'askUsage'))
+    return 1
+  }
+
+  /** `--reason <text>` (everything after the flag, joined); absent/empty → undefined. */
+  function reasonFrom(rest: readonly string[]): string | undefined {
+    const flag = rest.indexOf('--reason')
+    if (flag < 0) return undefined
+    return (
+      rest
+        .slice(flag + 1)
+        .join(' ')
+        .trim() || undefined
+    )
+  }
+
+  /** Local `MM-DD HH:MM:SS` — pending asks live at most a day, but midnight exists. */
+  function localTimestamp(t: number): string {
+    const d = new Date(t)
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   }
 
   function setCommand(action: string, rest: readonly string[]): number | Promise<number> {

@@ -163,8 +163,8 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 
 ### `@auto-guard/host-zcode` — ZCode PreToolUse hook 插件
 
-- 一次调用一个进程：全部会话态（会话缓存、写后执行追踪、待决删除复核、待决 deny）落盘在 `~/.zcode/auto-guard/sessions/<sid>/`，一次性进程模型不丢任何状态。
-- 裁决经 stdout JSON `permissionDecision` 返回；allow = 静默。ask **委托 ZCode 原生权限确认框**，守卫不自建 UI。缺 API key 时 fail-closed：非白名单命令拒绝，其余照常工作。
+- 一次调用一个进程：全部会话态（会话缓存、写后执行追踪、待决删除复核、待决 deny、待裁决 ask）落盘在 `~/.zcode/auto-guard/sessions/<sid>/`，一次性进程模型不丢任何状态。
+- 裁决经 stdout JSON `permissionDecision` 返回；allow = 静默。ask **委托 ZCode 原生权限确认框**，守卫不自建 UI。原生确认框只有三个按钮——「本会话都拒绝」与附理由由 ask 逃生舱补齐：守卫落盘待裁决项，`guard ask deny <序号> --reason` 写入会话记忆（理由送达模型上下文）；ask 时并经 `additionalContext` 预告知模型出路。缺 API key 时 fail-closed：非白名单命令拒绝，其余照常工作。
 - 定位：客户端在权限模式检查之前运行 PreToolUse hook，且 hook deny 无条件拦截——权限下拉仍管原生提示，auto-guard 在它之前独立裁决。
 - 无推送通知通道，反馈是**拉式决策历史**：环形 JSONL 记录最近裁决及命中详情，用 `guard recent` 查看。
 - slash 命令（`/guard`、`/guard-examine` 等）是 `commands/*.md`，教模型调用自带 CLI；API key 只接受真实终端里回显禁用的 `set-key` 输入，AES-256-GCM 存 `api-key.json`——绝不作为 CLI 参数或聊天输入出现。

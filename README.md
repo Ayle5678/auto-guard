@@ -168,8 +168,8 @@ Known coverage caveat (opencode, ADR-0015): your own permission rules that `allo
 
 ### `@auto-guard/host-zcode` — ZCode PreToolUse hook plugin
 
-- One process per tool call: all session state (session cache, write-then-execute tracking, pending delete reviews, pending denies) lives on disk under `~/.zcode/auto-guard/sessions/<sid>/`, so the one-shot process model loses nothing.
-- Verdict returns as stdout JSON `permissionDecision`; allow is silence. Ask is **delegated to ZCode's native permission prompt** — the guard builds no UI of its own. Without an API key it fails closed: non-whitelisted commands are denied, everything else keeps working.
+- One process per tool call: all session state (session cache, write-then-execute tracking, pending delete reviews, pending denies, pending asks) lives on disk under `~/.zcode/auto-guard/sessions/<sid>/`, so the one-shot process model loses nothing.
+- Verdict returns as stdout JSON `permissionDecision`; allow is silence. Ask is **delegated to ZCode's native permission prompt** — the guard builds no UI of its own. The native prompt has only three buttons, so "deny for this session" and reason input ride the ask escape hatch instead: the guard records pending asks, and `guard ask deny <index> --reason` writes session memory (the reason reaches the model context); on every ask the guard also briefs the model via `additionalContext`. Without an API key it fails closed: non-whitelisted commands are denied, everything else keeps working.
 - Positioning: the client runs PreToolUse hooks ahead of permission-mode checks and a hook deny blocks unconditionally — the permission dropdown still controls native prompting, auto-guard adjudicates independently before it.
 - No push notification channel, so feedback is **pull-based decision history**: a ring-buffer JSONL of recent verdicts with hit details, read via `guard recent`.
 - Slash commands (`/guard`, `/guard-examine`, …) are `commands/*.md` files that teach the model to call the bundled CLI; API keys are accepted only through `set-key` in a real terminal with echo disabled, stored AES-256-GCM in `api-key.json` — never as CLI arguments or chat input.

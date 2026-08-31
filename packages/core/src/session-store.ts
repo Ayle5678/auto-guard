@@ -11,6 +11,7 @@
  *   sessions/<sid-hash>/tracker.json          — FileTracker write timestamps
  *   sessions/<sid-hash>/pending-deletes.json  — directory-delete first denials
  *   sessions/<sid-hash>/pending-denies.json   — LLM denies awaiting re-ask
+ *   sessions/<sid-hash>/pending-asks.json     — asks awaiting a `guard ask` resolution (ADR-0019)
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -157,6 +158,70 @@ export function createPendingSinks(dir: string): PendingSinks {
     directoryDeletes: sinkFor(dir, 'pending-deletes.json'),
     denies: sinkFor(dir, 'pending-denies.json'),
   }
+}
+
+/**
+ * One ask awaiting a `guard ask` resolution (ADR-0019). The hook records it
+ * as a pure side note on every ask; the management CLI resolves it into the
+ * session cache (the same entry a pi four-state choice would have written).
+ */
+export interface PendingAskRecord {
+  /** Session-cache key the resolved choice must be written under — the guard builds it from the decided command. */
+  key: string
+  /** The decided command text (shell command, or the file path for file tools). */
+  command: string
+  risk?: string
+  /** The guard's ask reason as shown in the host prompt. */
+  reason?: string
+  workspace?: string
+  askedAt: number
+}
+
+const PENDING_ASKS_FILE = 'pending-asks.json'
+
+/** Insert or refresh one pending ask, keyed by its session-cache key. Best-effort like every session file. */
+export function upsertPendingAsk(dir: string, record: PendingAskRecord): void {
+  const sink = sinkFor(dir, PENDING_ASKS_FILE)
+  const data = sink.read()
+  data[record.key] = record
+  sink.write(data)
+}
+
+/** Read one session's pending asks, oldest first; unreadable file yields []. */
+export function readPendingAsks(dir: string): PendingAskRecord[] {
+  const records: PendingAskRecord[] = []
+  for (const value of Object.values(sinkFor(dir, PENDING_ASKS_FILE).read())) {
+    const record = value as PendingAskRecord
+    if (record && typeof record === 'object' && typeof record.key === 'string' && typeof record.askedAt === 'number') {
+      records.push(record)
+    }
+  }
+  return records.sort((a, b) => a.askedAt - b.askedAt)
+}
+
+/** Drop a resolved pending ask; false when it was already gone (stale entry). */
+export function deletePendingAsk(dir: string, key: string): boolean {
+  const sink = sinkFor(dir, PENDING_ASKS_FILE)
+  const data = sink.read()
+  if (!(key in data)) return false
+  delete data[key]
+  sink.write(data)
+  return true
+}
+
+/** Cross-session view for the management CLI: every pending ask with its session directory name, oldest first. */
+export function listPendingAsks(root: string): Array<{ dirName: string; record: PendingAskRecord }> {
+  const found: Array<{ dirName: string; record: PendingAskRecord }> = []
+  try {
+    for (const dirName of readdirSync(root)) {
+      for (const record of readPendingAsks(join(root, dirName))) {
+        found.push({ dirName, record })
+      }
+    }
+  } catch {
+    return found
+  }
+  return found.sort((a, b) => a.record.askedAt - b.record.askedAt)
 }
 
 /** Root directory of per-session state, inside the host config root. */

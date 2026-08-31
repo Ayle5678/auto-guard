@@ -43,14 +43,15 @@ export interface HookOutput {
 /** Serialize an action to the exact stdout contract. Empty string for allow. */
 export function serializeHookOutcome(outcome: WireOutcome): string {
   if (outcome.action === 'allow') return ''
-  const output: HookOutput = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: outcome.action,
-      permissionDecisionReason: outcome.reason,
-    },
+  const specific: HookSpecificOutput = {
+    hookEventName: 'PreToolUse',
+    permissionDecision: outcome.action,
+    permissionDecisionReason: outcome.reason,
   }
-  return JSON.stringify(output)
+  // ADR-0019: ask-only model pre-brief; deny outcomes carry their guidance in
+  // the reason itself, so the extra key never fires there.
+  if (outcome.action === 'ask' && outcome.additionalContext) specific.additionalContext = outcome.additionalContext
+  return JSON.stringify({ hookSpecificOutput: specific })
 }
 
 /** The plain protocol wire: asks travel verbatim (host renders its prompt). */

@@ -273,3 +273,13 @@ export function entryForDecision(decision: AllowDenyDecision, ttlMs: number): Ca
     expiresAt: t + ttlMs,
   }
 }
+
+/**
+ * The entry a user-chosen ask resolution writes (ADR-0019 / pi four-state):
+ * alive until session end — the session directory's idle pruning is what
+ * expires it, never a TTL. One definition so every writer stores the same
+ * semantics.
+ */
+export function sessionMemoryEntry(decision: 'allow' | 'deny', reason?: string): CacheEntry {
+  return { decision, reason, cachedAt: now(), expiresAt: Number.MAX_SAFE_INTEGER }
+}

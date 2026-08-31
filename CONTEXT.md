@@ -39,7 +39,7 @@ _Avoid_: 判定、verdict、审批结果
 _Avoid_: hook payload、事件
 
 **裁决管线（Decision Pipeline）**:
-GuardService 内的固定分层顺序：写后执行 → 绝对黑名单 → 目录删除复核 → 敏感路径 → 复合命令拆分 → 静态放行 → 缓存 → 模板缓存 → 历史层 → LLM 兜底。
+GuardService 内的固定分层顺序：写后执行 → 绝对黑名单 → 目录删除复核 → 敏感路径 → 复合命令拆分 → 静态放行 → 缓存 → 模板缓存 → 历史层 → LLM 兜底。文件工具（read/write/edit）例外：在敏感路径门**之前**先查会话记忆——`guard ask` 裁决（ADR-0019）是该路径上更晚的人类决定，优先于确定性门；shell 命中敏感路径仍整条降级 LLM、不查缓存。
 _Avoid_: 审查流程、规则链
 
 **决策来源（Decision Source）**:
@@ -92,7 +92,7 @@ _Avoid_: 删除拦截
 _Avoid_: 子规则、例外
 
 **敏感路径（sensitive path）**:
-触发门禁的路径模式（`.env`、`.ssh/`、`*.pem`）。文件工具命中即 ask 且内容永不送 LLM；shell 命令命中则整条降级 LLM、不拒绝不缓存。
+触发门禁的路径模式（`.env`、`.ssh/`、`*.pem`）。文件工具命中即 ask 且内容永不送 LLM——但该路径上的会话记忆（guard ask 裁决 / pi 四态）优先于门；shell 命令命中则整条降级 LLM、不拒绝不缓存。
 _Avoid_: 隐私路径
 
 **写后执行（file tracker）**:

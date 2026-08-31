@@ -13,10 +13,11 @@
  * (string stdin, captured stdout, recorded exit) without a real process.
  */
 import { spawn } from 'node:child_process'
-import { prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang, pruneSessions, sessionsRoot } from '@auto-guard/core'
+import { buildSessionKey, normalizeCommand, prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang, pruneSessions, sessionsRoot, sidHash, upsertPendingAsk, readPendingAsks } from '@auto-guard/core'
 import type { Decision, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
 import { dirname, join } from 'node:path'
 import type { HostDescriptor, OutcomeMeta, WireOutcome } from './descriptor.ts'
+import { hasAskEscapeHatch } from './descriptor.ts'
 import type { HostConfigSpace } from './config.ts'
 import type { HostBootstrapKit, GuardRuntime } from './bootstrap.ts'
 import type { HostExtraction, HookInput } from './extraction.ts'
@@ -82,6 +83,7 @@ export interface HookCliParts {
 export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) => Promise<void> {
   const { descriptor, space, kit, extraction, message, wire } = parts
   const render = createDecisionRender(message)
+  const escapeHatch = hasAskEscapeHatch(descriptor)
 
   function emit(io: HookIo, text: string): void {
     if (!text) {
@@ -109,17 +111,17 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
   /**
    * Translate the service decision the way the pre-runtime hosts did, minus
    * the interactive UI: the host's native prompt replaces the ask dialogs.
+   * The caller has already applied {@link prepareDeletionMarker} — the
+   * escape-hatch record (ADR-0019) keys on the same prepared command the
+   * guard's cache lookup will see on the next call.
    */
-  async function evaluate(runtime: GuardRuntime, rawCommandRequest: GuardRequest, lang: Lang): Promise<FinalOutcome> {
-    // Headless directory-delete retries carry `[删除理由] <reason>` inside the
-    // command; strip it before deciding so the marker never executes.
-    const prepared = prepareDeletionMarker(rawCommandRequest)
-    const decision = await runtime.service.decide(prepared.request)
+  async function evaluate(runtime: GuardRuntime, preparedRequest: GuardRequest, lang: Lang): Promise<FinalOutcome> {
+    const decision = await runtime.service.decide(preparedRequest)
 
     // First directory-delete hit: deny once so the AGENT retries with a
     // `[删除理由] <reason>` marker; the LLM then reviews that reason.
     if (decision.source === 'directory-delete' && decision.needsReason) {
-      return { action: 'deny', reason: render.withDeletionHint(render.decisionReasonText(decision, lang), lang), meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
+      return { action: 'deny', reason: render.withDeletionHint(render.decisionReasonText(decision, lang), lang), meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
     }
 
     // Directory-delete non-allow outcomes (LLM ask/deny or reviewer failure)
@@ -127,13 +129,13 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
     if (decision.source === 'directory-delete' && decision.kind !== 'allow') {
       const flavor = message(lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
       const reason = message(lang, 'deleteAskReason', { flavor, reason: decision.reason ?? message(lang, 'deleteNoDetail') })
-      return { action: 'ask', reason, meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
+      return { action: 'ask', reason, meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
     }
 
     if (decision.kind === 'allow' || decision.kind === 'deny' || decision.kind === 'ask') {
-      return mapPlainDecision(decision, prepared.request, runtime.rules, lang)
+      return mapPlainDecision(decision, preparedRequest, runtime.rules, lang)
     }
-    return { action: 'deny', reason: decision.reason ?? message(lang, 'unknownDecisionDenied'), meta: pickMeta(decision, prepared.request, runtime.rules, lang) }
+    return { action: 'deny', reason: decision.reason ?? message(lang, 'unknownDecisionDenied'), meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
   }
 
   function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile, lang: Lang = 'zh'): OutcomeMeta {
@@ -169,6 +171,35 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
 
   function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
+  }
+
+  /**
+   * Best-effort pending-ask record for the escape hatch (ADR-0019). Lives in
+   * the ENV-keyed session directory (the one the guard's disk cache uses)
+   * while the record key mirrors the cache key the next identical call will
+   * look up (normalized command, payload session inside). Returns true only
+   * when verifiably on disk — the escape hint fires just then.
+   */
+  function recordPendingAsk(runtime: GuardRuntime, request: GuardRequest, outcome: FinalOutcome): boolean {
+    try {
+      // Shell commands are cached under their normalized text; file tools
+      // under the target path — each is the stable text a repeat call shows.
+      const subject = typeof request.command === 'string' ? normalizeCommand(request.command) : request.filePath
+      if (typeof subject !== 'string' || !subject.trim()) return false
+      const dir = join(sessionsRoot(space.autoGuardDir), sidHash(runtime.sessionId ?? '<no-session>'))
+      const record = {
+        key: buildSessionKey(request.session, request.workspace, subject),
+        command: subject,
+        risk: outcome.meta?.risk,
+        reason: outcome.reason,
+        workspace: request.workspace,
+        askedAt: Date.now(),
+      }
+      upsertPendingAsk(dir, record)
+      return readPendingAsks(dir).some((entry) => entry.key === record.key)
+    } catch {
+      return false
+    }
   }
 
   /** Subject recorded for `guard recent`: the bash command, or the file path for file tools. */
@@ -267,6 +298,10 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
     const lang = runtime.lang
     const extractionResult = extraction.toGuardRequest(input, kit.workspaceFromEnv(input.cwd), lang)
 
+    // One prepare here feeds both the decision and the escape-hatch record so
+    // the `[删除理由]` marker never reaches either.
+    const prepared = extractionResult.kind === 'guardable' ? prepareDeletionMarker(extractionResult.request) : undefined
+
     let outcome: FinalOutcome
     if (extractionResult.kind === 'passthrough') {
       outcome = { action: 'allow' }
@@ -274,9 +309,20 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
       outcome = { action: 'ask', reason: extractionResult.reason }
     } else {
       try {
-        outcome = await evaluate(runtime, extractionResult.request, lang)
+        outcome = await evaluate(runtime, prepared!.request, lang)
       } catch (error) {
         outcome = { action: 'ask', reason: message(lang, 'failDecide', { error: errorMessage(error) }) }
+      }
+    }
+
+    // ADR-0019: an ask on an escape-hatch host leaves a resolvable record and
+    // gains the hint line (only when the record landed) plus the model
+    // pre-brief. The emitted verdict shape is otherwise untouched.
+    if (outcome.action === 'ask' && escapeHatch && prepared && recordPendingAsk(runtime, prepared.request, outcome)) {
+      outcome = {
+        ...outcome,
+        reason: `${outcome.reason ?? ''}\n${message(lang, 'askEscapeHint')}`,
+        additionalContext: message(lang, 'askModelContext'),
       }
     }
 

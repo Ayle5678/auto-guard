@@ -12,6 +12,7 @@ import {
   buildWorkspaceKey,
   entryForDecision,
   PersistentCache,
+  sessionMemoryEntry,
   ttlForRisk,
   type AllowDenyDecision,
   type CacheEntry,
@@ -170,13 +171,7 @@ export class GuardService {
 
   /** Write a user-chosen session memory entry (ask four-state), alive until session end. */
   rememberAsk(request: GuardRequest, command: string, decision: { kind: 'allow' | 'deny'; reason?: string }): void {
-    const entry: CacheEntry = {
-      decision: decision.kind,
-      reason: decision.reason,
-      cachedAt: Date.now(),
-      expiresAt: Number.MAX_SAFE_INTEGER,
-    }
-    this.sessionCache.set(buildSessionKey(request.session, request.workspace, command), entry)
+    this.sessionCache.set(buildSessionKey(request.session, request.workspace, command), sessionMemoryEntry(decision.kind, decision.reason))
   }
 
   /**
@@ -243,6 +238,20 @@ export class GuardService {
   }
 
   private decideFile(request: GuardRequest): Decision {
+    // A user-chosen session memory (guard ask resolution / pi four-state)
+    // outranks the deterministic sensitive-path ask: the human decided for
+    // exactly this path, so their choice is consulted first. (The shell path
+    // differs by design — sensitive shell commands are demoted to LLM review
+    // before any cache is consulted.) Keyed on the file path, the stable text
+    // a repeat call presents again.
+    if (typeof request.filePath === 'string') {
+      const sessionKey = buildSessionKey(request.session, request.workspace, request.filePath)
+      const sessionEntry = this.sessionCache.get(sessionKey)
+      if (sessionEntry) {
+        this.stats.sessionCacheHits++
+        return this.fromCache(sessionEntry, 'session-cache')
+      }
+    }
     // One payload can carry several targets (codex apply_patch); every one of
     // them crosses the sensitive gate — a lone first-path check would miss
     // `.env` hiding at position two.

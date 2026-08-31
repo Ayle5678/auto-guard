@@ -280,6 +280,9 @@ auto-guard guard stats           # 审计库记录总数
 auto-guard guard report          # 近 7 天审查统计：按裁决种类与决策来源（LLM / 各规则层 / 各缓存层）
 auto-guard guard report 30       # 自定义窗口：近 30 天
 auto-guard guard ping            # DeepSeek API 连通性测试
+auto-guard guard ask list        # 守卫 ask 逃生舱：待裁决列表（见下）
+auto-guard guard ask deny 1 --reason "本会话都不要执行这类命令"   # 本会话拒绝（附理由）
+auto-guard guard ask allow 1     # 本会话放行
 ```
 
 `guard report` 输出示例（需 `examine on`；审计库只存 shell 命令裁决，报告即全部裁决的构成）：
@@ -333,6 +336,21 @@ LLM 审查 12 次 · fail-closed 兜底 1 次
 每个宿主显示一行 `lang`：该根的**生效语言**（四层解析后的结果，见 3.2；各根可以不同——上图 Pi 跟随中文兜底，ZCode 被单独设成了英文）。
 
 注意：聚合的只有 `status` 这一个只读视图；`guard on/off`、`set`、`examine`、`optimize` 始终作用于解析出的**单个**配置根（见 3.0）。
+
+#### `guard ask` — ask 逃生舱：本会话都拒绝 / 附理由（ADR-0019）
+
+zcode / claude / qoder 宿主的守卫 ask 落在**宿主原生确认框**上，那里只有「同意 / 本会话都同意 / 拒绝」三个按钮——这是宿主协议的硬约束（hook 出线是严格 schema，塞不进自定义按钮和输入框）。「本会话都拒绝」和「附理由说明需求」由守卫自己的通道补齐：
+
+```bash
+auto-guard guard ask list                          # 待裁决列表：序号、命令、风险、时间、工作区
+auto-guard guard ask deny 1 --reason "改用 git mv"  # 本会话拒绝，附理由
+auto-guard guard ask allow 1                       # 本会话放行
+```
+
+- 守卫每次 ask 时旁路记录一条待裁决项（完全相同的命令只记一条）；裁决写入**会话缓存**，本会话内完全相同的命令不再弹窗，随会话目录 24h 闲置剪枝自然消失。
+- `deny --reason` 的理由会在后续命中时作为拒绝理由送达模型上下文——模型按你的理由调整，而不是反复重试。ask 时守卫也会经 `additionalContext` 预先告知模型这套出路。
+- 也可以什么都不装：**选拒绝后直接在对话里说明你的需求**——对话本身就是输入框。
+- 出厂规则放行了 `guard ask list`（只读）与 `guard ask deny`（只降权），`allow` 与 `guard off` 永远不被放行——被守卫的代理不能给自己发许可。存量安装需重跑 `auto-guard init` 让出厂规则升级步骤写入新放行（ADR-0013）。
 
 ### 3.2 `set` — Key、API 与语言配置
 

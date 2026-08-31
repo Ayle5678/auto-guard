@@ -40,6 +40,13 @@ export type OutcomeMeta = Pick<Decision, 'kind' | 'source' | 'risk'> & { reviewe
 export interface WireOutcome {
   action: 'allow' | 'deny' | 'ask'
   reason?: string
+  /**
+   * ADR-0019: ask-only model pre-brief, injected via the protocol's
+   * `additionalContext` (default hookSpecificOutput dialect). The codex
+   * ask→deny translation drops it naturally; the opencode verdict wire
+   * ignores it.
+   */
+  additionalContext?: string
   meta?: OutcomeMeta
 }
 
@@ -92,4 +99,15 @@ export interface HostDescriptor {
    * permission dialog); everything else rides the shared runtime catalog.
    */
   catalogOverride?: Readonly<Record<string, Partial<Record<Lang, string>>>>
+}
+
+/**
+ * ADR-0019 ask escape hatches (pending-ask record, escape hint, model
+ * pre-brief) ride only the hosts that surface asks through the default
+ * hookSpecificOutput dialect: pi resolves asks in-process (four-state), codex
+ * translates them to deny, opencode speaks its own verdict wire — all three
+ * stay byte-identical.
+ */
+export function hasAskEscapeHatch(descriptor: HostDescriptor): boolean {
+  return descriptor.capabilities.askStyle === 'native' && descriptor.capabilities.headlessFallback === 'host' && descriptor.wire === undefined
 }

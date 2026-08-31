@@ -456,6 +456,18 @@
     {
       "pattern": "xxd",
       "reason": "Read-only stdin hex dump"
+    },
+    {
+      "pattern": "auto-guard guard ask list",
+      "reason": "Read-only view of the guard's own pending asks (ADR-0019)"
+    },
+    {
+      "pattern": "auto-guard guard ask list *",
+      "reason": "Read-only view of the guard's own pending asks (ADR-0019)"
+    },
+    {
+      "pattern": "auto-guard guard ask deny *",
+      "reason": "Records a session-scope denial only — reduces capability, never grants it (ADR-0019)"
     }
   ],
   "hardDeny": [

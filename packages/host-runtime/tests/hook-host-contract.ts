@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import type { GuardConfig } from '@auto-guard/core'
-import { createHookHost, createDefaultWire, type HookHost, type HostDescriptor } from '../src/index.ts'
+import { buildSessionKey, listPendingAsks, sidHash, upsertPendingAsk } from '@auto-guard/core'
+import { createHookHost, createDefaultWire, hasAskEscapeHatch, type HookHost, type HostDescriptor } from '../src/index.ts'
 
 export interface HookIoCapture {
   stdout: string[]
@@ -169,6 +170,44 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
     })
   })
 
+  describe(`${name}: ask escape hatches (ADR-0019)`, () => {
+    // The hatch rides only default-dialect native-ask hosts (zcode/claude/
+    // qoder); codex translates asks to deny, opencode speaks its verdict wire.
+    const escapeHost = hasAskEscapeHatch(descriptor)
+    const writeTool = Object.entries(descriptor.guardedTools).find(([, m]) => m.guardTool === 'write')?.[0]
+    const sessionsDirPath = () => join(dir, ...descriptor.configRootSegments, 'sessions')
+    const probeRecords = (probe: string) => listPendingAsks(sessionsDirPath()).filter((entry) => entry.record.command === probe)
+
+    it('sensitive-write asks record one resolvable pending ask, gain the hint line and the model pre-brief', async () => {
+      if (!writeTool) return
+      const probe = `escape-probe-${Date.now()}/.env`
+      const payload = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: writeTool, tool_input: { [descriptor.pathFields[0] ?? 'file_path']: probe, content: 'A=1' } })
+      const { stdout } = await runHook(payload)
+      if (!escapeHost) {
+        expect(stdout[0]).not.toContain('additionalContext')
+        expect(stdout[0]).not.toContain('guard ask')
+        expect(probeRecords(probe)).toEqual([])
+        return
+      }
+      const specific = (JSON.parse(stdout[0]) as { hookSpecificOutput: { permissionDecision?: string; permissionDecisionReason?: string; additionalContext?: string } }).hookSpecificOutput
+      expect(specific.permissionDecision).toBe('ask')
+      expect(specific.permissionDecisionReason).toContain('guard ask')
+      expect(specific.additionalContext).toContain('auto-guard')
+      const records = probeRecords(probe)
+      expect(records).toHaveLength(1)
+      expect(records[0].record.command).toBe(probe)
+      // A repeat ask of the same command refreshes the single record in place.
+      await runHook(payload)
+      expect(probeRecords(probe)).toHaveLength(1)
+    })
+
+    it('deny verdicts never grow escape-hatch furniture', async () => {
+      const { stdout } = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: bashTool(), tool_input: { command: 'rm -rf /' } }))
+      expect(stdout[0]).not.toContain('additionalContext')
+      expect(stdout[0]).not.toContain('guard ask')
+    })
+  })
+
   describe(`${name}: management CLI language paths (ADR-0011)`, () => {
     // Local LLM mock serving a deny decision; baseConfig() points apiBase at it
     // (the reviewer talks real one-shot HTTP, so fetch stubs no longer apply).
@@ -252,6 +291,76 @@ export function describeHookHostContract(descriptor: HostDescriptor, name: strin
       } finally {
         delete process.env.DEEPSEEK_API_KEY
       }
+    })
+  })
+
+  describe(`${name}: guard ask CLI (ADR-0019)`, () => {
+    const sessionsDir = () => join(dir, ...descriptor.configRootSegments, 'sessions')
+
+    /** The hook records asks under the session dir derived from the ENV session id; tests may run inside a guarded session, so mirror that resolution. */
+    function seedAsk(command: string): number {
+      const dirName = sidHash(process.env.ZCODE_SESSION_ID ?? process.env.CLAUDE_SESSION_ID ?? '<no-session>')
+      upsertPendingAsk(join(sessionsDir(), dirName), {
+        key: buildSessionKey(undefined, undefined, command),
+        command,
+        risk: 'medium',
+        workspace: dir,
+        askedAt: Date.now(),
+      })
+      // Newest record sorts last: its list index equals the entry count.
+      return listPendingAsks(sessionsDir()).length
+    }
+
+    async function capture(argv: readonly string[]): Promise<{ out: string; code: number }> {
+      const chunks: string[] = []
+      const original = process.stdout.write
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+        return true
+      }) as typeof process.stdout.write
+      try {
+        const code = await host.cliMain(argv)
+        return { out: chunks.join(''), code }
+      } finally {
+        process.stdout.write = original
+      }
+    }
+
+    it('lists a seeded pending ask with its index and command', async () => {
+      writeConfig({ lang: 'en' })
+      seedAsk('escape-list-probe command')
+      const { out, code } = await capture(['guard', 'ask', 'list'])
+      expect(code).toBe(0)
+      expect(out).toContain('pending ask')
+      expect(out).toContain('escape-list-probe command')
+    })
+
+    it('deny <index> --reason consumes the record with a session-deny receipt', async () => {
+      writeConfig({ lang: 'en' })
+      const command = `escape-deny-probe ${Date.now()}`
+      const index = seedAsk(command)
+      const { out, code } = await capture(['guard', 'ask', 'deny', String(index), '--reason', 'no pruning today'])
+      expect(code).toBe(0)
+      expect(out).toContain('Recorded for this session')
+      expect(out).toContain('no pruning today')
+      expect((await capture(['guard', 'ask', 'list'])).out).not.toContain(command)
+    })
+
+    it('allow <index> writes a session allow', async () => {
+      writeConfig({ lang: 'en' })
+      const index = seedAsk(`escape-allow-probe ${Date.now()}`)
+      const { out, code } = await capture(['guard', 'ask', 'allow', String(index)])
+      expect(code).toBe(0)
+      expect(out).toContain('allow')
+    })
+
+    it('bad index exits 1, stale index exits 2, unknown subcommand exits 1 with usage', async () => {
+      writeConfig({ lang: 'en' })
+      expect((await capture(['guard', 'ask', 'deny', 'abc'])).code).toBe(1)
+      expect((await capture(['guard', 'ask', 'deny', '999'])).code).toBe(2)
+      const usage = await capture(['guard', 'ask', 'bogus'])
+      expect(usage.code).toBe(1)
+      expect(usage.out).toContain('guard ask <list')
     })
   })
 
