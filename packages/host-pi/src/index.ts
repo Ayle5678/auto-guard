@@ -103,7 +103,7 @@ function buildGuard(): GuardState {
   const lang = resolveLang(config)
   const rules = loadRules(config.rulesPath, config.defaultRulesPath)
   const sessionCache = new SessionLruCache(config.sessionCacheSize)
-  const persistentCache = new PersistentCache(config.cachePath, config.persistentCacheSize)
+  const persistentCache = new PersistentCache(config.cachePath)
   const llmReviewer = new DeepSeekReviewer(config, lang)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
   const auditPassword = loadAuditPassword(AUTO_GUARD_DIR)

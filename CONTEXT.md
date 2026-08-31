@@ -110,7 +110,7 @@ _Avoid_: 链式命令
 _Avoid_: 内存缓存
 
 **持久缓存（persistent cache）**:
-跨会话、按工作区隔离、带 TTL（low 30 天 / medium 7 天 / high 永不）的 JSON 缓存。LLM deny 永不入内。容量上限（默认 1000 条），满员按最近使用逐出（命中刷新近期度）；完全相同命令合并为单条、重复命中只续期。
+跨会话、按工作区隔离、带 TTL（low 30 天 / medium 7 天 / high 永不）的 JSON 缓存，无容量上限（TTL 过期是唯一清理）。LLM deny 永不入内。完全相同命令合并为单条、重复命中只续期。
 _Avoid_: 全局缓存
 
 **模板缓存（template cache）**:

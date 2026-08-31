@@ -57,9 +57,9 @@ describe('config: new user-config fields', () => {
     expect(DEFAULT_CONFIG.analyzeIntervalDays).toBe(15)
   })
 
-  it('defaults cache capacities to 300 session / 1000 persistent entries', () => {
+  it('defaults cache capacity to 300 session entries, persistent cache uncapped', () => {
     expect(DEFAULT_CONFIG.sessionCacheSize).toBe(300)
-    expect(DEFAULT_CONFIG.persistentCacheSize).toBe(1000)
+    expect('persistentCacheSize' in DEFAULT_CONFIG).toBe(false)
   })
 })
 

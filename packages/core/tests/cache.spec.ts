@@ -162,47 +162,6 @@ describe('PersistentCache', () => {
     }
   })
 
-  it('evicts least recently hit beyond maxEntries, not oldest cached', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-guard-cache-'))
-    try {
-      const cache = new PersistentCache(join(dir, 'cache.json'), 2)
-      cache.set('w|a', { decision: 'allow', cachedAt: 1, expiresAt: Number.MAX_SAFE_INTEGER })
-      cache.set('w|b', { decision: 'allow', cachedAt: 2, expiresAt: Number.MAX_SAFE_INTEGER })
-      cache.get('w|a') // a is hot now despite the oldest cachedAt
-      cache.set('w|c', { decision: 'allow', cachedAt: 3, expiresAt: Number.MAX_SAFE_INTEGER })
-      expect(cache.size).toBe(2)
-      expect(cache.get('w|a')).toBeDefined()
-      expect(cache.get('w|b')).toBeUndefined()
-      expect(cache.get('w|c')).toBeDefined()
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('keeps hit recency across process restarts so eviction stays LRU (legacy entries by cachedAt)', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'pi-guard-cache-'))
-    try {
-      const path = join(dir, 'cache.json')
-      const first = new PersistentCache(path)
-      first.set('w|hot', { decision: 'allow', cachedAt: 1000, expiresAt: Number.MAX_SAFE_INTEGER })
-      first.set('w|cold', { decision: 'allow', cachedAt: 500, expiresAt: Number.MAX_SAFE_INTEGER })
-      expect(first.get('w|hot')?.lastHitAt).toBeDefined() // hit persists the refresh (hot AND cold reach disk)
-
-      // A fresh process hydrates recency for hot; cold has no lastHitAt and
-      // still evicts by cachedAt. FIFO would instead evict 'hot' (oldest cachedAt).
-      const second = new PersistentCache(path, 2)
-      expect(second.get('w|hot')?.lastHitAt).toBeDefined()
-      second.set('w|x', { decision: 'allow', cachedAt: 2000, expiresAt: Number.MAX_SAFE_INTEGER })
-      expect(second.get('w|cold')).toBeUndefined()
-      second.set('w|y', { decision: 'allow', cachedAt: 3000, expiresAt: Number.MAX_SAFE_INTEGER })
-      expect(second.get('w|hot')).toBeDefined()
-      expect(second.get('w|x')).toBeUndefined()
-      expect(second.get('w|y')).toBeDefined()
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
   it('computes TTL by risk level', () => {
     expect(ttlForRisk('low', 30, 7)).toBe(30 * 24 * 60 * 60 * 1000)
     expect(ttlForRisk('medium', 30, 7)).toBe(7 * 24 * 60 * 60 * 1000)

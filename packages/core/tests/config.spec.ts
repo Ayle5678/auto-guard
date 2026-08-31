@@ -57,11 +57,11 @@ describe('config: loading', () => {
     expect(defaults.analyzeStatePath).toBe(join(dir, 'analyze-state.json'))
   })
 
-  it('defaults cache capacities to 300 session / 1000 persistent entries', () => {
+  it('defaults cache capacities to 300 session entries, persistent cache uncapped', () => {
     const dir = tmp()
     const defaults = defaultsFor(dir)
     expect(defaults.sessionCacheSize).toBe(300)
-    expect(defaults.persistentCacheSize).toBe(1000)
+    expect('persistentCacheSize' in defaults).toBe(false)
   })
 
   it('fills missing fields from defaults and writes them back', () => {
@@ -71,10 +71,8 @@ describe('config: loading', () => {
     const config = loadConfig(path, defaultGuardConfig(dir))
     expect(config.enabled).toBe(false)
     expect(config.model).toBe('deepseek-v4-flash')
-    expect(config.persistentCacheSize).toBe(1000)
     const written = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
     expect(written.model).toBe('deepseek-v4-flash')
-    expect(written.persistentCacheSize).toBe(1000)
   })
 
   it('keeps only known keys on save (no leakage of internal fields)', () => {

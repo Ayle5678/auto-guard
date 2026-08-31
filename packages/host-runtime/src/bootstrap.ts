@@ -127,7 +127,7 @@ export function createBootstrap(descriptor: HostDescriptor, space: HostConfigSpa
     const rules = loadRules(config.rulesPath, config.defaultRulesPath)
     const sessionId = sessionIdFromEnv()
     const state = loadDiskSessionState(sessionsDir(), config.sessionCacheSize, sessionId)
-    const persistentCache = new PersistentCache(config.cachePath, config.persistentCacheSize)
+    const persistentCache = new PersistentCache(config.cachePath)
     const llmReviewer = new DeepSeekReviewer(config, lang)
     const trackerStore = createTrackerStore(state.dir, config.fileTrackerWindowSec * 1000)
     const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000, trackerStore)

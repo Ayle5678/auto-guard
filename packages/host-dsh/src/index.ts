@@ -87,7 +87,7 @@ function createState(
   const lang = resolveProcessLang(config.lang)
   const rules = loadRules(expandHome(config.rulesPath), expandHome(config.defaultRulesPath))
   const sessionCache = new SessionLruCache(config.sessionCacheSize)
-  const persistentCache = new PersistentCache(expandHome(config.cachePath), config.persistentCacheSize)
+  const persistentCache = new PersistentCache(expandHome(config.cachePath))
   const llmReviewer = new DshLlmReviewer(ctx, config, lang)
   const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
   // ADR-0005: SQLCipher is the dsh implementation but the optional native

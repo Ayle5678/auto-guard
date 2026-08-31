@@ -75,7 +75,7 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
   → 会话缓存            LRU（每会话 300 条，多会话互不挤占；闲置一天即清），
                         key 为 会话×工作区×命令形态
   → 持久缓存            跨会话、按工作区隔离、按风险 TTL（low 30 天 / medium 7 天 / high 永不）；
-                        容量 1000 条，满员按最近使用逐出，完全相同命令合并为单条；LLM deny 永不入内
+                        无容量上限（TTL 过期即清），完全相同命令合并为单条；LLM deny 永不入内
   → 模板缓存            学习放行按骨架匹配，参数变体可命中（--days 7 ≈ --days 8）
   → 历史判断层          同一骨架近期多次低风险放行且零拒绝 → 免审放行
   → LLM 兜底            未分类命令；任何故障 fail-closed
@@ -270,7 +270,6 @@ auto-guard guard status                                # 不带 flag = 多宿主
 | `notifyAllow` / `notifyDeny` / `notifyAsk` | `page` / `context` / `context` | 按裁决种类路由 |
 | `lowRiskTtlDays` / `mediumRiskTtlDays` | `30` / `7` | 持久缓存 TTL（high 风险永不缓存） |
 | `sessionCacheSize` | `300` | 每会话 LRU 容量 |
-| `persistentCacheSize` | `1000` | 跨会话持久缓存容量（满员按最近使用逐出） |
 | `alwaysReviewCacheTtlMinutes` | `30` | 必审命令会话内放行的短 TTL |
 | `fileTrackerDefault` / `fileTrackerWindowSec` | `ask` / `5` | 写后执行追踪器 |
 | `examineEnabled` | `false` | 审计库（默认关闭） |

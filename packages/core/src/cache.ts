@@ -17,16 +17,11 @@ export interface CacheEntry {
   reason?: string
   cachedAt: number
   expiresAt: number
-  /** Last hit time, maintained by the persistent cache so eviction is LRU, not FIFO. */
-  lastHitAt?: number
 }
 
 function now(): number {
   return Date.now()
 }
-
-/** Default capacity of the persistent cache; override via the `persistentCacheSize` config key. */
-export const DEFAULT_PERSISTENT_CACHE_SIZE = 1000
 
 /**
  * Structural surface the guard service needs from a session cache.
@@ -166,19 +161,18 @@ export interface PersistentCacheData {
 
 /**
  * Workspace-isolated persistent cache stored in a JSON file under the user
- * home. Includes TTL expiry, LRU eviction at `maxEntries`, and pruning of
- * stale entries. One entry per workspace×command key: re-set and re-hit
- * refresh the existing entry (renewed TTL / recency), never stack duplicates.
+ * home. Includes TTL expiry and pruning of stale entries; there is no entry
+ * cap — TTL expiry is the only eviction (30d low / 7d medium, high risk never
+ * cached). One entry per workspace×command key: re-set and re-hit refresh the
+ * existing entry (renewed TTL), never stack duplicates.
  */
 export class PersistentCache {
   private entries: Record<string, CacheEntry>
   private readonly dirty = new Set<string>()
   private readonly path: string
-  private readonly maxEntries: number
 
-  constructor(path: string, maxEntries = DEFAULT_PERSISTENT_CACHE_SIZE) {
+  constructor(path: string) {
     this.path = path
-    this.maxEntries = maxEntries
     this.entries = this.read()
   }
 
@@ -219,38 +213,12 @@ export class PersistentCache {
       this.dirty.add(key)
       return undefined
     }
-    this.touch(entry, key)
     return entry
-  }
-
-  /**
-   * Refresh hit recency and persist it immediately: hook hosts run one process
-   * per call, so a refresh that isn't written through here is lost on exit and
-   * LRU eviction would degrade to FIFO.
-   */
-  private touch(entry: CacheEntry, key: string): void {
-    entry.lastHitAt = now()
-    this.dirty.add(key)
-    this.save()
   }
 
   set(key: string, entry: CacheEntry): void {
     this.entries[key] = entry
     this.dirty.add(key)
-    this.evictBeyondLimit()
-  }
-
-  /** One entry per key already holds duplicates down; overflow evicts the least recently used. */
-  private evictBeyondLimit(): void {
-    const overflow = Object.keys(this.entries).length - this.maxEntries
-    if (overflow <= 0) return
-    const oldestFirst = Object.entries(this.entries)
-      .map(([key, entry]) => ({ key, at: entry.lastHitAt ?? entry.cachedAt }))
-      .sort((a, b) => a.at - b.at)
-    for (let i = 0; i < overflow && i < oldestFirst.length; i++) {
-      delete this.entries[oldestFirst[i].key]
-      this.dirty.add(oldestFirst[i].key)
-    }
   }
 
   has(key: string): boolean {

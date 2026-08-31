@@ -217,8 +217,6 @@ export interface GuardConfig {
   fileTrackerWindowSec: number
   /** Max entries in the session LRU cache. */
   sessionCacheSize: number
-  /** Max entries in the cross-session persistent cache; overflow evicts least recently used. */
-  persistentCacheSize: number
   /** TTL in minutes for always-review commands allowed by the LLM in the current session. */
   alwaysReviewCacheTtlMinutes: number
   /** Experimental audit log switch; default off. */

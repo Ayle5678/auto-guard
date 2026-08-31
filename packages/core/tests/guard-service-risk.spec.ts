@@ -42,7 +42,6 @@ function makeConfig(): GuardConfig {
     fileTrackerDefault: 'ask',
     fileTrackerWindowSec: 5,
     sessionCacheSize: 16,
-    persistentCacheSize: 1000,
     alwaysReviewCacheTtlMinutes: 30,
     examineEnabled: false,
     auditDbPath: '~/.pi/auto-guard/audit.db',

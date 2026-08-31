@@ -26,3 +26,7 @@ Spec 0016。ADR-0002 纪律：全部在 core 注入缝内，不触碰宿主耦�
 - [ ] core 全部既有测试不改语义通过（LLM 放行写双缓存等断言不动）。
 - [ ] 新增容量/LRU/合并/兼容测试全绿。
 - [ ] typecheck 干净。
+
+## Comments
+
+- 2026-08-31：应用户决定，持久缓存容量上限（maxEntries / lastHitAt LRU / persistentCacheSize 配置键）当日移除，持久缓存回到仅 TTL 剪枝；本票的容量与 LRU 部分作废，合并语义、`sessionCacheSize` 默认值部分保留（见 spec Comments）。
