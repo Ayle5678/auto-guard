@@ -196,6 +196,9 @@ describe('fail-closed matrix: identical reviewer-failure semantics on all hosts'
     expect(parseReviewJson('not json at all')).toBeUndefined()
     // Tolerant parse fills risk/reason defaults for partial JSON.
     expect(parseReviewJson('{"decision":"deny"}')).toMatchObject({ decision: 'deny', risk: 'medium' })
+    // Compact verdict code (ADR-0020) parses identically everywhere.
+    expect(parseReviewJson('A1')).toEqual({ decision: 'allow', risk: 'low', reason: '' })
+    expect(parseReviewJson('D4')).toBeUndefined()
   })
 
   it.each(bootstraps())('$name: write-then-execute tracker fires identically', async ({ make }) => {
@@ -285,7 +288,7 @@ describe('shared reviewer contract across hosts', () => {
   beforeAll(() => {
     // REVIEW_SYSTEM_PROMPT and the timeout budget are core-owned; hosts must
     // not fork them. Presence + budget floor is the pin.
-    expect(REVIEW_SYSTEM_PROMPT).toContain('strict JSON')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('verdict code')
     expect(reviewTimeoutBudget(8000)).toBe(8000)
     expect(reviewTimeoutBudget(8000, 'high')).toBeGreaterThanOrEqual(30_000)
   })

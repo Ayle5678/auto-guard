@@ -1,7 +1,7 @@
 /**
  * One-shot LLM reviewer backed by a direct DeepSeek-compatible Chat Completions
- * API call. Fixed system prompt, strict JSON output, timeout and fail-closed
- * handling. The API key is read from an environment variable (default
+ * API call. Fixed system prompt, compact verdict-code output (ADR-0020),
+ * timeout and fail-closed handling. The API key is read from an environment variable (default
  * `DEEPSEEK_API_KEY`) so it never lands on disk.
  */
 import { parseReviewJson } from './review-parse.ts'
@@ -39,24 +39,29 @@ export interface ReviewOutcome {
 
 export const REVIEW_SYSTEM_PROMPT = [
   'You are a command-safety reviewer for a full-access agent.',
-  'You review ONE command and return ONLY a strict JSON object with exactly three keys:',
-  '{"decision":"allow|deny|ask","risk":"low|medium|high","reason":"one sentence"}',
+  'You review ONE command and reply with ONLY a verdict code (letter = decision, digit = risk):',
+  '',
+  '  A1 A2 A3   -> allow (risk low / medium / high)',
+  '  B1 B2 B3   -> deny  (risk low / medium / high)',
+  '  C1 C2 C3   -> ask   (risk low / medium / high)',
   '',
   'Rules:',
-  '  - "allow": safe/typical development command.',
+  '  - "allow": safe/typical development command. Reply with the code alone, e.g. A1.',
   '  - "deny": destructive, dangerous, credential-exposing, or clearly malicious command.',
   '  - "ask": uncertain or context-dependent; prefer ask over allow when unsure about destructive effects.',
-  '  - risk reflects blast radius. reason is a single Chinese or English sentence.',
-  '  - Never output anything besides the JSON object. No markdown fences.',
+  '  - Risk reflects blast radius.',
+  '  - For deny/ask, reply with the code, a colon, and a single Chinese or English sentence reason, e.g. B3: <reason>.',
+  '  - Never output anything besides the code (or code + reason). No markdown fences.',
 ].join('\n')
 
-/** Instruction appended for en so decision reasons land in English (ADR-0011); zh keeps the base prompt byte-identical. */
-const REVIEW_REASON_LANGUAGE_EN = 'Write "reason" in English.'
+/** Instruction appended for en so deny/ask reasons land in English (ADR-0011); the base prompt is the ADR-0020 compact-code contract. */
+const REVIEW_REASON_LANGUAGE_EN = 'Write the deny/ask reason in English.'
 
 /**
- * The review system prompt for one language. zh is the historical base prompt
- * (unchanged, so existing prompt-cache prefixes stay valid); en appends the
- * reason-language instruction. The instruction is a fixed suffix, so for any
+ * The review system prompt for one language. The base prompt is the compact
+ * verdict-code contract (ADR-0020; its byte change from the historical JSON
+ * prompt invalidates DeepSeek prompt-cache prefixes once, then re-stabilizes);
+ * en appends the reason-language instruction as a fixed suffix, so for any
  * given config the prompt stays stable across calls.
  */
 export function reviewSystemPrompt(lang: Lang): string {

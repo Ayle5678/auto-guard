@@ -1,7 +1,6 @@
 /**
- * Review-prompt language instruction (ADR-0011): en appends a fixed
- * reason-language suffix; zh keeps the historical prompt byte-identical so
- * existing prompt-cache prefixes stay valid.
+ * Review-prompt language instruction (ADR-0011 / ADR-0020): en appends a fixed
+ * reason-language suffix to the compact verdict-code base prompt.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { DeepSeekReviewer, REVIEW_SYSTEM_PROMPT, reviewSystemPrompt } from '../src/llm.ts'
@@ -74,8 +73,8 @@ describe('reviewSystemPrompt', () => {
   it('en appends the reason-language instruction while keeping the base prefix stable', () => {
     const en = reviewSystemPrompt('en')
     expect(en.startsWith(REVIEW_SYSTEM_PROMPT)).toBe(true)
-    expect(en).toContain('Write "reason" in English.')
-    expect(en).toContain('strict JSON')
+    expect(en).toContain('Write the deny/ask reason in English.')
+    expect(REVIEW_SYSTEM_PROMPT).toContain('verdict code')
   })
 })
 

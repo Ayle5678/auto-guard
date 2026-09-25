@@ -93,7 +93,29 @@ describe('DeepSeekReviewer: request', () => {
 })
 
 describe('DeepSeekReviewer: response handling', () => {
-  it('parses a strict JSON review', async () => {
+  it('parses a bare verdict code (compact contract, ADR-0020)', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret'
+    const mock = await startMock()
+    mock.respond(chatOk('A1'))
+    const reviewer = new DeepSeekReviewer(makeConfig({ apiBase: mock.apiBase }))
+
+    const result = await reviewer.review({ command: 'ls' })
+
+    expect(result).toEqual({ decision: 'allow', risk: 'low', reason: '' } satisfies LlmReviewResult)
+  })
+
+  it('parses a verdict code with a deny reason', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret'
+    const mock = await startMock()
+    mock.respond(chatOk('B3: 会递归删除目标目录'))
+    const reviewer = new DeepSeekReviewer(makeConfig({ apiBase: mock.apiBase }))
+
+    const result = await reviewer.review({ command: 'rm -rf /tmp/ag-probe-dir' })
+
+    expect(result).toEqual({ decision: 'deny', risk: 'high', reason: '会递归删除目标目录' } satisfies LlmReviewResult)
+  })
+
+  it('parses a strict JSON review (legacy fallback)', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret'
     const mock = await startMock()
     mock.respond(chatOk('{"decision":"deny","risk":"high","reason":"danger"}'))
@@ -102,7 +124,7 @@ describe('DeepSeekReviewer: response handling', () => {
     expect(result).toEqual({ decision: 'deny', risk: 'high', reason: 'danger' } satisfies LlmReviewResult)
   })
 
-  it('parses JSON embedded in markdown fences', async () => {
+  it('parses JSON embedded in markdown fences (legacy fallback)', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret'
     const mock = await startMock()
     mock.respond(chatOk('```json\n{"decision":"ask","risk":"medium","reason":"?"}\n```'))

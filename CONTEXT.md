@@ -38,6 +38,10 @@ _Avoid_: 判定、verdict、审批结果
 工具无关的待审请求：工具种类（bash/pwsh/write/edit/read）+ 命令或路径内容。适配层的唯一输入协议。
 _Avoid_: hook payload、事件
 
+**裁决码（Verdict Code）**:
+LLM 评审的紧凑输出契约（ADR-0020）：字母编码决策（A=allow / B=deny / C=ask）× 数字编码风险（1=low / 2=medium / 3=high）；allow 只回码（如 `A1`），deny/ask 回 `码: 一句话理由`。解析器对历史三键 JSON 保底回退。
+_Avoid_: 短码（泛指）、选项字母
+
 **裁决管线（Decision Pipeline）**:
 GuardService 内的固定分层顺序：写后执行 → 绝对黑名单 → 目录删除复核 → 敏感路径 → 复合命令拆分 → 静态放行 → 缓存 → 模板缓存 → 历史层 → LLM 兜底。文件工具（read/write/edit）例外：在敏感路径门**之前**先查会话记忆——`guard ask` 裁决（ADR-0019）是该路径上更晚的人类决定，优先于确定性门；shell 命中敏感路径仍整条降级 LLM、不查缓存。
 _Avoid_: 审查流程、规则链

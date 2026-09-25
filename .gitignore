@@ -5,3 +5,4 @@ dist/
 *.auto-guard.bak
 .DS_Store
 .codegraph
+manual-tests/

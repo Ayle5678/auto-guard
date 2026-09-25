@@ -1531,18 +1531,31 @@ describe('GuardService: file tracker', () => {
   })
 })
 
-describe('GuardService: LLM JSON parsing', () => {
-  it('parses strict JSON responses', async () => {
+describe('GuardService: LLM review parsing', () => {
+  it('parses compact verdict codes (ADR-0020)', async () => {
+    const { parseReviewJson } = await import('../src/review-parse.ts')
+    expect(parseReviewJson('A1')).toEqual({ decision: 'allow', risk: 'low', reason: '' })
+    expect(parseReviewJson('B3: rm -rf 递归删除项目目录')).toEqual({ decision: 'deny', risk: 'high', reason: 'rm -rf 递归删除项目目录' })
+    expect(parseReviewJson('C2：中文全角冒号')).toMatchObject({ decision: 'ask', risk: 'medium', reason: '中文全角冒号' })
+    expect(parseReviewJson('a1')).toEqual({ decision: 'allow', risk: 'low', reason: '' })
+    expect(parseReviewJson('```\nA2\n```')).toEqual({ decision: 'allow', risk: 'medium', reason: '' })
+    expect(parseReviewJson('  B3:  ')).toEqual({ decision: 'deny', risk: 'high', reason: '' })
+  })
+
+  it('parses strict JSON responses (legacy fallback)', async () => {
     const { parseReviewJson } = await import('../src/review-parse.ts')
     expect(parseReviewJson('{"decision":"allow","risk":"low","reason":"hello"}')).toEqual({ decision: 'allow', risk: 'low', reason: 'hello' })
     expect(parseReviewJson('```json\n{"decision":"deny","risk":"high","reason":"x"}\n```')).toMatchObject({ decision: 'deny', risk: 'high' })
     expect(parseReviewJson('prefix {"decision":"ask","risk":"medium","reason":"y"} suffix')).toMatchObject({ decision: 'ask', risk: 'medium' })
   })
 
-  it('rejects invalid JSON', async () => {
+  it('rejects invalid replies', async () => {
     const { parseReviewJson } = await import('../src/review-parse.ts')
     expect(parseReviewJson('not json')).toBeUndefined()
     expect(parseReviewJson('{"decision":"lol","risk":"low","reason":""}')).toBeUndefined()
+    expect(parseReviewJson('D4')).toBeUndefined()
+    expect(parseReviewJson('A0')).toBeUndefined()
+    expect(parseReviewJson('')).toBeUndefined()
   })
 })
 

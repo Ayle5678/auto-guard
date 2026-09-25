@@ -49,7 +49,8 @@ const respond = (req, res) => {
   if (req.method === 'POST' && req.url === '/chat/completions') {
     state.hits++
     writeState(opts.state, { hits: state.hits })
-    const content = JSON.stringify({ decision: 'allow', risk: 'low', reason: 'review-loop mock: allow' })
+    // Compact verdict code (ADR-0020): the shape the reviewer prompt now asks for.
+    const content = 'A1'
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ choices: [{ message: { content } }] }))
     return
