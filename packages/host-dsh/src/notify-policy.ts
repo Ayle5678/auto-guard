@@ -6,6 +6,7 @@
  */
 import { notifyRoute as coreNotifyRoute, pageNoticeText, sourceTag, type Decision, type DecisionKind, type GuardConfig, type Lang, type NotifyRoute } from '@auto-guard/core'
 import { createNoticeMessage, type NoticeMessage } from './notice-message.ts'
+import { coreMessage } from '@auto-guard/core'
 import { dshMessage } from './messages.ts'
 
 export { notifyRoute } from '@auto-guard/core'
@@ -53,7 +54,7 @@ export function createPageNoticeEvents(decision: Decision, commandId: string, la
 
 /** Label for one decision kind on the context route, in the given language. */
 function contextLabel(kind: DecisionKind, lang: Lang): string {
-  return dshMessage(lang, kind === 'allow' ? 'contextAllow' : kind === 'deny' ? 'contextDeny' : 'contextAsk')
+  return coreMessage(lang, kind === 'allow' ? 'kindAllow' : kind === 'deny' ? 'kindDeny' : 'kindAsk')
 }
 
 /** Context-route notice message, preserving the current user-visible text. */

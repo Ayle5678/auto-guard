@@ -5,9 +5,10 @@
  * resolves it through one definition (ADR-0023). Host chrome — dialogs,
  * settings pages, installer, TUI — stays in the host packages; host-flavored
  * wording rides `HostDescriptor.catalogOverride` (ADR-0016). Key parity
- * between languages is enforced by the type system. Values are byte-exact
- * migrations of the host wording (SPEC 0021 ticket 02); the usage lines take
- * the driver program name (ADR-0022).
+ * between languages is enforced by the type system. Generated key values are
+ * byte-exact migrations (SPEC 0021); the `statsExamineOff` /
+ * `optimizeAutoUnsupported` usage lines take the driver program name
+ * (ADR-0022).
  */
 import { defineCatalog, type Lang } from './lang.ts'
 
@@ -58,7 +59,6 @@ const zhGuardSurface = {
     createDone: '已创建新的空审计库；旧加密库已保留为 orphan 文件',
     createFailed: '重建审计库失败',
 }
-
 const enGuardSurface: Record<keyof typeof zhGuardSurface, string> = {
     pingOk: 'API reachable',
     pingFail: 'API unreachable: {error}',
@@ -107,20 +107,3 @@ const enGuardSurface: Record<keyof typeof zhGuardSurface, string> = {
     createFailed: 'Failed to rebuild the audit database',
 }
 
-const catalog = defineCatalog(zhGuardSurface, enGuardSurface)
-
-/** One shared guard-surface message key. */
-export type GuardMessageKey = keyof typeof zhGuardSurface
-
-/** Look up one shared guard-surface message. */
-export function guardMessage(lang: Lang, key: GuardMessageKey, params: Record<string, string | number> = {}): string {
-  return catalog.message(lang, key, params)
-}
-
-/** All shared guard-surface keys (the anti-drift set for host catalogs). */
-export const guardMessageKeys = Object.keys(zhGuardSurface) as GuardMessageKey[]
-
-/** Runtime key test: does this string name a shared guard-surface key? */
-export function isGuardMessageKey(key: string): key is GuardMessageKey {
-  return key in zhGuardSurface
-}

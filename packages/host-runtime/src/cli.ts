@@ -396,14 +396,14 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
             audit.close()
           }
         } else {
-          emit(parts.message(lang, 'statsExamineOff'))
+          emit(parts.message(lang, 'statsExamineOff', { program: parts.programName }))
         }
         return 0
       }
       case 'report': {
         const days = Number(rest[0]) > 0 ? Math.floor(Number(rest[0])) : 7
         if (!config.examineEnabled) {
-          emit(parts.message(lang, 'statsExamineOff'))
+          emit(parts.message(lang, 'statsExamineOff', { program: parts.programName }))
           return 0
         }
         const audit = io.auditFor(config)
@@ -640,7 +640,7 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
       }
       case 'auto': {
         if (!parts.capabilities.optimizeAutoNotice) return usageExit('optimizeUsage', lang)
-        emit(parts.message(lang, 'optimizeAutoUnsupported'))
+        emit(parts.message(lang, 'optimizeAutoUnsupported', { program: parts.programName }))
         return 1
       }
       case 'list': {

@@ -34,7 +34,7 @@ import {
   HistoryStore,
   generateLearnedRules,
   loadLearnedRules,
-  restoreLearnedRules,
+  rollbackLearnedRules,
   applyHistoryToggle,
   DeepSeekReviewer,
   resolveProcessLang,
@@ -497,7 +497,7 @@ export default function (pi: ExtensionAPI): void {
     }
     guard.learned = loadLearnedRules(guard.config.learnedRulesPath, [...guard.rules.hardDeny, ...guard.rules.alwaysReview, ...guard.rules.directoryDelete])
     guard.templateCache.setCacheablePatterns(guard.learned.cacheable)
-    ctx.ui.notify(piMessage(guard.lang, 'learnedAnalyzed', { count: guard.learned.cacheable.length }), 'info')
+    ctx.ui.notify(result.message, 'info')
   }
 
   pi.registerCommand('guard-optimize', {
@@ -522,19 +522,20 @@ export default function (pi: ExtensionAPI): void {
           'cacheable:',
           ...guard.learned.cacheable.slice(0, 20).map((r) => `  ${r.pattern}`),
         ]
-        ctx.ui.notify(lines.join('\n') || t('optimizeListEmpty'), 'info')
+        ctx.ui.notify(lines.join('\n'), 'info')
       } else if (raw === 'rollback') {
-        if (restoreLearnedRules(guard.config.learnedRulesPath, guard.config.learnedBackupPath)) {
+        const result = rollbackLearnedRules(guard.config, guard.lang)
+        if (result.ok) {
           guard.learned = loadLearnedRules(guard.config.learnedRulesPath, [...guard.rules.hardDeny, ...guard.rules.alwaysReview, ...guard.rules.directoryDelete])
           guard.templateCache.setCacheablePatterns(guard.learned.cacheable)
-          ctx.ui.notify(t('optimizeRollbackDone'), 'info')
+          ctx.ui.notify(result.message, 'info')
         } else {
-          ctx.ui.notify(t('optimizeRollbackNone'), 'warning')
+          ctx.ui.notify(result.message, 'warning')
         }
       } else if (raw === 'history on' || raw === 'history off') {
         const result = applyHistoryToggle(guard.config, raw === 'history on' ? 'on' : 'off', guard.lang)
         if (result.ok) saveConfig(guard.config)
-        ctx.ui.notify(t(guard.config.historyEnabled ? 'optimizeHistoryOn' : 'optimizeHistoryOff'), 'info')
+        ctx.ui.notify(result.messages.join('\n'), 'info')
       } else if (raw === 'auto on' || raw === 'auto off') {
         guard.config.autoAnalyzeEnabled = raw === 'auto on'
         saveConfig(guard.config)

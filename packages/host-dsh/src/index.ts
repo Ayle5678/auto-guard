@@ -28,7 +28,7 @@ import {
   loadLearnedRules,
   prepareDeletionMarker,
   resolveProcessLang,
-  restoreLearnedRules,
+  rollbackLearnedRules,
   SessionLruCache,
   PersistentCache,
   SqlcipherAuditStore,
@@ -155,12 +155,11 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
       return state.learned
     },
     rollback(): { ok: boolean; message: string } {
-      if (!restoreLearnedRules(state.config.learnedRulesPath, state.config.learnedBackupPath)) {
-        return { ok: false, message: t('rollbackNone') }
-      }
+      const result = rollbackLearnedRules(state.config, state.lang)
+      if (!result.ok) return result
       state.learned = loadLearnedRules(state.config.learnedRulesPath, [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete])
       state.templateCache.setCacheablePatterns(state.learned.cacheable)
-      return { ok: true, message: t('rollbackDone') }
+      return result
     },
     status(): Record<string, unknown> {
       const stateFile = loadAnalyzeState(state.config.analyzeStatePath)
