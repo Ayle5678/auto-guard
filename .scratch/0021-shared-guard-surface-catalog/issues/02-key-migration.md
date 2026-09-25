@@ -4,7 +4,7 @@
 
 **Blocked by:** 01（审计与骨架就位）.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-25)
 
 - [x] 守卫面键全部单源于 core 共享目录；四宿主目录无重复定义
 - [x] 键级 diff 清单进 spec 目录，逐键可审

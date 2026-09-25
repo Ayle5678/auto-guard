@@ -4,7 +4,7 @@
 
 **Blocked by:** SPEC 0020 工单 02（usage 程序名参数化先就位；未就位则本票先行亦可，仅 usage 键迁移顺延至 02 票）.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-25)
 
 - [x] 三步审计清单成文（本 spec 目录下），同义键附正典选择理由
 - [x] core 共享守卫面目录骨架 + defineCatalog 类型对齐

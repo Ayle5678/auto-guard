@@ -4,7 +4,7 @@
 
 **Blocked by:** 02（主迁移完成）.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-25)
 
 - [x] pi/dsh 可经 catalogOverride 数据槽表达守卫面措辞差异（create*Message 工厂，非副本键）
 - [x] 审计清单中的宿主味键全部落位（override 通道 + 确认无需，见 chrome-boundary.md §3）

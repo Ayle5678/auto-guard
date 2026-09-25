@@ -1,6 +1,6 @@
 # 0021 — 守卫面共享文案目录：守卫面键归 core，宿主只留 chrome
 
-> Status: ready-for-agent
+> Status: done (2026-09-25)
 > 决策依据：ADR-0023；grill-log Round 16 Q4–Q5。修订 CONTEXT「消息目录」词条的「文案归各包所有」旧表述。
 
 ## Problem Statement
