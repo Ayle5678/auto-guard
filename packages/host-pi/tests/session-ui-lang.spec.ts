@@ -14,6 +14,10 @@ import { join } from 'node:path'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import type { GuardConfig } from '@auto-guard/core'
 
+// The session-UI assembly runs ~4.5s against the 5s default under load
+vi.setConfig({ testTimeout: 20_000 })
+// (flake predates SPEC 0021); give the dialog tests headroom.
+
 // One dir per file: each extension() call opens a SQLite audit store that is
 // never closed inside the extension, so per-test cleanup would hit EPERM on
 // Windows. Best-effort cleanup at the end; the OS temp dir handles the rest.

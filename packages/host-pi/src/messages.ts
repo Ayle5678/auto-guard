@@ -5,7 +5,7 @@
  * comes from the core catalog; this file owns only Pi-surface text. Key
  * parity between languages is enforced by the type system.
  */
-import { defineCatalog, guardMessage, isGuardMessageKey, type GuardMessageKey, type Lang } from '@auto-guard/core'
+import { defineCatalog, guardMessage, interpolate, isGuardMessageKey, type GuardMessageKey, type GuardMessageOverrides, type Lang } from '@auto-guard/core'
 
 const catalog = defineCatalog(
   {
@@ -44,7 +44,6 @@ const catalog = defineCatalog(
     examineStatusOn: '审查日志：已开启',
     examineStatusOff: '审查日志：已关闭',
     examineDb: '数据库：{path}',
-    learnedAnalyzed: '学习规则分析完成：cacheable {count}',
     optimizeCmdDesc: '学习规则维护：/guard-optimize status | analyze | list | rollback | history on|off | auto on|off',
     optimizeUsage: '用法：/guard-optimize status | analyze | list | rollback | history on|off | auto on|off',
     optimizeStatusCollect: '收集开关：{value}',
@@ -54,11 +53,6 @@ const catalog = defineCatalog(
     optimizeStatusCacheable: 'cacheable：{count}',
     switchOn: '开',
     switchOff: '关',
-    optimizeListEmpty: '（无学习规则）',
-    optimizeRollbackDone: '已从 backup 恢复学习规则',
-    optimizeRollbackNone: '没有可恢复的 backup',
-    optimizeHistoryOn: '运行时历史层已开启',
-    optimizeHistoryOff: '运行时历史层已关闭',
     optimizeAutoOn: '自动分析已开启',
     optimizeAutoOff: '自动分析已关闭',
     setCmdDesc: '守卫配置与维护：/guard-set reload | set-key | show-key | clear-key | set-api | set-api reset',
@@ -113,7 +107,6 @@ const catalog = defineCatalog(
     examineStatusOn: 'Audit log: enabled',
     examineStatusOff: 'Audit log: disabled',
     examineDb: 'Database: {path}',
-    learnedAnalyzed: 'Learned-rule analysis done: cacheable {count}',
     optimizeCmdDesc: 'Learned-rule maintenance: /guard-optimize status | analyze | list | rollback | history on|off | auto on|off',
     optimizeUsage: 'Usage: /guard-optimize status | analyze | list | rollback | history on|off | auto on|off',
     optimizeStatusCollect: 'Collection switch: {value}',
@@ -123,11 +116,6 @@ const catalog = defineCatalog(
     optimizeStatusCacheable: 'cacheable: {count}',
     switchOn: 'on',
     switchOff: 'off',
-    optimizeListEmpty: '(no learned rules)',
-    optimizeRollbackDone: 'Learned rules restored from backup',
-    optimizeRollbackNone: 'No backup to restore',
-    optimizeHistoryOn: 'Runtime history layer enabled',
-    optimizeHistoryOff: 'Runtime history layer disabled',
     optimizeAutoOn: 'Auto analysis enabled',
     optimizeAutoOff: 'Auto analysis disabled',
     setCmdDesc: 'Guard config & maintenance: /guard-set reload | set-key | show-key | clear-key | set-api | set-api reset',
@@ -153,7 +141,20 @@ type PiChromeKey = Parameters<typeof catalog.message>[1]
 /** Pi lookup key: guard-surface keys resolve from the core shared catalog (ADR-0023), the rest from this Pi-chrome catalog. */
 export type PiMessageKey = PiChromeKey | GuardMessageKey
 
-/** Look up one Pi-surface message. */
-export function piMessage(lang: Lang, key: PiMessageKey, params: Record<string, string | number> = {}): string {
-  return isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
+/** Build the Pi lookup: guard-surface wording rides data overrides (the ADR-0016 slot, ADR-0023). */
+export function createPiMessage(overrides?: GuardMessageOverrides): PiMessage {
+  return (lang, key, params = {}) => {
+    if (isGuardMessageKey(key)) {
+      const override = overrides?.[key]?.[lang]
+      if (override !== undefined) return interpolate(override, params)
+      return guardMessage(lang, key, params)
+    }
+    return catalog.message(lang, key, params)
+  }
 }
+
+/** One bound host-surface message lookup: overrides first, then the shared catalog, then this catalog. */
+export type PiMessage = (lang: Lang, key: PiMessageKey, params?: Record<string, string | number>) => string
+
+/** Default Pi lookup (no overrides). */
+export const piMessage: PiMessage = createPiMessage()

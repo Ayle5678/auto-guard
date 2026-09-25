@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] pi/dsh 可经 catalogOverride 表达守卫面措辞差异（数据槽，非副本键）
-- [ ] 审计清单中的宿主味键全部落位（override 或确认无需）
-- [ ] chrome 边界清单成文；四宿主目录行数显著下降
-- [ ] 双语等价 + conformance 全绿；三门禁全绿
+- [x] pi/dsh 可经 catalogOverride 数据槽表达守卫面措辞差异（create*Message 工厂，非副本键）
+- [x] 审计清单中的宿主味键全部落位（override 通道 + 确认无需，见 chrome-boundary.md §3）
+- [x] chrome 边界清单成文；四宿主目录键数 67/86/22/24 → 32/62/5/4
+- [x] 双语等价 + conformance 全绿；三门禁全绿

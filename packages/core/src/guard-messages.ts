@@ -120,6 +120,13 @@ export function guardMessage(lang: Lang, key: GuardMessageKey, params: Record<st
 /** All shared guard-surface keys (the anti-drift set for host catalogs). */
 export const guardMessageKeys = Object.keys(zhGuardSurface) as GuardMessageKey[]
 
+/**
+ * Host-flavored guard-surface wording, as data — the pi/dsh counterpart of
+ * the hook-host `HostDescriptor.catalogOverride` slot (ADR-0016). Wording
+ * differences ride this channel; keys are never re-defined (ADR-0023).
+ */
+export type GuardMessageOverrides = { readonly [K in GuardMessageKey]?: Partial<Record<Lang, string>> }
+
 /** Runtime key test: does this string name a shared guard-surface key? */
 export function isGuardMessageKey(key: string): key is GuardMessageKey {
   return key in zhGuardSurface
