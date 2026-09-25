@@ -581,7 +581,14 @@ describe('language regression matrix (SPEC 0013 ticket 04): four hook descriptor
       return true
     }) as typeof process.stdout.write
     try {
-      const cliMain = createCliMain({ space, kit, message: createHostMessage(descriptor) })
+      const hostMessage = createHostMessage(descriptor)
+      const cliMain = createCliMain({
+        programName: 'node dist/cli.js',
+        message: (lang, key, params = {}) => hostMessage(lang, key as Parameters<typeof hostMessage>[1], params),
+        capabilities: { ask: true, setKeyWizard: true, analyzeMarksState: true, optimizeAutoNotice: true },
+        root: { mode: 'pinned', root: space.autoGuardDir },
+        optimizeRuntime: () => kit.bootstrap(),
+      })
       await cliMain(['set', 'lang', 'zh'])
     } finally {
       process.stdout.write = original

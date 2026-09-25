@@ -31,7 +31,8 @@
     "@auto-guard/host-pi": "workspace:*",
     "@auto-guard/host-qoder": "workspace:*",
     "@auto-guard/host-zcode": "workspace:*",
-    "auto-guard": "workspace:*"
+    "auto-guard": "workspace:*",
+    "@auto-guard/host-runtime": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

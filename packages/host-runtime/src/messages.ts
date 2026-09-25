@@ -15,9 +15,6 @@ import type { HostDescriptor } from './descriptor.ts'
 
 const catalog = defineCatalog(
   {
-    usage: '用法：node dist/cli.js <guard|set|examine|optimize> <action>',
-    guardUsage: '用法：node dist/cli.js guard <on|off|status|recent|stats|report|ping|ask>',
-    askUsage: '用法：node dist/cli.js guard ask <list | allow <序号> | deny <序号> [--reason <理由>]>',
     askListHeader: '待裁决 ask {count} 条（allow <序号> 本会话放行；deny <序号> --reason <理由> 本会话拒绝）：',
     askListEmpty: '没有待裁决的 ask（宿主确认框触发时才会产生；会话记忆随会话目录 24h 剪枝消失）。',
     askRow: '[{index}] {time}  {command}（{risk} · {workspace}）',
@@ -26,9 +23,6 @@ const catalog = defineCatalog(
     askResolvedDenyWithReason: '⛔ 已记入本会话拒绝：{command}\n理由：{reason}（完全相同的命令本会话内将以此理由直接拒绝）',
     askInvalidIndex: '无效序号：{value}（应为正整数；先运行 guard ask list 查看当前序号）',
     askStaleIndex: '序号 {index} 已不存在（列表已变化，请重新运行 guard ask list）',
-    setUsage: '用法：node dist/cli.js set <set-key|show-key|clear-key|set-api|lang|history|reload>',
-    examineUsage: '用法：node dist/cli.js examine <on|off|status|clear-old|clear-all>',
-    optimizeUsage: '用法：node dist/cli.js optimize <status|analyze [--full]|list|rollback>',
     statsAuditCount: '审计库记录总数：{count}（学习分析数据源）',
     statsExamineOff: '审查日志未开启（cli.js examine on 后才有持久统计）',
     pingOk: 'API 联通成功',
@@ -88,9 +82,6 @@ const catalog = defineCatalog(
     askModelContext: 'auto-guard 已请求人工确认。若用户拒绝并说明理由：按理由调整方案，不要原样重试同一条命令。若用户表示本会话都不允许此类命令：先运行 auto-guard guard ask list 查看序号，再运行 auto-guard guard ask deny <序号> --reason "<用户的理由>" 记入本会话记忆。',
   },
   {
-    usage: 'Usage: node dist/cli.js <guard|set|examine|optimize> <action>',
-    guardUsage: 'Usage: node dist/cli.js guard <on|off|status|recent|stats|report|ping|ask>',
-    askUsage: 'Usage: node dist/cli.js guard ask <list | allow <index> | deny <index> [--reason <text>]>',
     askListHeader: '{count} pending ask(s) (allow <index> = allow for this session; deny <index> --reason <text> = deny for this session):',
     askListEmpty: 'No pending asks (they are created whenever the host confirmation dialog fires; session memory vanishes with the session directory after 24h idle).',
     askRow: '[{index}] {time}  {command} ({risk} · {workspace})',
@@ -99,9 +90,6 @@ const catalog = defineCatalog(
     askResolvedDenyWithReason: '⛔ Recorded for this session: deny {command}\nReason: {reason} (exactly identical commands will be denied with that reason this session)',
     askInvalidIndex: 'Invalid index: {value} (expected a positive integer; run guard ask list for the current numbering)',
     askStaleIndex: 'Index {index} no longer exists (the list changed; re-run guard ask list)',
-    setUsage: 'Usage: node dist/cli.js set <set-key|show-key|clear-key|set-api|lang|history|reload>',
-    examineUsage: 'Usage: node dist/cli.js examine <on|off|status|clear-old|clear-all>',
-    optimizeUsage: 'Usage: node dist/cli.js optimize <status|analyze [--full]|list|rollback>',
     statsAuditCount: 'audit log records: {count} (learned-analysis data source)',
     statsExamineOff: 'Audit log is off (run cli.js examine on for persistent stats)',
     pingOk: 'API reachable',

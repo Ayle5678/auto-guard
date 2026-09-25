@@ -22,7 +22,7 @@ export { createBootstrap, type HostBootstrapKit, type GuardRuntime, type Runtime
 export { buildGuardDeps, createGuardService, type GuardDepsParts, type GuardWiring } from './guard-deps.ts'
 export { createDecisionRender } from './decision-render.ts'
 export { createHookCliMain, type HookIo } from './hook-cli.ts'
-export { createCliMain, type CliParts } from './cli.ts'
+export { createCliMain, type CliParts, type CliCapabilities, type CliRootSource, type HostRootRef, type PingableReviewer, type PingResult } from './cli.ts'
 export { createSessionMain, type SessionMainOptions } from './session-start.ts'
 export { createHookHost, type CreateHookHostOptions, type HookHost } from './create-hook-host.ts'
 export { runCliFacade } from './cli-facade.ts'

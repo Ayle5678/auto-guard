@@ -28,6 +28,9 @@ importers:
       '@auto-guard/host-qoder':
         specifier: workspace:*
         version: link:../host-qoder
+      '@auto-guard/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
       '@auto-guard/host-zcode':
         specifier: workspace:*
         version: link:../host-zcode
@@ -47,6 +50,9 @@ importers:
 
   packages/conformance:
     devDependencies:
+      '@auto-guard/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@auto-guard/core':
         specifier: workspace:*
         version: link:../core

@@ -51,7 +51,15 @@ export function createHookHost(descriptor: HostDescriptor, options: CreateHookHo
   const wire = descriptor.wire ?? createDefaultWire(descriptor.capabilities)
 
   const hookMain = createHookCliMain({ descriptor, space, kit, extraction, message, wire })
-  const cliMain = createCliMain({ space, kit, message })
+  // ADR-0022: the runtime driver declares today's surface — ask group and
+  // set-key wizard, no aggregate view — to the single engine.
+  const cliMain = createCliMain({
+    programName: 'node dist/cli.js',
+    message: (lang, key, params = {}) => message(lang, key as Parameters<typeof message>[1], params),
+    capabilities: { ask: true, setKeyWizard: true, analyzeMarksState: true, optimizeAutoNotice: true },
+    root: { mode: 'pinned', root: space.autoGuardDir },
+    optimizeRuntime: () => kit.bootstrap(),
+  })
   const sessionMain = createSessionMain(space)
 
   return {
