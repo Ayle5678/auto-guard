@@ -69,7 +69,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     writeOut: (text) => {
       output.push(text)
     },
-    capabilities: { aggregateStatus: true, statusAuditCount: true, analyzeRequiresExamine: true },
+    capabilities: { aggregateStatus: true, statusAuditCount: true, analyzeRequiresExamine: true, apiSync: true },
     root: {
       mode: 'auto',
       envRoot: () => process.env.AUTO_GUARD_CONFIG_ROOT,

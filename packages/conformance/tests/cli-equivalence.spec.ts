@@ -113,6 +113,7 @@ describe('runtime CLI snapshot (createCliMain, zcode config space)', () => {
     entry(['optimize'], 1, '用法：node dist/cli.js optimize <status|analyze [--full]|list|rollback>'),
     entry(['optimize', 'bogus'], 1, '用法：node dist/cli.js optimize <status|analyze [--full]|list|rollback>'),
     entry(['optimize', 'auto'], 1, '用法：node dist/cli.js set 不支持 auto'),
+    entry(['sync-api'], 1, '用法：node dist/cli.js <guard|set|examine|optimize> <action>'),
     entry(['guard', 'recent'], 0, '(暂无裁决历史)'),
     entry(['guard', 'stats'], 0, '审查日志未开启'),
     entry(['guard', 'report'], 0, '审查日志未开启'),
@@ -275,7 +276,8 @@ describe('unified CLI snapshot (runCli, --config-root)', () => {
     entry(['set'], 1, '用法：auto-guard set <set-key|show-key|clear-key|set-api|lang|history|reload>'),
     entry(['examine'], 1, '用法：auto-guard examine <on|off|status|clear-old|clear-all>'),
     entry(['optimize'], 1, '用法：auto-guard optimize <status|analyze [--full]|list|rollback>'),
-    entry(['bogus'], 1, '用法：auto-guard <init|list|remove|guard|set|examine|optimize>'),
+    entry(['bogus'], 1, '用法：auto-guard <init|list|remove|guard|set|examine|optimize|sync-api>'),
+    entry(['sync-api'], 1, '用法：auto-guard sync-api <base> <model> [--fallback <model>] [--propagate-key]'),
     entry(['guard', 'ask', 'list'], 1, '用法：auto-guard guard <on|off|status|recent|stats|report|ping>'),
     entry(['guard', 'recent'], 0, '(暂无裁决历史)'),
     entry(['guard', 'stats'], 0, '审查日志未开启'),
@@ -327,6 +329,33 @@ describe('unified CLI snapshot (runCli, --config-root)', () => {
     const result = await runCli(['--config-root', dir, 'set', 'set-key'], cliDeps(dir))
     expect(result.code).toBe(2)
     expect(result.output.join('\n')).toContain('set set-key 需要交互式终端')
+  })
+
+  it('sync-api patches every seeded host root from one invocation (unified-entry capability)', async () => {
+    const dir = root()
+    const zcHome = join(dir, '.zcode')
+    const zcRoot = join(zcHome, 'auto-guard')
+    const piHome = join(dir, '.pi')
+    const piRoot = join(piHome, 'auto-guard')
+    for (const r of [zcRoot, piRoot]) {
+      mkdirSync(r, { recursive: true })
+      writeFileSync(join(r, 'config.json'), JSON.stringify({ apiBase: 'https://old', model: 'old-model', provider: 'deepseek-official' }), 'utf8')
+    }
+    const result = await runCli(['sync-api', 'https://api.deepseek.com', 'deepseek-v4-flash'], {
+      ...cliDeps(dir),
+      hostRoots: () => [
+        { label: 'ZCode', homeDir: zcHome, root: zcRoot },
+        { label: 'Pi', homeDir: piHome, root: piRoot },
+      ],
+    })
+    expect(result.code).toBe(0)
+    expect(result.output.join('\n')).toContain('已同步 2 个宿主根')
+    for (const r of [zcRoot, piRoot]) {
+      const config = JSON.parse(readFileSync(join(r, 'config.json'), 'utf8')) as Record<string, unknown>
+      expect(config.apiBase).toBe('https://api.deepseek.com')
+      expect(config.model).toBe('deepseek-v4-flash')
+      expect(config.provider).toBe('deepseek-official')
+    }
   })
 
   it('aggregate guard status renders only when the root was auto-detected', async () => {

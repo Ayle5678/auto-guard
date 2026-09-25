@@ -18,10 +18,10 @@
  * every other wording key stays with the driver catalog until the guard
  * surface catalog unifies it (ADR-0023).
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   analyzeLearnedRules,
   applyHistoryToggle,
@@ -109,6 +109,8 @@ export interface CliCapabilities {
   analyzeMarksState?: boolean
   /** `optimize auto` prints the dedicated unsupported notice; false → group usage. */
   optimizeAutoNotice?: boolean
+  /** `sync-api`: point every installed host root at one review API (unified entry only). */
+  apiSync?: boolean
 }
 
 /**
@@ -162,6 +164,21 @@ interface Ctx {
   explicitRoot: boolean
 }
 
+/**
+ * Targeted config patch (SPEC 0023): rewrite only the named keys of one
+ * config.json, preserving every other field's value and the key order —
+ * host-specific fields outside the engine's save schema (dsh's provider
+ * family) survive. Write goes through temp+rename so a crash mid-write
+ * cannot corrupt a config across every root in one sweep.
+ */
+function patchConfigFields(configPath: string, fields: Record<string, string>): void {
+  const raw = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
+  Object.assign(raw, fields)
+  const tmpPath = `${configPath}.tmp`
+  writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { encoding: 'utf8' })
+  renameSync(tmpPath, configPath)
+}
+
 /** Build the CLI entry for one driver (argv excludes the binary name). */
 export function createCliMain(parts: CliParts): (argv: readonly string[]) => Promise<number> {
   const emit = (message: string): void => {
@@ -184,17 +201,18 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
   }
 
   /** Usage lines are engine-owned text, parameterized by the program prefix. */
-  function usageText(key: 'usage' | 'guardUsage' | 'askUsage' | 'setUsage' | 'examineUsage' | 'optimizeUsage', lang: Lang): string {
+  function usageText(key: 'usage' | 'guardUsage' | 'askUsage' | 'setUsage' | 'examineUsage' | 'optimizeUsage' | 'syncApiUsage', lang: Lang): string {
     const p = parts.programName
     const zh = lang === 'zh'
     const colon = zh ? '用法：' : 'Usage: '
     const ask = parts.capabilities.ask ? '|ask' : ''
+    const sync = parts.capabilities.apiSync ? '|sync-api' : ''
     switch (key) {
       case 'usage':
         if (parts.root.mode === 'auto') {
           return zh
-            ? `${colon}${p} <init|list|remove|guard|set|examine|optimize> …（init/list/remove 为安装器；可选 --config-root <path>）`
-            : `${colon}${p} <init|list|remove|guard|set|examine|optimize> … (init/list/remove are the installer; optional --config-root <path>)`
+            ? `${colon}${p} <init|list|remove|guard|set|examine|optimize${sync}> …（init/list/remove 为安装器；可选 --config-root <path>）`
+            : `${colon}${p} <init|list|remove|guard|set|examine|optimize${sync}> … (init/list/remove are the installer; optional --config-root <path>)`
         }
         return `${colon}${p} <guard|set|examine|optimize> <action>`
       case 'guardUsage':
@@ -209,10 +227,12 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
         return `${colon}${p} examine <on|off|status|clear-old|clear-all>`
       case 'optimizeUsage':
         return `${colon}${p} optimize <status|analyze [--full]|list|rollback>`
+      case 'syncApiUsage':
+        return `${colon}${p} sync-api <base> <model> [--fallback <model>] [--propagate-key]`
     }
   }
 
-  function usageExit(key: 'guardUsage' | 'askUsage' | 'setUsage' | 'examineUsage' | 'optimizeUsage', lang: Lang): number {
+  function usageExit(key: 'guardUsage' | 'askUsage' | 'setUsage' | 'examineUsage' | 'optimizeUsage' | 'syncApiUsage', lang: Lang): number {
     emit(usageText(key, lang))
     return 1
   }
@@ -292,6 +312,12 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
         return examineCommand(action, ctx.root)
       case 'optimize':
         return optimizeCommand(action, rest, ctx.root)
+      case 'sync-api':
+        if (!parts.capabilities.apiSync) {
+          emit(usageText('usage', resolveLang()))
+          return 1
+        }
+        return syncApiCommand(action, rest, ctx)
       default:
         emit(usageText('usage', resolveLang()))
         return 1
@@ -345,6 +371,75 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
     lines.push('')
     lines.push(parts.message(viewLang, 'aggregateFooter'))
     return lines
+  }
+
+  /**
+   * `sync-api`: point every installed host root at the same review API
+   * (SPEC 0023). Targets are host roots whose host is installed and whose
+   * auto-guard is seeded (config.json exists); the write is a targeted JSON
+   * patch so fields outside the engine's schema — dsh's provider family —
+   * survive byte-for-byte. `--propagate-key` copies the current root's
+   * stored key to the other synced roots (never through the command line).
+   */
+  function syncApiCommand(base: string, rest: readonly string[], ctx: Ctx): number {
+    const viewLang = resolveLang()
+    const [model, ...flags] = rest
+    if (!base || !model || base.startsWith('--') || model.startsWith('--')) {
+      return usageExit('syncApiUsage', viewLang)
+    }
+    let fallbackModel = model
+    let propagateKey = false
+    for (let i = 0; i < flags.length; i++) {
+      const flag = flags[i]
+      if (flag === '--fallback') {
+        const value = flags[i + 1]
+        if (!value || value.startsWith('--')) return usageExit('syncApiUsage', viewLang)
+        fallbackModel = value
+        i++
+      } else if (flag === '--propagate-key') {
+        propagateKey = true
+      } else {
+        return usageExit('syncApiUsage', viewLang)
+      }
+    }
+
+    const roots = parts.root.mode === 'auto' ? (parts.root.hostRoots?.() ?? []) : []
+    const sourceKey = propagateKey ? loadApiKey(ctx.root) : undefined
+    const lines: string[] = [parts.message(viewLang, 'syncApiHeader', { base, model })]
+    if (propagateKey && !sourceKey) {
+      lines.push(parts.message(viewLang, 'syncApiKeyMissing', { root: tildePath(ctx.root) }))
+    }
+    let synced = 0
+    for (const { label, homeDir, root } of roots) {
+      if (!existsSync(homeDir)) continue
+      if (!existsSync(join(root, 'config.json'))) {
+        lines.push(parts.message(viewLang, 'syncApiSkipped', { label, root: tildePath(root) }))
+        continue
+      }
+      try {
+        patchConfigFields(join(root, 'config.json'), { apiBase: base, model, fallbackModel })
+      } catch {
+        lines.push(parts.message(viewLang, 'syncApiRootFailed', { label, root: tildePath(root) }))
+        continue
+      }
+      lines.push(parts.message(viewLang, 'syncApiRootDone', { label, root: tildePath(root) }))
+      synced++
+      // Key copy is its own error domain: a locked key store never rewrites
+      // the endpoint receipt. resolve() absorbs slash/trailing-separator
+      // spellings so the current root never counts as "other".
+      if (sourceKey && resolve(root) !== resolve(ctx.root)) {
+        try {
+          saveApiKey(root, sourceKey)
+          lines.push(`  ${parts.message(viewLang, 'syncApiKeyCopied')}`)
+        } catch {
+          lines.push(`  ${parts.message(viewLang, 'syncApiKeyCopyFailed')}`)
+        }
+      }
+    }
+    if (synced === 0) lines.push(parts.message(viewLang, 'syncApiNoRoots'))
+    else lines.push(parts.message(viewLang, 'syncApiDone', { count: synced }))
+    emit(lines.join('\n'))
+    return synced === 0 ? 1 : 0
   }
 
   function guardCommand(action: string, rest: readonly string[], ctx: Ctx): number | Promise<number> {
