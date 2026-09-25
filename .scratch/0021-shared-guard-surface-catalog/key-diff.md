@@ -171,3 +171,18 @@
 - pi optimizeListEmpty → core 同名键（该分支现为死代码：列表恒带表头，随迁移删除）
 - dsh rollbackDone / rollbackNone → `rollbackLearnedRules` 返回的 core 回执（rollbackDone / rollbackNoBackup）
 - dsh contextAllow / contextDeny / contextAsk → core 同义键 kindAllow / kindDeny / kindAsk（逐字相同，渲染零变化）
+
+### 复用项的措辞明细（迁移前 → 迁移后，逐条可审）
+
+- pi optimizeRollbackDone：「已从 backup 恢复学习规则」→ core rollbackDone「已从备份恢复学习规则」；en 不变（Learned rules restored from backup）
+- pi optimizeRollbackNone / dsh rollbackNone：「没有可恢复的 backup」→ core rollbackNoBackup「没有可用的备份文件」；en「No backup to restore」→「No backup file available」
+- dsh rollbackDone：「已从 backup 恢复学习规则」→ core rollbackDone「已从备份恢复学习规则」；en 不变
+- pi optimizeHistoryOn/Off：「运行时历史层已开启/已关闭」→ core historyEnabledNote/historyDisabledNote「history 层已开启/已关闭（按命令骨架复用 60 天审计放行记录）」；注意：examine 未开启时 core 回执追加第二行 historyNeedsExamine 提示（pi 原先无此行）
+- pi learnedAnalyzed：「学习规则分析完成：cacheable {count}」→ core analyzeLearnedRules 回执（analyzeDone/analyzeDoneFull 完整形态：含分析窗口条数与写入 learned-rules.json 说明）
+- pi optimizeListEmpty：「（无学习规则）」全角括号 → core「(无学习规则)」（该分支为死代码，渲染不变）
+
+### 精度注记
+
+- showKeyStored：cli 目录原文用 {root} 占位、正典用 {dir}；引擎调用点两占位符均传同一根目录，渲染逐字节不变——表内 ≠ 为模板级差异，非用户可见变化
+- statsExamineOff / optimizeAutoUnsupported：{program} 注入后 zh 侧逐字节不变；runtime 驱动 en 侧由字面 cli.js 变为实际程序名 node dist/cli.js（更准确）
+- exportDone：迁移后 {path} 参数化，dsh 调用点传入 ~/.dsh/auto-guard/audit.export.db，渲染不变

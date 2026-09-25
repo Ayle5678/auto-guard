@@ -11,9 +11,9 @@
 
 | 目录 | 迁移前键数 | 删除 | 现存 chrome 键 | 现存内容 |
 |---|---|---|---|---|
-| host-runtime | 67 | 35 | 32 | fail* 阶梯 4、unreviewable* 2、hit* 10、ask 管线提示 3（askDeniedNoPrompt/askEscapeHint/askModelContext）、unknownDecisionDenied/passthroughDetail 2、wizard* 9、TUI 其余 chrome（deleteAskReason 已迁 core） |
-| host-pi | 86 | 24 | 62 | 对话框组（ask/confirm/denyReason/set-key/set-api/examine 密码）、状态栏 status* 14、统计面板 stats* 7、slash CmdDesc/Usage 8、examine 状态行 4、optimize 状态/开关回执 9、内联警告 2、switchOn/Off 等 |
-| host-dsh | 22 | 17 | 5 | analyzeNeedsExamine / analyzeNeedsPassword / analyzeDone（绑定 dsh 私有分析流程，SPEC 0022 收编时折入 core 回执）、contextFallbackReason（宿主品牌串） |
+| host-runtime | 65 | 35 | 30 | fail* 阶梯 4、unreviewable* 2、hit* 10、ask 管线提示 3（askDeniedNoPrompt/askEscapeHint/askModelContext）、unknownDecisionDenied/passthroughDetail 2、wizard* 9、TUI 其余 chrome（deleteAskReason 已迁 core） |
+| host-pi | 85 | 24 | 61 | 对话框组（ask/confirm/denyReason/set-key/set-api/examine 密码）、状态栏 status* 14、统计面板 stats* 7、slash CmdDesc/Usage 8、examine 状态行 4、optimize 状态/开关回执 9、内联警告 2、switchOn/Off 等 |
+| host-dsh | 21 | 17 | 4 | analyzeNeedsExamine / analyzeNeedsPassword / analyzeDone（绑定 dsh 私有分析流程，SPEC 0022 收编时折入 core 回执）、contextFallbackReason（宿主品牌串） |
 | cli | 24 | 20 | 4 | noRootFound + aggregate* 3（多宿主聚合视图 chrome） |
 
 core 侧：`core/src/messages.ts`（引擎自身文案，52 键）不动；`core/src/guard-messages.ts` 新增 45 键 + `GuardMessageOverrides` 数据槽类型。

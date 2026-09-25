@@ -4,9 +4,8 @@
  * builds the DSH-specific delivery shapes: page-only command/run + command/done
  * events and context-route notice messages.
  */
-import { notifyRoute as coreNotifyRoute, pageNoticeText, sourceTag, type Decision, type DecisionKind, type GuardConfig, type Lang, type NotifyRoute } from '@auto-guard/core'
+import { coreMessage, notifyRoute as coreNotifyRoute, pageNoticeText, sourceTag, type Decision, type DecisionKind, type GuardConfig, type Lang, type NotifyRoute } from '@auto-guard/core'
 import { createNoticeMessage, type NoticeMessage } from './notice-message.ts'
-import { coreMessage } from '@auto-guard/core'
 import { dshMessage } from './messages.ts'
 
 export { notifyRoute } from '@auto-guard/core'

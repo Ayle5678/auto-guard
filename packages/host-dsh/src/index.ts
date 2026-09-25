@@ -182,7 +182,7 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
       if (!state.audit.exportPlaintext) return { ok: false, message: t('exportUnsupported') }
       const ok = state.audit.exportPlaintext(join(AUTO_GUARD_DIR, 'audit.export.db'))
       return ok
-        ? { ok: true, message: t('exportDone') }
+        ? { ok: true, message: t('exportDone', { path: '~/.dsh/auto-guard/audit.export.db' }) }
         : { ok: false, message: t('exportFailed') }
     },
     createNewAudit(): { ok: boolean; message: string } {

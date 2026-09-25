@@ -153,7 +153,7 @@ export function createPiMessage(overrides?: GuardMessageOverrides): PiMessage {
   }
 }
 
-/** One bound host-surface message lookup: overrides first, then the shared catalog, then this catalog. */
+/** One bound host-surface message lookup: guard keys resolve from the data slot or the shared catalog; chrome keys from this catalog. */
 export type PiMessage = (lang: Lang, key: PiMessageKey, params?: Record<string, string | number>) => string
 
 /** Default Pi lookup (no overrides). */

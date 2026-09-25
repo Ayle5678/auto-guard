@@ -39,7 +39,7 @@ export function createDshMessage(overrides?: GuardMessageOverrides): DshMessage 
   }
 }
 
-/** One bound host-surface message lookup: overrides first, then the shared catalog, then this catalog. */
+/** One bound host-surface message lookup: guard keys resolve from the data slot or the shared catalog; chrome keys from this catalog. */
 export type DshMessage = (lang: Lang, key: DshMessageKey, params?: Record<string, string | number>) => string
 
 /** Default DSH lookup (no overrides). */
