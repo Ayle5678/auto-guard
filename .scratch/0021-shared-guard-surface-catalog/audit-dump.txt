@@ -1,0 +1,474 @@
+
+## analyzeDone  [core, dsh]  DRIFT
+  core.zh: "学习规则分析完成（最近 {analyzed}/{total} 条）：cacheable 共 {count} 条已合并写入 learned-rules.json"
+  core.en: "Learned-rule analysis done (recent {analyzed}/{total} rows): {count} cacheable rule(s) merged into learned-rules.json"
+  dsh.zh: "学习规则分析完成：cacheable {count}"
+  dsh.en: "Learned-rule analysis done: cacheable {count}"
+
+## analyzeNeedsExamine  [core, dsh]  DRIFT
+  core.zh: "请先开启审查日志（examine on）再分析"
+  core.en: "Enable the audit log first (examine on) before analyzing"
+  dsh.zh: "请先开启审查日志（examineEnabled）再分析"
+  dsh.en: "Enable the audit log first (examineEnabled) before analyzing"
+
+## clearKeyDone  [runtime, pi, cli]  DRIFT
+  runtime.zh: "已清除本地存储的 API Key（加密文件已删除；环境变量不受影响）"
+  runtime.en: "Locally stored API key cleared (encrypted file deleted; environment variables unaffected)"
+  pi.zh: "已清除加密存储的 API Key（明文遗留字段保持只读；环境变量不受影响）"
+  pi.en: "Encrypted API key cleared (the legacy plaintext field stays read-only; environment variables unaffected)"
+  cli.zh: "已清除本地存储的 API Key（加密文件已删除；环境变量不受影响）"
+  cli.en: "Locally stored API key cleared (encrypted file deleted; environment variables unaffected)"
+
+## deleteFailDefaultReason  [pi, dsh]  VERBATIM-IDENTICAL
+  pi.zh: "审查未通过"
+  pi.en: "Review not passed"
+  dsh.zh: "审查未通过"
+  dsh.en: "Review not passed"
+
+## deleteFailLlmTitle  [runtime, pi, dsh]  DRIFT
+  runtime.zh: "LLM 未通过本次删除"
+  runtime.en: "The LLM rejected this deletion"
+  pi.zh: "LLM 未通过这次删除"
+  pi.en: "The LLM rejected this deletion"
+  dsh.zh: "LLM 否决了这次删除"
+  dsh.en: "The LLM vetoed this deletion"
+
+## deleteFailReviewerTitle  [runtime, pi, dsh]  DRIFT
+  runtime.zh: "审查器故障，本次未过审"
+  runtime.en: "Reviewer failure — this deletion was not approved"
+  pi.zh: "审查器故障，这次删除未过审"
+  pi.en: "Reviewer failure — this deletion was not approved"
+  dsh.zh: "审查器故障，这次删除未过审"
+  dsh.en: "Reviewer failure — this deletion was not approved"
+
+## deleteRunAnyway  [pi, dsh]  VERBATIM-IDENTICAL
+  pi.zh: "仍要执行吗？"
+  pi.en: "Run it anyway?"
+  dsh.zh: "仍要执行吗？"
+  dsh.en: "Run it anyway?"
+
+## examineClearedAll  [runtime, pi, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "已清空全部审查日志"
+  runtime.en: "Cleared all audit records"
+  pi.zh: "已清空全部审查日志"
+  pi.en: "Cleared all audit records"
+  cli.zh: "已清空全部审查日志"
+  cli.en: "Cleared all audit records"
+
+## examineClearedOld  [runtime, pi, cli]  DRIFT
+  runtime.zh: "已删除 {count} 条 30 天前记录"
+  runtime.en: "Deleted {count} record(s) older than 30 days"
+  pi.zh: "已删除 {count} 条 30 天前的审查日志"
+  pi.en: "Deleted {count} audit record(s) older than 30 days"
+  cli.zh: "已删除 {count} 条 30 天前记录"
+  cli.en: "Deleted {count} record(s) older than 30 days"
+
+## examineOff  [runtime, pi, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "审查日志已关闭"
+  runtime.en: "Audit log disabled"
+  pi.zh: "审查日志已关闭"
+  pi.en: "Audit log disabled"
+  cli.zh: "审查日志已关闭"
+  cli.en: "Audit log disabled"
+
+## examineOn  [runtime, pi, cli]  DRIFT
+  runtime.zh: "审查日志已开启（本地 SQLite + 字段级加密，数据不出本机）"
+  runtime.en: "Audit log enabled (local SQLite + field-level encryption; data never leaves this machine)"
+  pi.zh: "审查日志已开启（实验性，审计库已加密）"
+  pi.en: "Audit log enabled (experimental; the database is encrypted)"
+  cli.zh: "审查日志已开启（本地 SQLite + 字段级加密，数据不出本机）"
+  cli.en: "Audit log enabled (local SQLite + field-level encryption; data never leaves this machine)"
+
+## optimizeListEmpty  [core, pi]  DRIFT
+  core.zh: "(无学习规则)"
+  core.en: "(no learned rules)"
+  pi.zh: "（无学习规则）"
+  pi.en: "(no learned rules)"
+
+## pingFail  [runtime, pi, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "API 联通失败：{error}"
+  runtime.en: "API unreachable: {error}"
+  pi.zh: "API 联通失败：{error}"
+  pi.en: "API unreachable: {error}"
+  cli.zh: "API 联通失败：{error}"
+  cli.en: "API unreachable: {error}"
+
+## pingOk  [runtime, pi, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "API 联通成功"
+  runtime.en: "API reachable"
+  pi.zh: "API 联通成功"
+  pi.en: "API reachable"
+  cli.zh: "API 联通成功"
+  cli.en: "API reachable"
+
+## reloadNote  [runtime, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "配置与规则在每次 hook 进程启动时自动重读"
+  runtime.en: "Config and rules are re-read on every hook process start"
+  cli.zh: "配置与规则在每次 hook 进程启动时自动重读"
+  cli.en: "Config and rules are re-read on every hook process start"
+
+## rollbackDone  [core, dsh]  DRIFT
+  core.zh: "已从备份恢复学习规则"
+  core.en: "Learned rules restored from backup"
+  dsh.zh: "已从 backup 恢复学习规则"
+  dsh.en: "Learned rules restored from backup"
+
+## setKeyNeedsTty  [runtime, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "set set-key 需要交互式终端（IDE 内置终端即可）。请不要把 Key 粘贴到对话中——那会进入会话日志。"
+  runtime.en: "set set-key needs an interactive terminal (the IDE built-in terminal works). Never paste the key into a chat — it would land in the session log."
+  cli.zh: "set set-key 需要交互式终端（IDE 内置终端即可）。请不要把 Key 粘贴到对话中——那会进入会话日志。"
+  cli.en: "set set-key needs an interactive terminal (the IDE built-in terminal works). Never paste the key into a chat — it would land in the session log."
+
+## setLangDone  [runtime, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "语言已设置：{lang}（已写入当前配置根）"
+  runtime.en: "Language set: {lang} (written to this config root)"
+  cli.zh: "语言已设置：{lang}（已写入当前配置根）"
+  cli.en: "Language set: {lang} (written to this config root)"
+
+## setLangInvalid  [runtime, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "无效语言值：{value}（可用：zh、en）"
+  runtime.en: "Invalid language value: {value} (available: zh, en)"
+  cli.zh: "无效语言值：{value}（可用：zh、en）"
+  cli.en: "Invalid language value: {value} (available: zh, en)"
+
+## showKeyEnvSet  [runtime, pi, cli]  DRIFT
+  runtime.zh: "env {name}: 已设置（优先于本地存储）"
+  runtime.en: "env {name}: set (takes priority over local storage)"
+  pi.zh: "环境变量 {name}：已配置（优先生效）"
+  pi.en: "Environment variable {name}: set (takes priority)"
+  cli.zh: "env {name}: 已设置（优先于本地存储）"
+  cli.en: "env {name}: set (takes priority over local storage)"
+
+## showKeyEnvUnset  [runtime, pi, cli]  DRIFT
+  runtime.zh: "env {name}: 未设置"
+  runtime.en: "env {name}: not set"
+  pi.zh: "环境变量 {name}：未配置"
+  pi.en: "Environment variable {name}: not set"
+  cli.zh: "env {name}: 未设置"
+  cli.en: "env {name}: not set"
+
+## showKeyLegacy  [runtime, pi, cli]  DRIFT
+  runtime.zh: "legacy     : {key}（config.json 明文遗留，建议 set-key 重存）"
+  runtime.en: "legacy     : {key} (plaintext legacy in config.json; re-store via set-key)"
+  pi.zh: "明文遗留：{key}（只读保留，建议 set-key 重存加密版）"
+  pi.en: "Legacy plaintext: {key} (kept read-only; re-store via set-key)"
+  cli.zh: "legacy     : {key}（config.json 明文遗留，建议 set-key 重存）"
+  cli.en: "legacy     : {key} (plaintext legacy in config.json; re-store via set-key)"
+
+## showKeyNoLegacy  [runtime, pi, cli]  DRIFT
+  runtime.zh: "legacy     : (无)"
+  runtime.en: "legacy     : (none)"
+  pi.zh: "明文遗留：(无)"
+  pi.en: "Legacy plaintext: (none)"
+  cli.zh: "legacy     : (无)"
+  cli.en: "legacy     : (none)"
+
+## showKeyNoStore  [runtime, pi, cli]  DRIFT
+  runtime.zh: "stored     : (未存储)"
+  runtime.en: "stored     : (not stored)"
+  pi.zh: "加密存储：(未存储)"
+  pi.en: "Encrypted storage: (not stored)"
+  cli.zh: "stored     : (未存储)"
+  cli.en: "stored     : (not stored)"
+
+## showKeyStored  [runtime, pi, cli]  DRIFT
+  runtime.zh: "stored     : 已存储（AES-GCM 加密于 {dir}/api-key.json）"
+  runtime.en: "stored     : stored (AES-GCM encrypted at {dir}/api-key.json)"
+  pi.zh: "加密存储：已存储（AES-GCM 加密于 {dir}/api-key.json）"
+  pi.en: "Encrypted storage: stored (AES-GCM at {dir}/api-key.json)"
+  cli.zh: "stored     : 已存储（AES-GCM 加密于 {root}/api-key.json）"
+  cli.en: "stored     : stored (AES-GCM encrypted at {root}/api-key.json)"
+
+## statsAuditCount  [runtime, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "审计库记录总数：{count}（学习分析数据源）"
+  runtime.en: "audit log records: {count} (learned-analysis data source)"
+  cli.zh: "审计库记录总数：{count}（学习分析数据源）"
+  cli.en: "audit log records: {count} (learned-analysis data source)"
+
+## statsExamineOff  [runtime, cli]  DRIFT
+  runtime.zh: "审查日志未开启（cli.js examine on 后才有持久统计）"
+  runtime.en: "Audit log is off (run cli.js examine on for persistent stats)"
+  cli.zh: "审查日志未开启（auto-guard examine on 后才有持久统计）"
+  cli.en: "Audit log is off (run auto-guard examine on for persistent stats)"
+
+## statusReviewerFailed  [core, pi]  DRIFT
+  core.zh: "⚠ 最近一次 LLM 审查失败"
+  core.en: "⚠ last LLM review failed"
+  pi.zh: "失败：{error}（{when}）"
+  pi.en: "failed: {error} ({when})"
+
+## unknownError  [runtime, pi, cli]  VERBATIM-IDENTICAL
+  runtime.zh: "未知错误"
+  runtime.en: "unknown error"
+  pi.zh: "未知错误"
+  pi.en: "unknown error"
+  cli.zh: "未知错误"
+  cli.en: "unknown error"
+
+# ALL KEYS — core (52)
+analyzeDone
+analyzeDoneFull
+analyzeNeedsExamine
+deleteNeedsReason
+deleteRetryNoReason
+historyDisabledNote
+historyEnabledNote
+historyNeedsExamine
+historyUsage
+intervalDays
+intervalMinutes
+kindAllow
+kindAsk
+kindDeny
+never
+noticeNotInContext
+noticeSourcePrefix
+optimizeListEmpty
+pageKindAllow
+pageKindAsk
+pageKindDeny
+pendingDenyAskReason
+recentEmpty
+recentHeader
+reportBySource
+reportEmpty
+reportHeader
+reportKinds
+reportLlm
+rollbackDone
+rollbackNoBackup
+rowLimitDetail
+setApiResetOk
+setApiUpdateOk
+setApiUsage
+setEnabledOff
+setEnabledOn
+statusAuditCount
+statusNoKey
+statusReviewerFailed
+tagDirectoryDelete
+tagFileTracker
+tagHardDeny
+tagHistory
+tagLearned
+tagLlm
+tagOther
+tagPersistentCache
+tagSensitivePath
+tagSessionCache
+tagStaticAllow
+tagUserConfirmed
+
+# ALL KEYS — runtime (65)
+askDeniedNoPrompt
+askEscapeHint
+askInvalidIndex
+askListEmpty
+askListHeader
+askModelContext
+askResolvedAllow
+askResolvedDeny
+askResolvedDenyWithReason
+askRow
+askStaleIndex
+clearKeyDone
+deleteAskReason
+deleteFailLlmTitle
+deleteFailReviewerTitle
+deleteNoDetail
+deletionRetryHint
+examineClearedAll
+examineClearedOld
+examineOff
+examineOn
+failBootstrap
+failDecide
+failStdinNotJson
+failUncaught
+hitCacheDefault
+hitHistory
+hitHistoryDefault
+hitLearned
+hitLearnedDefault
+hitPersistentCache
+hitRule
+hitRuleDefault
+hitSessionCache
+hitUntracked
+optimizeAutoUnsupported
+passthroughDetail
+pingFail
+pingOk
+reloadNote
+setKeyEnvWarning
+setKeyNeedsTty
+setLangDone
+setLangInvalid
+showKeyEnvSet
+showKeyEnvUnset
+showKeyLegacy
+showKeyNoLegacy
+showKeyNoStore
+showKeyStored
+statsAuditCount
+statsExamineOff
+unknownDecisionDenied
+unknownError
+unreviewableBash
+unreviewablePath
+wizardBanner
+wizardBasePrompt
+wizardCancelled
+wizardInvalidBase
+wizardInvalidKey
+wizardKeyPrompt
+wizardModelPrompt
+wizardSaved
+wizardSavedHint
+
+# ALL KEYS — pi (85)
+askTitle
+clearKeyDone
+confirmBody
+confirmTitle
+deleteFailDefaultReason
+deleteFailLlmTitle
+deleteFailReviewerTitle
+deleteRunAnyway
+denyReasonPlaceholder
+denyReasonTitle
+examineCancelled
+examineClearedAll
+examineClearedOld
+examineCmdDesc
+examineDb
+examineOff
+examineOn
+examinePasswordPrompt
+examinePasswordTitle
+examineStatusOff
+examineStatusOn
+examineUsage
+guardCmdDesc
+guardUsage
+learnedAnalyzed
+optimizeAutoOff
+optimizeAutoOn
+optimizeCmdDesc
+optimizeHistoryOff
+optimizeHistoryOn
+optimizeListEmpty
+optimizeRollbackDone
+optimizeRollbackNone
+optimizeStatusAuto
+optimizeStatusCacheable
+optimizeStatusCollect
+optimizeStatusHistory
+optimizeStatusLast
+optimizeUsage
+pingFail
+pingOk
+setApiBaseTitle
+setApiCancelled
+setApiInlineWarning
+setApiKeyPrompt
+setApiKeyTitle
+setApiModelTitle
+setApiUpdated
+setCmdDesc
+setKeyCancelled
+setKeyInlineWarning
+setKeyPrompt
+setKeySaved
+setKeyTitle
+setReloadDone
+setUsage
+showKeyEnvSet
+showKeyEnvUnset
+showKeyLegacy
+showKeyNoLegacy
+showKeyNoStore
+showKeyStored
+statsHistoryHits
+statsHitRate
+statsLearnedHits
+statsLlmCalls
+statsPersistentHits
+statsRuleHits
+statsSessionHits
+statusApiKey
+statusDisabled
+statusEnabled
+statusEndpoint
+statusKeyEnv
+statusKeyHydrated
+statusKeyMissing
+statusModel
+statusReviewFailed
+statusReviewer
+statusReviewerFailed
+statusReviewerNever
+statusReviewerOk
+switchOff
+switchOn
+unknownError
+
+# ALL KEYS — dsh (21)
+analyzeDone
+analyzeNeedsExamine
+analyzeNeedsPassword
+contextAllow
+contextAsk
+contextDeny
+contextFallbackReason
+createDone
+createFailed
+createNeedsPassword
+createUnsupported
+deleteFailDefaultReason
+deleteFailLlmTitle
+deleteFailReviewerTitle
+deleteRunAnyway
+exportDone
+exportFailed
+exportUnsupported
+pingNoDirectEndpoint
+rollbackDone
+rollbackNone
+
+# ALL KEYS — cli (24)
+aggregateFooter
+aggregateHeader
+aggregateUnseeded
+clearKeyDone
+examineClearedAll
+examineClearedOld
+examineOff
+examineOn
+noRootFound
+pingFail
+pingOk
+reloadNote
+setKeyNeedsTty
+setLangDone
+setLangInvalid
+showKeyEnvSet
+showKeyEnvUnset
+showKeyLegacy
+showKeyNoLegacy
+showKeyNoStore
+showKeyStored
+statsAuditCount
+statsExamineOff
+unknownError
+
+# NEAR-DUPE RECEIPTS
+core rollbackDone: zh="已从备份恢复学习规则" en="Learned rules restored from backup"
+runtime rollbackDone: (absent)
+pi optimizeRollbackDone: zh="已从 backup 恢复学习规则" en="Learned rules restored from backup"
+dsh rollbackDone: zh="已从 backup 恢复学习规则" en="Learned rules restored from backup"
+core analyzeDone: zh="学习规则分析完成（最近 {analyzed}/{total} 条）：cacheable 共 {count} 条已合并写入 learned-rules.json" en="Learned-rule analysis done (recent {analyzed}/{total} rows): {count} cacheable rule(s) merged into learned-rules.json"
+pi learnedAnalyzed: zh="学习规则分析完成：cacheable {count}" en="Learned-rule analysis done: cacheable {count}"
+dsh analyzeDone: zh="学习规则分析完成：cacheable {count}" en="Learned-rule analysis done: cacheable {count}"
+core rollbackNoBackup: zh="没有可用的备份文件" en="No backup file available"
+dsh rollbackNone: zh="没有可恢复的 backup" en="No backup to restore"

@@ -5,7 +5,7 @@
  * installer keeps its own catalog. Key parity between languages is enforced
  * by the type system (ADR-0011).
  */
-import { defineCatalog, type Lang } from '@auto-guard/core'
+import { defineCatalog, guardMessage, isGuardMessageKey, type GuardMessageKey, type Lang } from '@auto-guard/core'
 
 const catalog = defineCatalog(
   {
@@ -62,9 +62,12 @@ const catalog = defineCatalog(
   },
 )
 
-export type ShellMessageKey = Parameters<typeof catalog.message>[1]
+type ShellChromeKey = Parameters<typeof catalog.message>[1]
+
+/** Shell lookup key: guard-surface keys resolve from the core shared catalog (ADR-0023), the rest from this shell-chrome catalog. */
+export type ShellMessageKey = ShellChromeKey | GuardMessageKey
 
 /** Look up one management CLI message. */
 export function shellMessage(lang: Lang, key: ShellMessageKey, params: Record<string, string | number> = {}): string {
-  return catalog.message(lang, key, params)
+  return isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
 }

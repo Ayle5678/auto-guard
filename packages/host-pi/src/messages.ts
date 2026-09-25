@@ -5,7 +5,7 @@
  * comes from the core catalog; this file owns only Pi-surface text. Key
  * parity between languages is enforced by the type system.
  */
-import { defineCatalog, type Lang } from '@auto-guard/core'
+import { defineCatalog, guardMessage, isGuardMessageKey, type GuardMessageKey, type Lang } from '@auto-guard/core'
 
 const catalog = defineCatalog(
   {
@@ -184,9 +184,12 @@ const catalog = defineCatalog(
   },
 )
 
-export type PiMessageKey = Parameters<typeof catalog.message>[1]
+type PiChromeKey = Parameters<typeof catalog.message>[1]
+
+/** Pi lookup key: guard-surface keys resolve from the core shared catalog (ADR-0023), the rest from this Pi-chrome catalog. */
+export type PiMessageKey = PiChromeKey | GuardMessageKey
 
 /** Look up one Pi-surface message. */
 export function piMessage(lang: Lang, key: PiMessageKey, params: Record<string, string | number> = {}): string {
-  return catalog.message(lang, key, params)
+  return isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
 }

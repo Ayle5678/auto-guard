@@ -10,7 +10,7 @@
  * its own root; host-flavored wording beyond that rides
  * `HostDescriptor.catalogOverride`.
  */
-import { defineCatalog, interpolate, type Lang } from '@auto-guard/core'
+import { defineCatalog, guardMessage, interpolate, isGuardMessageKey, type GuardMessageKey, type Lang } from '@auto-guard/core'
 import type { HostDescriptor } from './descriptor.ts'
 
 const catalog = defineCatalog(
@@ -150,7 +150,10 @@ const catalog = defineCatalog(
   },
 )
 
-export type RuntimeMessageKey = Parameters<typeof catalog.message>[1]
+type RuntimeChromeKey = Parameters<typeof catalog.message>[1]
+
+/** Runtime lookup key: guard-surface keys resolve from the core shared catalog (ADR-0023), the rest from this chrome catalog. */
+export type RuntimeMessageKey = RuntimeChromeKey | GuardMessageKey
 
 /** Catalog lookup bound to one host: descriptor overrides first, then the shared catalog. */
 export type HostMessage = (lang: Lang, key: RuntimeMessageKey, params?: Record<string, string | number>) => string
@@ -160,11 +163,12 @@ export function createHostMessage(descriptor?: HostDescriptor): HostMessage {
   return (lang, key, params = {}) => {
     const override = descriptor?.catalogOverride?.[key]?.[lang]
     if (override !== undefined) return interpolate(override, params)
-    return catalog.message(lang, key, params)
+    return isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
   }
 }
 
 /** Shared-catalog lookup without a host binding (SPEC 0015: the deny-fallback wire note). */
 export function createRuntimeCatalogMessage(): HostMessage {
-  return (lang, key, params = {}) => catalog.message(lang, key, params)
+  return (lang, key, params = {}) =>
+    isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
 }

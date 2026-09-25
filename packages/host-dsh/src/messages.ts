@@ -5,7 +5,7 @@
  * the core catalog. Key parity between languages is enforced by the type
  * system.
  */
-import { defineCatalog, type Lang } from '@auto-guard/core'
+import { defineCatalog, guardMessage, isGuardMessageKey, type GuardMessageKey, type Lang } from '@auto-guard/core'
 
 const catalog = defineCatalog(
   {
@@ -56,9 +56,12 @@ const catalog = defineCatalog(
   },
 )
 
-export type DshMessageKey = Parameters<typeof catalog.message>[1]
+type DshChromeKey = Parameters<typeof catalog.message>[1]
+
+/** DSH lookup key: guard-surface keys resolve from the core shared catalog (ADR-0023), the rest from this DSH-chrome catalog. */
+export type DshMessageKey = DshChromeKey | GuardMessageKey
 
 /** Look up one DSH-surface message. */
 export function dshMessage(lang: Lang, key: DshMessageKey, params: Record<string, string | number> = {}): string {
-  return catalog.message(lang, key, params)
+  return isGuardMessageKey(key) ? guardMessage(lang, key, params) : catalog.message(lang, key, params)
 }
