@@ -48,16 +48,16 @@ import {
   saveApiKey,
   loadAuditPassword,
   saveAuditPassword,
-  classifyCommand,
   loadRules,
   maskKey,
+  recordToolCallAudit,
   reportLines,
+  resolveNotify,
   setEnabled,
   applySetApi,
   TemplateCache,
   notificationText,
-  notifyRoute,
-  effectiveNotifyRoute,
+  translateDecision,
   usesFourStateAsk,
 } from '@auto-guard/core'
 import type { Decision, GuardConfig, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
@@ -163,7 +163,8 @@ export default function (pi: ExtensionAPI): void {
   /**
    * Translate a guard decision into a Pi action, performing the interactive
    * `ask` confirm and the directory-delete reason flow (interactive input or
-   * headless `[删除理由]` marker).
+   * headless `[删除理由]` marker). The translation policy comes from core
+   * (ADR-0025); this half is Pi's ask sink (dialogs + headless fallback).
    */
   async function evaluate(
     ctx: { hasUI: boolean; ui: { input: (t: string, p?: string) => Promise<string | undefined>; select: (t: string, o: string[]) => Promise<string | undefined>; confirm: (t: string, m: string) => Promise<boolean> } },
@@ -177,19 +178,20 @@ export default function (pi: ExtensionAPI): void {
     let cleanedCommand = prepared.cleanedCommand
 
     let decision = await guard.service.decide(guardedRequest)
+    const translation = translateDecision(decision, PI_CAPABILITIES)
 
     // Directory delete, first hit: block once so the AGENT supplies a
     // `[删除理由] <reason>` marker on retry. The agent authors the reason;
     // the LLM reviews it; the human only appears for ask/deny outcomes.
-    if (decision.source === 'directory-delete' && decision.needsReason) {
+    if (translation.needsReason) {
       return { action: 'block', reason: decision.reason, decision }
     }
 
     // Directory delete non-allow outcomes (LLM ask/deny, or reviewer failure)
     // are all resolved by the same human confirmation; no UI fails closed.
-    if (decision.source === 'directory-delete' && decision.kind !== 'allow') {
+    if (translation.needsHumanVeto) {
       if (ctx.hasUI) {
-        const title = piMessage(lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+        const title = piMessage(lang, translation.vetoTitleKey)
         const override = await ctx.ui.confirm(title, `${decision.reason ?? piMessage(lang, 'deleteFailDefaultReason')}\n${piMessage(lang, 'deleteRunAnyway')}`)
         if (override) {
           return { action: 'allow', reason: decision.reason, decision }
@@ -198,10 +200,10 @@ export default function (pi: ExtensionAPI): void {
       return { action: 'block', reason: decision.reason, decision }
     }
 
-    if (decision.kind === 'allow') {
+    if (translation.action === 'allow') {
       return { action: 'allow', reason: decision.reason, cleanedCommand, decision }
     }
-    if (decision.kind === 'deny') {
+    if (translation.action === 'deny') {
       return { action: 'block', reason: decision.reason, decision }
     }
     // ask → four-state interactive confirm (capability: four-state), or
@@ -249,49 +251,25 @@ export default function (pi: ExtensionAPI): void {
     )
   }
 
-  /** Write one audit record when the experimental audit log is enabled. */
+  /** Write one audit record when the experimental audit log is enabled (policy in core, ADR-0025). */
   function recordAudit(request: GuardRequest, decision: Decision, finalAction: 'allow' | 'block', source: 'tool_call' | 'user_bash'): void {
-    if (!guard.config.enabled || !guard.config.examineEnabled) return
-    if (request.tool !== 'bash' && request.tool !== 'pwsh') return
-    if (typeof request.command !== 'string') return
-    const rulePattern = classifyCommand(request.command, guard.rules).rule?.pattern
-    guard.audit.insert({
-      sessionId: request.session,
-      workspace: request.workspace,
-      source,
-      tool: request.tool,
-      command: request.command,
-      decision,
-      finalAction,
-      rulePattern,
-    })
+    recordToolCallAudit(guard.audit, guard.rules, request, decision, finalAction, guard.config, source)
   }
 
-  /** Notify according to the cache/LLM master flags, routed per kind + channels. */
+  /** Deliver the notification on the core-resolved route; Pi's sinks are the page toast and the context message. */
   function maybeNotify(
     ctx: { ui: { notify: (m: string, t?: 'info' | 'warning' | 'error') => void } },
     decision: Decision,
   ): void {
-    const isRuleAllow = decision.source === 'static-allow' || decision.source === 'user-confirmed'
-    if (decision.source === 'session-cache' || decision.source === 'persistent-cache' || decision.source === 'history' || decision.source === 'learned') {
-      if (!guard.config.notifyCacheHit) return
-    } else if (decision.source === 'llm' || decision.source === 'file-tracker' || decision.source === 'directory-delete') {
-      if (!guard.config.notifyLlmDecision) return
-    } else if (!isRuleAllow) {
-      return
-    }
-    let route = notifyRoute(decision, guard.config)
-    // Rule-based allows are always UI-only; they never enter the model context.
-    if (isRuleAllow && route === 'context') route = 'page'
-    // Clamp to channels the host can actually deliver (ADR-0007).
-    route = effectiveNotifyRoute(route, PI_CAPABILITIES)
-    if (route === 'off') return
+    const route = resolveNotify(decision, guard.config, PI_CAPABILITIES)
     if (route === 'context') {
       // customType 'auto-guard' + display=true → shown in TUI AND enters model context.
       pi.sendMessage({ customType: 'auto-guard', content: notificationText(decision, guard.lang), display: true })
       return
     }
-    ctx.ui.notify(notificationText(decision, guard.lang), 'info')
+    if (route === 'page') {
+      ctx.ui.notify(notificationText(decision, guard.lang), 'info')
+    }
   }
 
   pi.on('tool_call', async (event, ctx) => {

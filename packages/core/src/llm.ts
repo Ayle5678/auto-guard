@@ -68,8 +68,12 @@ export function reviewSystemPrompt(lang: Lang): string {
   return lang === 'en' ? `${REVIEW_SYSTEM_PROMPT}\n${REVIEW_REASON_LANGUAGE_EN}` : REVIEW_SYSTEM_PROMPT
 }
 
-/** Merge two abort signals, or return the single one if the other is absent. */
-function combineSignals(a: AbortSignal | undefined, b: AbortSignal | undefined): AbortSignal | undefined {
+/**
+ * Merge two abort signals, or return the single one if the other is absent.
+ * Degrades to the first signal on runtimes without `AbortSignal.any`
+ * (ADR-0024: every review channel shares this fallback).
+ */
+export function combineSignals(a: AbortSignal | undefined, b: AbortSignal | undefined): AbortSignal | undefined {
   if (a && b) {
     if (typeof AbortSignal.any === 'function') return AbortSignal.any([a, b])
     return a
@@ -166,9 +170,9 @@ class HttpError extends Error {
 /**
  * Reviewer that calls the DeepSeek-compatible `/chat/completions` endpoint
  * directly via {@link httpPostText} (one-shot connection, no keep-alive
- * pool). When the primary model is rejected with a 400 (e.g. unknown model
- * name) it retries once on `fallbackModel`; all other failures throw so the
- * guard service can apply its fail-closed policy.
+ * pool). A thin wrapper over {@link directChatReview}: key resolution and
+ * the `/guard status` outcome bookkeeping stay here, the call itself is the
+ * shared direct channel (ADR-0024).
  */
 export class DeepSeekReviewer implements LlmReviewer {
   private readonly config: GuardConfig
@@ -190,38 +194,7 @@ export class DeepSeekReviewer implements LlmReviewer {
   async ping(): Promise<PingResult> {
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
     if (!apiKey) return { ok: false, error: `missing ${this.config.apiKeyEnv}` }
-
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
-    try {
-      const res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
-        timeoutMs: this.config.timeoutMs,
-        signal: controller.signal,
-      })
-      if (!res.ok) {
-        return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
-      }
-      const json = JSON.parse(res.text) as ChatCompletionResponse
-      const text = json.choices?.[0]?.message?.content
-      if (typeof text !== 'string' || text.length === 0) {
-        return { ok: false, error: 'Empty response' }
-      }
-      return { ok: true }
-    } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: 'Timed out' }
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
-    } finally {
-      clearTimeout(timer)
-      controller.abort()
-    }
+    return directChatPing(this.config, apiKey)
   }
 
   async review(request: LlmReviewRequest): Promise<LlmReviewResult> {
@@ -231,79 +204,146 @@ export class DeepSeekReviewer implements LlmReviewer {
       this.lastReview = { ok: false, at: Date.now(), error: `missing ${this.config.apiKeyEnv}` }
       throw new Error(`missing ${this.config.apiKeyEnv}`)
     }
-
-    const scriptText = request.script ? `\n\nScript being executed (shell text):\n${request.script}` : ''
-    const deletionReasonText = request.deletionReason ? `\n\nAgent-provided deletion reason:\n${request.deletionReason}` : ''
-    // Keep the variable command at the very end so the fixed prefix (system + script/reason context)
-    // stays stable and maximizes prompt-cache hits.
-    const userMessage = `${scriptText}${deletionReasonText}Command: ${request.command}`
-
     try {
-      const result = await this.call(this.config.model, userMessage, request, apiKey)
+      const result = await directChatReview(this.config, this.lang, request, apiKey)
       this.lastReview = { ok: true, at: Date.now() }
       return result
-    } catch (primaryError) {
-      const status = (primaryError as HttpError)?.status
-      if (status === 400 && this.config.fallbackModel !== this.config.model) {
-        try {
-          const result = await this.call(this.config.fallbackModel, userMessage, request, apiKey)
-          this.lastReview = { ok: true, at: Date.now() }
-          return result
-        } catch (fallbackError) {
-          this.lastReview = { ok: false, at: Date.now(), error: (fallbackError as Error).message }
-          throw fallbackError
-        }
-      }
-      this.lastReview = { ok: false, at: Date.now(), error: (primaryError as Error).message }
-      throw primaryError
+    } catch (error) {
+      this.lastReview = { ok: false, at: Date.now(), error: error instanceof Error ? error.message : String(error) }
+      throw error
     }
   }
+}
 
-  private async call(model: string, userMessage: string, request: LlmReviewRequest, apiKey: string): Promise<LlmReviewResult> {
-    const controller = new AbortController()
-    const budget = reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort)
-    const timer = setTimeout(() => controller.abort(), budget)
-    const signal = combineSignals(request.signal, controller.signal)
+/** Tuning slice the direct chat-completions channel needs (ADR-0024). */
+export interface DirectChatTuning {
+  apiBase: string
+  model: string
+  fallbackModel: string
+  timeoutMs: number
+}
 
-    try {
-      const body: Record<string, unknown> = {
-        model,
-        messages: [
-          { role: 'system', content: reviewSystemPrompt(this.lang) },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0,
-      }
-      if (request.reasoningEffort) body.reasoning_effort = request.reasoningEffort
-
-      let res: HttpPostTextResult
-      try {
-        res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-          timeoutMs: budget,
-          signal,
-        })
-      } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') throw new Error('LLM review timed out')
-        throw e
-      }
-
-      if (!res.ok) {
-        throw new HttpError(res.status, res.statusText)
-      }
-
-      const json = JSON.parse(res.text) as ChatCompletionResponse
-      const text = json.choices?.[0]?.message?.content ?? ''
-      const parsed = parseReviewJson(text)
-      if (!parsed) throw new Error('Invalid LLM review response')
-      return parsed
-    } finally {
-      clearTimeout(timer)
-      controller.abort()
+/**
+ * Lightweight connectivity check against the configured direct chat endpoint
+ * (the ping half of the direct channel). Callers resolve the API key so the
+ * env-over-stored convention stays with the key owners.
+ */
+export async function directChatPing(tuning: DirectChatTuning, apiKey: string): Promise<PingResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), tuning.timeoutMs)
+  try {
+    const res = await httpPostText(`${tuning.apiBase}/chat/completions`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: tuning.model,
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+      timeoutMs: tuning.timeoutMs,
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
     }
+    const json = JSON.parse(res.text) as ChatCompletionResponse
+    const text = json.choices?.[0]?.message?.content
+    if (typeof text !== 'string' || text.length === 0) {
+      return { ok: false, error: 'Empty response' }
+    }
+    return { ok: true }
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: 'Timed out' }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    clearTimeout(timer)
+    controller.abort()
+  }
+}
+
+/**
+ * One direct review call over the DeepSeek-compatible `/chat/completions`
+ * endpoint: prompt assembly, single-shot HTTP, the 400→fallbackModel retry
+ * ladder, the timeout budget and the signal-combination fallback all live
+ * here — the single owner of the direct review channel (ADR-0024). The
+ * DeepSeek reviewer and the DSH direct branch are thin wrappers; failures
+ * throw so the guard service can apply its fail-closed policy.
+ */
+export async function directChatReview(
+  tuning: DirectChatTuning,
+  lang: Lang,
+  request: LlmReviewRequest,
+  apiKey: string,
+): Promise<LlmReviewResult> {
+  const scriptText = request.script ? `\n\nScript being executed (shell text):\n${request.script}` : ''
+  const deletionReasonText = request.deletionReason ? `\n\nAgent-provided deletion reason:\n${request.deletionReason}` : ''
+  // Keep the variable command at the very end so the fixed prefix (system + script/reason context)
+  // stays stable and maximizes prompt-cache hits.
+  const userMessage = `${scriptText}${deletionReasonText}Command: ${request.command}`
+
+  try {
+    return await callDirectChat(tuning, lang, tuning.model, userMessage, request, apiKey)
+  } catch (primaryError) {
+    const status = (primaryError as HttpError)?.status
+    if (status === 400 && tuning.fallbackModel !== tuning.model) {
+      return await callDirectChat(tuning, lang, tuning.fallbackModel, userMessage, request, apiKey)
+    }
+    throw primaryError
+  }
+}
+
+async function callDirectChat(
+  tuning: DirectChatTuning,
+  lang: Lang,
+  model: string,
+  userMessage: string,
+  request: LlmReviewRequest,
+  apiKey: string,
+): Promise<LlmReviewResult> {
+  const controller = new AbortController()
+  const budget = reviewTimeoutBudget(tuning.timeoutMs, request.reasoningEffort)
+  const timer = setTimeout(() => controller.abort(), budget)
+  const signal = combineSignals(request.signal, controller.signal)
+
+  try {
+    const body: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: 'system', content: reviewSystemPrompt(lang) },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0,
+    }
+    if (request.reasoningEffort) body.reasoning_effort = request.reasoningEffort
+
+    let res: HttpPostTextResult
+    try {
+      res = await httpPostText(`${tuning.apiBase}/chat/completions`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        timeoutMs: budget,
+        signal,
+      })
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') throw new Error('LLM review timed out')
+      throw e
+    }
+
+    if (!res.ok) {
+      throw new HttpError(res.status, res.statusText)
+    }
+
+    const json = JSON.parse(res.text) as ChatCompletionResponse
+    const text = json.choices?.[0]?.message?.content ?? ''
+    const parsed = parseReviewJson(text)
+    if (!parsed) throw new Error('Invalid LLM review response')
+    return parsed
+  } finally {
+    clearTimeout(timer)
+    controller.abort()
   }
 }

@@ -19,30 +19,29 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import {
-  classifyCommand,
+  analyzeLearnedRules,
   expandHome,
-  generateLearnedRules,
   GuardService,
   HistoryStore,
   loadAnalyzeState,
   loadLearnedRules,
   prepareDeletionMarker,
+  recordToolCallAudit,
+  resolveNotify,
   resolveProcessLang,
   rollbackLearnedRules,
+  translateDecision,
   SessionLruCache,
   PersistentCache,
   SqlcipherAuditStore,
   LightAuditStore,
   createAuditStore,
-  effectiveNotifyRoute,
+  type AnalyzeMessage,
   type AuditStore,
   shouldRunAutoAnalysis,
   analysisIntervalMs,
   TemplateCache,
   loadRules,
-  mergeLearnedRules,
-  updateLastAnalysis,
-  writeLearnedRules,
   type Decision,
   type GuardConfig,
   type GuardRequest,
@@ -53,7 +52,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PreToolDecision, ToolExecution, ToolGuard } from '@deepseek-ai/dsh-tools'
 import { toGuardRequest, type ExecutionLike } from './adapter.ts'
 import { DSH_CAPABILITIES } from './dsh-capabilities.ts'
-import { createContextNotice, createPageNoticeEvents, notifyRoute } from './notify-policy.ts'
+import { createContextNotice, createPageNoticeEvents } from './notify-policy.ts'
 import { dshMessage, type DshMessageKey } from './messages.ts'
 import { DshLlmReviewer } from './dsh-reviewer.ts'
 import { FileTracker } from '@auto-guard/core'
@@ -119,29 +118,32 @@ function createState(
   return { config, rules, service, audit, history, learned, templateCache, lang }
 }
 
-/** Run a learned-rule analysis and merge it into learned-rules.json. */
-function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string } {
-  const lang = state.lang
-  if (!state.config.examineEnabled) {
-    return { ok: false, message: dshMessage(lang, 'analyzeNeedsExamine') }
-  }
-  if (!state.config.auditPassword) {
-    return { ok: false, message: dshMessage(lang, 'analyzeNeedsPassword') }
-  }
-  const excludedRules = [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete]
-  const generated = generateLearnedRules(state.audit.list(), {
-    days: state.config.historyDays,
-    cacheableMinTotal: state.config.learnedCacheableMinTotal,
-    cacheableMinLlm: 1,
-    sensitivePaths: state.rules.sensitivePaths,
-    excludedRules,
-  })
-  const merged = mergeLearnedRules(generated, loadLearnedRules(state.config.learnedRulesPath, excludedRules))
-  writeLearnedRules(state.config.learnedRulesPath, state.config.learnedBackupPath, merged)
-  state.learned = merged
-  state.templateCache.setCacheablePatterns(merged.cacheable)
-  updateLastAnalysis(state.config.analyzeStatePath)
-  return { ok: true, message: dshMessage(lang, 'analyzeDone', { count: merged.cacheable.length }) }
+/** DSH wording for the analyze receipts (settings page); both done variants share one line. */
+const dshAnalyzeWording: AnalyzeMessage = (lang, key, params = {}) => {
+  if (key === 'analyzeNeedsExamine') return dshMessage(lang, 'analyzeNeedsExamine')
+  if (key === 'analyzeNeedsPassword') return dshMessage(lang, 'analyzeNeedsPassword')
+  return dshMessage(lang, 'analyzeDone', { count: params.count })
+}
+
+/** Reload learned rules into the in-memory state after a write (analysis or rollback). */
+function refreshLearned(state: GuardState): void {
+  state.learned = loadLearnedRules(state.config.learnedRulesPath, [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete])
+  state.templateCache.setCacheablePatterns(state.learned.cacheable)
+}
+
+/**
+ * One learned-rule analysis through the core operation (ADR-0024): always
+ * full — today's DSH behavior made an explicit parameter — with the audit
+ * password gate and DSH receipt wording in place.
+ */
+function runAnalysis(state: GuardState): { ok: boolean; message: string } {
+  const result = analyzeLearnedRules(
+    { config: state.config, rules: state.rules, audit: state.audit },
+    state.lang,
+    { full: true, passwordGate: true, message: dshAnalyzeWording },
+  )
+  if (result.ok) refreshLearned(state)
+  return result
 }
 
 /** Remote service exposed to the settings page via Typert Remote. */
@@ -149,16 +151,14 @@ function createAutoGuardRemote(state: GuardState): Record<string, unknown> {
   const t = (key: DshMessageKey, params: Record<string, string | number> = {}) => dshMessage(state.lang, key, params)
   const service = {
     analyzeNow(): { ok: boolean; message: string } {
-      return runLearnedAnalysis(state)
+      return runAnalysis(state)
     },
     listRules(): ReturnType<typeof loadLearnedRules> {
       return state.learned
     },
     rollback(): { ok: boolean; message: string } {
       const result = rollbackLearnedRules(state.config, state.lang)
-      if (!result.ok) return result
-      state.learned = loadLearnedRules(state.config.learnedRulesPath, [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete])
-      state.templateCache.setCacheablePatterns(state.learned.cacheable)
+      if (result.ok) refreshLearned(state)
       return result
     },
     status(): Record<string, unknown> {
@@ -215,23 +215,12 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
   state = createState(ctx, patchConfig, config, settings)
   ctx.provide('autoGuard', createAutoGuardRemote(state))
 
-  /** Write one audit record when the experimental audit log is enabled. */
+  /** Write one audit record; the audit-password gate is DSH's own (fronted per ADR-0025), the record policy lives in core. */
   function recordAudit(request: GuardRequest, decision: Decision, finalAction: 'allow' | 'block' | undefined): void {
-    if (!state.config.examineEnabled) return
     if (!state.config.auditPassword) return
-    if (request.tool !== 'bash' && request.tool !== 'pwsh') return
-    if (typeof request.command !== 'string') return
-    const rulePattern = classifyCommand(request.command, state.rules).rule?.pattern
-    state.audit.insert({
-      sessionId: request.session,
-      workspace: request.workspace,
-      source: 'tool_call',
-      tool: request.tool,
-      command: request.command,
-      decision,
-      finalAction,
-      rulePattern,
-    })
+    // `enabled` is DSH's never-persisted constant (the permission preset is
+    // the only switch); pinning it true preserves DSH's historical gate set.
+    recordToolCallAudit(state.audit, state.rules, request, decision, finalAction, { enabled: true, examineEnabled: state.config.examineEnabled })
   }
 
   const permissionPresets = ctx.get('permissionPresets') as
@@ -251,23 +240,10 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     }
   }
 
+  /** Deliver the notification on the core-resolved route; DSH's sinks are session inject (context) and page events. */
   function notify(exec: ToolExecution, decision: Decision): void {
     if (!exec.agent) return
-    const isRuleAllow = decision.source === 'static-allow' || decision.source === 'user-confirmed'
-    if (decision.source === 'session-cache' || decision.source === 'persistent-cache' || decision.source === 'history' || decision.source === 'learned') {
-      if (!state.config.notifyCacheHit) return
-    } else if (decision.source === 'llm' || decision.source === 'file-tracker' || decision.source === 'directory-delete') {
-      if (!state.config.notifyLlmDecision) return
-    } else if (!isRuleAllow) {
-      return
-    }
-    let route = notifyRoute(decision, state.config)
-    // Rule-based allows are always UI-only; they never enter the model context.
-    if (isRuleAllow && route === 'context') route = 'page'
-    // Clamp to channels the host can actually deliver (ADR-0007).
-    route = effectiveNotifyRoute(route, DSH_CAPABILITIES)
-    if (route === 'off') return
-
+    const route = resolveNotify(decision, state.config, DSH_CAPABILITIES)
     if (route === 'context') {
       const message = createContextNotice(decision, state.lang)
       try {
@@ -277,6 +253,7 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
       }
       return
     }
+    if (route !== 'page') return
 
     const commandId = `auto-guard-${randomUUID()}`
     const events = createPageNoticeEvents(decision, commandId, state.lang)
@@ -299,28 +276,29 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     const prepared = prepareDeletionMarker(request)
     const decision = await state.service.decide(prepared.request)
     notify(exec, decision)
+    const translation = translateDecision(decision, DSH_CAPABILITIES)
 
     // Directory delete, first hit: block once so the AGENT supplies a
     // `[删除理由] <reason>` marker on retry. The agent authors the reason;
     // the LLM reviews it; the human only appears for ask/deny outcomes.
-    if (decision.source === 'directory-delete' && decision.needsReason) {
+    if (translation.needsReason) {
       recordAudit(request, decision, 'block')
       return { kind: 'deny', reason: decision.reason ?? 'Directory deletion requires a reason' }
     }
 
-    if (decision.kind === 'deny' && decision.source === 'directory-delete') {
+    if (translation.needsHumanVeto) {
       // DSH has no plugin-owned confirm dialog; route this through `ask` so
       // the human can still veto-override after an LLM deny/reviewer failure.
       recordAudit(request, decision, undefined)
-      const title = dshMessage(state.lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+      const title = dshMessage(state.lang, translation.vetoTitleKey)
       const reason = decision.reason ?? dshMessage(state.lang, 'deleteFailDefaultReason')
       return { kind: 'ask', reason: `${title}${state.lang === 'zh' ? '；' : '; '}${reason}\n${dshMessage(state.lang, 'deleteRunAnyway')}` }
     }
-    if (decision.kind === 'deny') {
+    if (translation.action === 'deny') {
       recordAudit(request, decision, 'block')
       return { kind: 'deny', reason: decision.reason ?? 'Denied by auto-guard' }
     }
-    if (decision.kind === 'ask') {
+    if (translation.action === 'ask') {
       // DSH core: `ask` is serviced by `ctx.approval` when mounted; without an
       // approval UI it degrades to deny. That is our headless fail-closed path,
       // so no separate `headlessMode` switch is needed.
@@ -359,7 +337,7 @@ export function apply(ctx: Context, patchConfig: Partial<GuardConfig> = {}): voi
     const analysisState = loadAnalyzeState(state.config.analyzeStatePath)
     if (!shouldRunAutoAnalysis(analysisState, analysisIntervalMs(state.config))) return
     const timer = setTimeout(() => {
-      const result = runLearnedAnalysis(state)
+      const result = runAnalysis(state)
       if (!result.ok) {
         console.warn(`[auto-guard] auto analysis skipped: ${result.message}`)
       } else {

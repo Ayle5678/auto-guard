@@ -8,7 +8,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions, StreamChunk, UserMessage } from '@deepseek-ai/dsh-llm'
 import { createNoticeMessage } from './notice-message.ts'
 import {
-  httpPostText,
+  combineSignals,
+  directChatPing,
+  directChatReview,
   parseReviewJson,
   reviewTimeoutBudget,
   reviewSystemPrompt,
@@ -32,16 +34,6 @@ interface LlmStream {
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
 
-/** HTTP-level error carrying the response status so callers can decide on fallback. */
-class HttpError extends Error {
-  status: number
-  constructor(status: number, statusText: string) {
-    super(`LLM review failed: ${status} ${statusText}`)
-    this.name = 'HttpError'
-    this.status = status
-  }
-}
-
 /** Provider route description for diagnostics. */
 interface Route {
   tag: string
@@ -53,9 +45,11 @@ interface Route {
 /**
  * Reviewer backed by `ctx.llm.stream`. Tries the primary provider/model and
  * falls back to the configured fallback route on any provider/stream error.
- * When a direct endpoint (`apiBase`) is configured it takes precedence and the
- * core reviewer's direct-call behavior applies. Timeout and parsing failures
- * throw so the guard service can apply fail-closed policy.
+ * When a direct endpoint (`apiBase`) is configured it takes precedence and
+ * delegates to the core direct channel (ADR-0024) — the prompt contract, the
+ * 400→fallback retry ladder, the timeout budget and fail-closed semantics
+ * all have their single owner there. Timeout and parsing failures throw so
+ * the guard service can apply fail-closed policy.
  */
 export class DshLlmReviewer implements LlmReviewer {
   private readonly ctx: Context
@@ -78,38 +72,7 @@ export class DshLlmReviewer implements LlmReviewer {
     }
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
     if (!apiKey) return { ok: false, error: `missing ${this.config.apiKeyEnv}` }
-
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
-    try {
-      const res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
-        timeoutMs: this.config.timeoutMs,
-        signal: controller.signal,
-      })
-      if (!res.ok) {
-        return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
-      }
-      const json = JSON.parse(res.text) as { choices?: Array<{ message?: { content?: string } }> }
-      const text = json.choices?.[0]?.message?.content
-      if (typeof text !== 'string' || text.length === 0) {
-        return { ok: false, error: 'Empty response' }
-      }
-      return { ok: true }
-    } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: 'Timed out' }
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
-    } finally {
-      clearTimeout(timer)
-      controller.abort()
-    }
+    return directChatPing(this.config, apiKey)
   }
 
   async review(request: LlmReviewRequest): Promise<LlmReviewResult> {
@@ -164,83 +127,20 @@ export class DshLlmReviewer implements LlmReviewer {
     }
   }
 
+  /** Direct-endpoint branch: delegate to the core direct channel (ADR-0024). */
   private async reviewDirect(request: LlmReviewRequest): Promise<LlmReviewResult> {
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
     if (!apiKey) {
       this.lastReview = { ok: false, at: Date.now(), error: `missing ${this.config.apiKeyEnv}` }
       throw new Error(`missing ${this.config.apiKeyEnv}`)
     }
-
-    const scriptText = request.script ? `\n\nScript being executed (shell text):\n${request.script}` : ''
-    const deletionReasonText = request.deletionReason ? `\n\nAgent-provided deletion reason:\n${request.deletionReason}` : ''
-    const userMessage = `${scriptText}${deletionReasonText}Command: ${request.command}`
-
     try {
-      const result = await this.callDirect(this.config.model, userMessage, request, apiKey)
+      const result = await directChatReview(this.config, this.lang, request, apiKey)
       this.lastReview = { ok: true, at: Date.now() }
       return result
-    } catch (primaryError) {
-      const status = (primaryError as { status?: number })?.status
-      if (status === 400 && this.config.fallbackModel !== this.config.model) {
-        try {
-          const result = await this.callDirect(this.config.fallbackModel, userMessage, request, apiKey)
-          this.lastReview = { ok: true, at: Date.now() }
-          return result
-        } catch (fallbackError) {
-          this.lastReview = { ok: false, at: Date.now(), error: (fallbackError as Error).message }
-          throw fallbackError
-        }
-      }
-      this.lastReview = { ok: false, at: Date.now(), error: (primaryError as Error).message }
-      throw primaryError
-    }
-  }
-
-  private async callDirect(model: string, userMessage: string, request: LlmReviewRequest, apiKey: string): Promise<LlmReviewResult> {
-    const controller = new AbortController()
-    const budget = reviewTimeoutBudget(this.config.timeoutMs, request.reasoningEffort)
-    const timer = setTimeout(() => controller.abort(), budget)
-    const signal = request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal
-
-    try {
-      const body: Record<string, unknown> = {
-        model,
-        messages: [
-          { role: 'system', content: reviewSystemPrompt(this.lang) },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0,
-      }
-      if (request.reasoningEffort) body.reasoning_effort = request.reasoningEffort
-
-      let res: Awaited<ReturnType<typeof httpPostText>>
-      try {
-        res = await httpPostText(`${this.config.apiBase}/chat/completions`, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-          timeoutMs: budget,
-          signal,
-        })
-      } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') throw new Error('LLM review timed out')
-        throw e
-      }
-
-      if (!res.ok) {
-        throw new HttpError(res.status, res.statusText)
-      }
-
-      const json = JSON.parse(res.text) as { choices?: Array<{ message?: { content?: string } }> }
-      const text = json.choices?.[0]?.message?.content ?? ''
-      const parsed = parseReviewJson(text)
-      if (!parsed) throw new Error('Invalid LLM review response')
-      return parsed
-    } finally {
-      clearTimeout(timer)
-      controller.abort()
+    } catch (error) {
+      this.lastReview = { ok: false, at: Date.now(), error: error instanceof Error ? error.message : String(error) }
+      throw error
     }
   }
 
@@ -259,7 +159,7 @@ export class DshLlmReviewer implements LlmReviewer {
       messages: [userMessage],
       system: reviewSystemPrompt(this.lang),
       ...(route.reasoningEffort !== undefined ? { reasoningEffort: route.reasoningEffort as GenerateOptions['reasoningEffort'] } : {}),
-      signal: request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal,
+      signal: combineSignals(request.signal, controller.signal),
     }
 
     try {

@@ -13,7 +13,7 @@
  * (string stdin, captured stdout, recorded exit) without a real process.
  */
 import { spawn } from 'node:child_process'
-import { buildSessionKey, normalizeCommand, prepareDeletionMarker, classifyCommand, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang, pruneSessions, sessionsRoot, sidHash, upsertPendingAsk, readPendingAsks } from '@auto-guard/core'
+import { buildSessionKey, classifyCommand, normalizeCommand, prepareDeletionMarker, truncateOneLine, analysisIntervalMs, loadAnalyzeState, shouldRunAutoAnalysis, resolveProcessLang, pruneSessions, sessionsRoot, sidHash, upsertPendingAsk, readPendingAsks, translateDecision } from '@auto-guard/core'
 import type { Decision, GuardRequest, Lang, RulesFile } from '@auto-guard/core'
 import { dirname, join } from 'node:path'
 import type { HostDescriptor, OutcomeMeta, WireOutcome } from './descriptor.ts'
@@ -111,31 +111,31 @@ export function createHookCliMain(parts: HookCliParts): (io?: Partial<HookIo>) =
   /**
    * Translate the service decision the way the pre-runtime hosts did, minus
    * the interactive UI: the host's native prompt replaces the ask dialogs.
-   * The caller has already applied {@link prepareDeletionMarker} — the
-   * escape-hatch record (ADR-0019) keys on the same prepared command the
-   * guard's cache lookup will see on the next call.
+   * The translation policy itself comes from core (ADR-0025); this half only
+   * dresses the reason in the hook wire wording. The caller has already
+   * applied {@link prepareDeletionMarker} — the escape-hatch record
+   * (ADR-0019) keys on the same prepared command the guard's cache lookup
+   * will see on the next call.
    */
   async function evaluate(runtime: GuardRuntime, preparedRequest: GuardRequest, lang: Lang): Promise<FinalOutcome> {
     const decision = await runtime.service.decide(preparedRequest)
+    const translation = translateDecision(decision, descriptor.capabilities)
 
     // First directory-delete hit: deny once so the AGENT retries with a
     // `[删除理由] <reason>` marker; the LLM then reviews that reason.
-    if (decision.source === 'directory-delete' && decision.needsReason) {
+    if (translation.needsReason) {
       return { action: 'deny', reason: render.withDeletionHint(render.decisionReasonText(decision, lang), lang), meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
     }
 
     // Directory-delete non-allow outcomes (LLM ask/deny or reviewer failure)
     // all get final say by the human — surfaced as the host's native prompt.
-    if (decision.source === 'directory-delete' && decision.kind !== 'allow') {
-      const flavor = message(lang, decision.reviewerFailed ? 'deleteFailReviewerTitle' : 'deleteFailLlmTitle')
+    if (translation.needsHumanVeto) {
+      const flavor = message(lang, translation.vetoTitleKey)
       const reason = message(lang, 'deleteAskReason', { flavor, reason: decision.reason ?? message(lang, 'deleteNoDetail') })
       return { action: 'ask', reason, meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
     }
 
-    if (decision.kind === 'allow' || decision.kind === 'deny' || decision.kind === 'ask') {
-      return mapPlainDecision(decision, preparedRequest, runtime.rules, lang)
-    }
-    return { action: 'deny', reason: decision.reason ?? message(lang, 'unknownDecisionDenied'), meta: pickMeta(decision, preparedRequest, runtime.rules, lang) }
+    return mapPlainDecision(decision, preparedRequest, runtime.rules, lang)
   }
 
   function pickMeta(decision: Decision, request?: GuardRequest, rules?: RulesFile, lang: Lang = 'zh'): OutcomeMeta {

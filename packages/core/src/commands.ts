@@ -154,10 +154,20 @@ export interface AnalyzeDeps {
   audit: AuditStore
 }
 
+/** Receipt keys the analyze operation emits. */
+export type AnalyzeMessageKey = 'analyzeNeedsExamine' | 'analyzeNeedsPassword' | 'analyzeDone' | 'analyzeDoneFull'
+
+/** Host rewording slot for the analyze receipts (settings-page chrome); defaults to the core catalog. */
+export type AnalyzeMessage = (lang: Lang, key: AnalyzeMessageKey, params?: Record<string, string | number>) => string
+
 /** Options for the analyze operation. */
 export interface AnalyzeOptions {
   /** Read the full audit history instead of the recent-row window. */
   full?: boolean
+  /** Fail closed when the audit password is absent (DSH settings remote). */
+  passwordGate?: boolean
+  /** Receipt wording override; defaults to the core catalog. */
+  message?: AnalyzeMessage
 }
 
 /** `optimize analyze`: run one learned-rule analysis over recent audit rows. */
@@ -167,8 +177,12 @@ export function analyzeLearnedRules(
   options: AnalyzeOptions = {},
 ): { ok: boolean; message: string } {
   const { config } = deps
+  const say: AnalyzeMessage = options.message ?? ((lang, key, params) => coreMessage(lang, key, params ?? {}))
   if (!config.examineEnabled) {
-    return { ok: false, message: coreMessage(lang, 'analyzeNeedsExamine') }
+    return { ok: false, message: say(lang, 'analyzeNeedsExamine') }
+  }
+  if (options.passwordGate && !config.auditPassword) {
+    return { ok: false, message: say(lang, 'analyzeNeedsPassword') }
   }
   const excludedRules = [...deps.rules.hardDeny, ...deps.rules.alwaysReview, ...deps.rules.directoryDelete]
   const rows = deps.audit.list()
@@ -190,8 +204,8 @@ export function analyzeLearnedRules(
   return {
     ok: true,
     message: full
-      ? coreMessage(lang, 'analyzeDoneFull', { total: rows.length, count: merged.cacheable.length })
-      : coreMessage(lang, 'analyzeDone', { analyzed: analyzed.length, total: rows.length, count: merged.cacheable.length }),
+      ? say(lang, 'analyzeDoneFull', { total: rows.length, count: merged.cacheable.length })
+      : say(lang, 'analyzeDone', { analyzed: analyzed.length, total: rows.length, count: merged.cacheable.length }),
   }
 }
 

@@ -40,7 +40,7 @@ import {
   createTrackerStore,
   DiskSessionCache,
   loadSessionState as loadDiskSessionState,
-  classifyCommand,
+  recordToolCallAudit,
   type Decision,
   type GuardConfig,
   type GuardRequest,
@@ -185,22 +185,9 @@ export function createBootstrap(descriptor: HostDescriptor, space: HostConfigSpa
     }
   }
 
-  /** Write one audit record when the experimental audit log is enabled. */
+  /** Write one audit record when the experimental audit log is enabled (policy in core, ADR-0025). */
   function recordAudit(runtime: GuardRuntime, request: GuardRequest, decision: Decision, finalAction: 'allow' | 'block'): void {
-    if (!runtime.config.enabled || !runtime.config.examineEnabled) return
-    if (request.tool !== 'bash' && request.tool !== 'pwsh') return
-    if (typeof request.command !== 'string') return
-    const rulePattern = classifyCommand(request.command, runtime.rules).rule?.pattern
-    runtime.audit.insert({
-      sessionId: request.session,
-      workspace: request.workspace,
-      source: 'tool_call',
-      tool: request.tool,
-      command: request.command,
-      decision,
-      finalAction,
-      rulePattern,
-    })
+    recordToolCallAudit(runtime.audit, runtime.rules, request, decision, finalAction, runtime.config)
   }
 
   /** learned-rule cadence shared by hook + session-start entries (fail-open paths). */

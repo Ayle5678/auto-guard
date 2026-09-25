@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { expandHome } from '@auto-guard/core'
+import { defaultGuardConfig, expandHome } from '@auto-guard/core'
 import type { Context } from '@deepseek-ai/cordis'
 import type { GuardConfig } from '@auto-guard/core'
 
@@ -23,53 +23,35 @@ export const DEFAULT_CONFIG_PATH = join(AUTO_GUARD_DIR, 'config.json')
 /** Opaque namespace token handed to the DSH settings service. */
 export const GUARD_SETTINGS_NAMESPACE = { ns: 'auto-guard' }
 
+/**
+ * DSH defaults as a declarative delta over the core defaults (ADR-0024): the
+ * base comes from `defaultGuardConfig`, every overridden or added line
+ * carries its intentional-divergence reason, and current values are
+ * unchanged. `enabled` keeps the core default — on DSH the permission
+ * preset is the only real switch and `enabled` is never persisted.
+ */
 export const DEFAULT_CONFIG: GuardConfig = {
-  // Present for GuardConfig compatibility only; never persisted and never
-  // consulted — the permission preset is the only on/off switch on DSH.
-  enabled: true,
-  rulesPath: join(AUTO_GUARD_DIR, 'rules.json'),
-  defaultRulesPath: join(AUTO_GUARD_DIR, 'defaults.json'),
-  cachePath: join(AUTO_GUARD_DIR, 'cache.json'),
+  ...defaultGuardConfig(AUTO_GUARD_DIR),
+  // Intentional divergence: no direct endpoint — reviews ride the injected
+  // ctx.llm provider route; a direct apiBase is opt-in.
   apiBase: '',
-  apiKeyEnv: 'DEEPSEEK_API_KEY',
-  apiKey: '',
-  apiKeyMasked: '',
+  // DSH-only provider routing (the core config has no provider fields).
   provider: 'deepseek-official',
-  model: 'deepseek-v4-flash',
   reasoningEffort: 'off',
   fallbackProvider: 'deepseek-official',
-  fallbackModel: 'deepseek-v4-flash',
+  // Intentional divergence: longer budget — the provider route has higher
+  // tail latency than a direct API call.
   timeoutMs: 15000,
-  lowRiskTtlDays: 30,
-  mediumRiskTtlDays: 7,
-  onTimeout: 'deny',
-  headlessMode: 'deny',
-  notifyCacheHit: true,
-  notifyLlmDecision: true,
-  notifyAllow: 'page',
-  notifyDeny: 'context',
-  notifyAsk: 'context',
-  fileTrackerDefault: 'ask',
-  fileTrackerWindowSec: 5,
-  sessionCacheSize: 300,
-  alwaysReviewCacheTtlMinutes: 30,
-  examineEnabled: false,
-  auditDbPath: join(AUTO_GUARD_DIR, 'audit.db'),
+  // Intentional divergence: higher learning bar — DSH sessions are
+  // long-lived, so learning demands more evidence before caching a rule.
+  learnedCacheableMinTotal: 8,
+  // Intentional divergence: auto-analysis cadence off (0 disables it);
+  // analysis runs via the settings page's explicit button.
+  analyzeIntervalMinutes: 0,
+  // DSH-only masked-display and audit-secret fields (core leaves them unset).
+  apiKeyMasked: '',
   auditPassword: '',
   auditPasswordMasked: '',
-  historyEnabled: false,
-  autoAnalyzeEnabled: false,
-  historyDays: 60,
-  historyMinTotal: 4,
-  historyMinLlm: 1,
-  learnedCacheableMinTotal: 8,
-  analyzeIntervalMinutes: 0,
-  analyzeIntervalDays: 15,
-  analyzeRowLimit: 5000,
-  templateCachePath: join(AUTO_GUARD_DIR, 'template-cache.json'),
-  learnedRulesPath: join(AUTO_GUARD_DIR, 'learned-rules.json'),
-  learnedBackupPath: join(AUTO_GUARD_DIR, 'learned-rules.backup.json'),
-  analyzeStatePath: join(AUTO_GUARD_DIR, 'analyze-state.json'),
 }
 
 /** Build the non-secret masked display value for a secret string. */
@@ -83,88 +65,6 @@ export function maskSecret(value: string): string {
 export function maskApiKey(apiKey: string): string {
   return maskSecret(apiKey)
 }
-
-const CONFIG_KEYS: Array<keyof GuardConfig> = [
-  'rulesPath',
-  'defaultRulesPath',
-  'cachePath',
-  'apiBase',
-  'apiKeyEnv',
-  'apiKey',
-  'apiKeyMasked',
-  'provider',
-  'model',
-  'reasoningEffort',
-  'fallbackProvider',
-  'fallbackModel',
-  'timeoutMs',
-  'lowRiskTtlDays',
-  'mediumRiskTtlDays',
-  'onTimeout',
-  'headlessMode',
-  'notifyCacheHit',
-  'notifyLlmDecision',
-  'notifyAllow',
-  'notifyDeny',
-  'notifyAsk',
-  'fileTrackerDefault',
-  'fileTrackerWindowSec',
-  'sessionCacheSize',
-  'alwaysReviewCacheTtlMinutes',
-  'examineEnabled',
-  'auditDbPath',
-  'auditPassword',
-  'auditPasswordMasked',
-  'historyEnabled',
-  'autoAnalyzeEnabled',
-  'historyDays',
-  'historyMinTotal',
-  'historyMinLlm',
-  'learnedCacheableMinTotal',
-  'analyzeIntervalMinutes',
-  'analyzeIntervalDays',
-  'analyzeRowLimit',
-  'templateCachePath',
-  'learnedRulesPath',
-  'learnedBackupPath',
-  'analyzeStatePath',
-  'configMigrated',
-]
-
-/** User-facing settings keys: everything except internal file paths and the migration marker. */
-export const USER_CONFIG_KEYS: Array<keyof GuardConfig> = [
-  'apiBase',
-  'apiKeyEnv',
-  'apiKey',
-  'provider',
-  'model',
-  'reasoningEffort',
-  'fallbackProvider',
-  'fallbackModel',
-  'timeoutMs',
-  'lowRiskTtlDays',
-  'mediumRiskTtlDays',
-  'onTimeout',
-  'headlessMode',
-  'notifyCacheHit',
-  'notifyLlmDecision',
-  'notifyAllow',
-  'notifyDeny',
-  'notifyAsk',
-  'fileTrackerDefault',
-  'fileTrackerWindowSec',
-  'sessionCacheSize',
-  'alwaysReviewCacheTtlMinutes',
-  'examineEnabled',
-  'auditPassword',
-  'historyEnabled',
-  'autoAnalyzeEnabled',
-  'historyDays',
-  'historyMinTotal',
-  'historyMinLlm',
-  'learnedCacheableMinTotal',
-  'analyzeIntervalDays',
-]
 
 /** Minimal schemastery-shaped builder so no SDK import is needed at runtime. */
 function field(defaultValue: unknown, role?: 'secret') {
@@ -183,46 +83,79 @@ function union(choices: readonly string[], defaultValue: string) {
   return { type: 'union', choices, default: defaultValue }
 }
 
-/** DSH settings schema for the `auto-guard` namespace (schemastery-shaped). */
+/**
+ * The single field specification every DSH key list derives from (ADR-0024):
+ * the legacy-file persistence list, the user-facing settings keys and the
+ * settings-page schema. Row order is the order of all three derived lists;
+ * `schema: false` marks file-only internals, `user: false` marks fields the
+ * settings page shows but the user cannot meaningfully set. Adding a
+ * GuardConfig field means adding one row here, not three mirrored lists.
+ */
+interface FieldSpec {
+  key: keyof GuardConfig
+  node: Record<string, unknown>
+  schema?: false
+  user?: false
+}
+
+const FIELDS: readonly FieldSpec[] = [
+  { key: 'rulesPath', node: field(DEFAULT_CONFIG.rulesPath), schema: false, user: false },
+  { key: 'defaultRulesPath', node: field(DEFAULT_CONFIG.defaultRulesPath), schema: false, user: false },
+  { key: 'cachePath', node: field(DEFAULT_CONFIG.cachePath), schema: false, user: false },
+  { key: 'apiBase', node: field(DEFAULT_CONFIG.apiBase) },
+  { key: 'apiKeyEnv', node: field(DEFAULT_CONFIG.apiKeyEnv) },
+  { key: 'apiKey', node: field(DEFAULT_CONFIG.apiKey, 'secret') },
+  { key: 'apiKeyMasked', node: field(DEFAULT_CONFIG.apiKeyMasked), user: false },
+  { key: 'provider', node: field(DEFAULT_CONFIG.provider) },
+  { key: 'model', node: field(DEFAULT_CONFIG.model) },
+  { key: 'reasoningEffort', node: field(DEFAULT_CONFIG.reasoningEffort) },
+  { key: 'fallbackProvider', node: field(DEFAULT_CONFIG.fallbackProvider) },
+  { key: 'fallbackModel', node: field(DEFAULT_CONFIG.fallbackModel) },
+  { key: 'timeoutMs', node: field(DEFAULT_CONFIG.timeoutMs) },
+  { key: 'lowRiskTtlDays', node: field(DEFAULT_CONFIG.lowRiskTtlDays) },
+  { key: 'mediumRiskTtlDays', node: field(DEFAULT_CONFIG.mediumRiskTtlDays) },
+  { key: 'onTimeout', node: union(['deny', 'ask'], DEFAULT_CONFIG.onTimeout) },
+  { key: 'headlessMode', node: union(['deny', 'allow'], DEFAULT_CONFIG.headlessMode) },
+  { key: 'notifyCacheHit', node: field(DEFAULT_CONFIG.notifyCacheHit) },
+  { key: 'notifyLlmDecision', node: field(DEFAULT_CONFIG.notifyLlmDecision) },
+  { key: 'notifyAllow', node: union(['page', 'context', 'off'], DEFAULT_CONFIG.notifyAllow) },
+  { key: 'notifyDeny', node: union(['page', 'context', 'off'], DEFAULT_CONFIG.notifyDeny) },
+  { key: 'notifyAsk', node: union(['page', 'context', 'off'], DEFAULT_CONFIG.notifyAsk) },
+  { key: 'fileTrackerDefault', node: union(['ask', 'deny'], DEFAULT_CONFIG.fileTrackerDefault) },
+  { key: 'fileTrackerWindowSec', node: field(DEFAULT_CONFIG.fileTrackerWindowSec) },
+  { key: 'sessionCacheSize', node: field(DEFAULT_CONFIG.sessionCacheSize) },
+  { key: 'alwaysReviewCacheTtlMinutes', node: field(DEFAULT_CONFIG.alwaysReviewCacheTtlMinutes) },
+  { key: 'examineEnabled', node: field(DEFAULT_CONFIG.examineEnabled) },
+  { key: 'auditDbPath', node: field(DEFAULT_CONFIG.auditDbPath), schema: false, user: false },
+  { key: 'auditPassword', node: field(DEFAULT_CONFIG.auditPassword, 'secret') },
+  { key: 'auditPasswordMasked', node: field(DEFAULT_CONFIG.auditPasswordMasked), user: false },
+  { key: 'historyEnabled', node: field(DEFAULT_CONFIG.historyEnabled) },
+  { key: 'autoAnalyzeEnabled', node: field(DEFAULT_CONFIG.autoAnalyzeEnabled) },
+  { key: 'historyDays', node: field(DEFAULT_CONFIG.historyDays) },
+  { key: 'historyMinTotal', node: field(DEFAULT_CONFIG.historyMinTotal) },
+  { key: 'historyMinLlm', node: field(DEFAULT_CONFIG.historyMinLlm) },
+  { key: 'learnedCacheableMinTotal', node: field(DEFAULT_CONFIG.learnedCacheableMinTotal) },
+  { key: 'analyzeIntervalMinutes', node: field(DEFAULT_CONFIG.analyzeIntervalMinutes), schema: false, user: false },
+  { key: 'analyzeIntervalDays', node: field(DEFAULT_CONFIG.analyzeIntervalDays) },
+  { key: 'analyzeRowLimit', node: field(DEFAULT_CONFIG.analyzeRowLimit), schema: false, user: false },
+  { key: 'templateCachePath', node: field(DEFAULT_CONFIG.templateCachePath), schema: false, user: false },
+  { key: 'learnedRulesPath', node: field(DEFAULT_CONFIG.learnedRulesPath), schema: false, user: false },
+  { key: 'learnedBackupPath', node: field(DEFAULT_CONFIG.learnedBackupPath), schema: false, user: false },
+  { key: 'analyzeStatePath', node: field(DEFAULT_CONFIG.analyzeStatePath), schema: false, user: false },
+  { key: 'configMigrated', node: field(false), user: false },
+]
+
+/** Legacy-file persistence list, derived from {@link FIELDS}. */
+export const CONFIG_KEYS: Array<keyof GuardConfig> = FIELDS.map((f) => f.key)
+
+/** User-facing settings keys: everything except internal file paths and the migration marker. */
+export const USER_CONFIG_KEYS: Array<keyof GuardConfig> = FIELDS.filter((f) => f.user !== false).map((f) => f.key)
+
+/** DSH settings schema for the `auto-guard` namespace (schemastery-shaped, derived from {@link FIELDS}). */
 export const GUARD_SETTINGS_SCHEMA = {
   type: 'object',
   default: {},
-  keys: {
-    apiBase: field(''),
-    apiKeyEnv: field('DEEPSEEK_API_KEY'),
-    apiKey: field('', 'secret'),
-    apiKeyMasked: field(''),
-    provider: field('deepseek-official'),
-    model: field('deepseek-v4-flash'),
-    reasoningEffort: field('off'),
-    fallbackProvider: field('deepseek-official'),
-    fallbackModel: field('deepseek-v4-flash'),
-    timeoutMs: field(15000),
-    lowRiskTtlDays: field(30),
-    mediumRiskTtlDays: field(7),
-    onTimeout: union(['deny', 'ask'], 'deny'),
-    headlessMode: union(['deny', 'allow'], 'deny'),
-    notifyCacheHit: field(true),
-    notifyLlmDecision: field(true),
-    notifyAllow: union(['page', 'context', 'off'], 'page'),
-    notifyDeny: union(['page', 'context', 'off'], 'context'),
-    notifyAsk: union(['page', 'context', 'off'], 'context'),
-    fileTrackerDefault: union(['ask', 'deny'], 'ask'),
-    fileTrackerWindowSec: field(5),
-    sessionCacheSize: field(300),
-    alwaysReviewCacheTtlMinutes: field(30),
-    examineEnabled: field(false),
-    auditPassword: field('', 'secret'),
-    auditPasswordMasked: field(''),
-    historyEnabled: field(false),
-    autoAnalyzeEnabled: field(false),
-    historyDays: field(60),
-    historyMinTotal: field(4),
-    historyMinLlm: field(1),
-    learnedCacheableMinTotal: field(8),
-    analyzeIntervalDays: field(15),
-    configMigrated: field(false),
-  },
+  keys: Object.fromEntries(FIELDS.filter((f) => f.schema !== false).map((f) => [f.key, f.node])),
 }
 
 /** True when a legacy private config file exists on disk. */

@@ -249,6 +249,63 @@ describe('commands: examine + optimize groups', () => {
     }
   })
 
+  it('analyze password gate fails closed without the audit password (ADR-0024)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-analyze-gate-'))
+    const audit = new LightAuditStore(join(dir, 'audit.db'))
+    try {
+      const config = makeConfig()
+      config.examineEnabled = true
+      config.learnedRulesPath = join(dir, 'learned.json')
+      config.learnedBackupPath = join(dir, 'learned.bak.json')
+      config.analyzeStatePath = join(dir, 'analyze-state.json')
+      const rules = makeRules()
+
+      const gated = analyzeLearnedRules({ config, rules, audit }, 'zh', { passwordGate: true })
+      expect(gated.ok).toBe(false)
+      expect(gated.message).toBe('请先设置审计密码（auditPassword）')
+
+      // Without the gate the same call proceeds (pi/cli/zcode behavior).
+      expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
+    } finally {
+      audit.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('analyze receipts resolve through the host wording slot', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-analyze-wording-'))
+    const audit = new LightAuditStore(join(dir, 'audit.db'))
+    try {
+      const config = makeConfig()
+      config.examineEnabled = true
+      config.learnedRulesPath = join(dir, 'learned.json')
+      config.learnedBackupPath = join(dir, 'learned.bak.json')
+      config.analyzeStatePath = join(dir, 'analyze-state.json')
+      const rules = makeRules()
+
+      const seen: string[] = []
+      const result = analyzeLearnedRules({ config, rules, audit }, 'zh', {
+        full: true,
+        message: (_lang, key, params = {}) => {
+          seen.push(key)
+          return `dsh:${key}:${params.count ?? 0}`
+        },
+      })
+      expect(result.ok).toBe(true)
+      expect(result.message).toBe('dsh:analyzeDoneFull:0')
+      expect(seen).toEqual(['analyzeDoneFull'])
+
+      const gated = analyzeLearnedRules({ config, rules, audit }, 'en', {
+        passwordGate: true,
+        message: (_lang, key) => `dsh:${key}`,
+      })
+      expect(gated).toEqual({ ok: false, message: 'dsh:analyzeNeedsPassword' })
+    } finally {
+      audit.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('optimize status/list/rollback operate on injected files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ag-optimize-'))
     try {
