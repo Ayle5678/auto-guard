@@ -13,7 +13,7 @@
 import { loadAnalyzeState, updateLastAnalysis } from './analyze-state.ts'
 import type { AuditStore, AuditWindowSummary } from './audit.ts'
 import { formatLocalTime, truncateOneLine, type RuntimeStatus } from './decision-history.ts'
-import { generateLearnedRules, loadLearnedRules, restoreLearnedRules, writeLearnedRules, type LearnedRulesFile } from './learned-rules.ts'
+import { generateLearnedRules, loadLearnedRules, mergeLearnedRules, restoreLearnedRules, writeLearnedRules, type LearnedRulesFile } from './learned-rules.ts'
 import { coreMessage } from './messages.ts'
 import { sourceTag } from './notify.ts'
 import { langOf, normalizeLang, type Lang } from './lang.ts'
@@ -154,26 +154,44 @@ export interface AnalyzeDeps {
   audit: AuditStore
 }
 
+/** Options for the analyze operation. */
+export interface AnalyzeOptions {
+  /** Read the full audit history instead of the recent-row window. */
+  full?: boolean
+}
+
 /** `optimize analyze`: run one learned-rule analysis over recent audit rows. */
-export function analyzeLearnedRules(deps: AnalyzeDeps, lang: Lang = langOf(deps.config)): { ok: boolean; message: string } {
+export function analyzeLearnedRules(
+  deps: AnalyzeDeps,
+  lang: Lang = langOf(deps.config),
+  options: AnalyzeOptions = {},
+): { ok: boolean; message: string } {
   const { config } = deps
   if (!config.examineEnabled) {
     return { ok: false, message: coreMessage(lang, 'analyzeNeedsExamine') }
   }
+  const excludedRules = [...deps.rules.hardDeny, ...deps.rules.alwaysReview, ...deps.rules.directoryDelete]
   const rows = deps.audit.list()
-  const window = rows.slice(-Math.max(1, config.analyzeRowLimit))
-  const rules = generateLearnedRules(window, {
+  // A --full run or the first-ever analysis reads the full history; afterwards
+  // only the most recent window — merged into the existing rules, never
+  // replacing them.
+  const full = options.full || !loadAnalyzeState(config.analyzeStatePath).lastAnalysisAt
+  const analyzed = full ? rows : rows.slice(-Math.max(1, config.analyzeRowLimit))
+  const generated = generateLearnedRules(analyzed, {
     days: config.historyDays,
     cacheableMinTotal: config.learnedCacheableMinTotal,
     cacheableMinLlm: 1,
     sensitivePaths: deps.rules.sensitivePaths,
-    excludedRules: [...deps.rules.hardDeny, ...deps.rules.alwaysReview, ...deps.rules.directoryDelete],
+    excludedRules,
   })
-  writeLearnedRules(config.learnedRulesPath, config.learnedBackupPath, rules)
+  const merged = mergeLearnedRules(generated, loadLearnedRules(config.learnedRulesPath, excludedRules))
+  writeLearnedRules(config.learnedRulesPath, config.learnedBackupPath, merged)
   updateLastAnalysis(config.analyzeStatePath)
   return {
     ok: true,
-    message: coreMessage(lang, 'analyzeDone', { analyzed: window.length, total: rows.length, count: rules.cacheable.length }),
+    message: full
+      ? coreMessage(lang, 'analyzeDoneFull', { total: rows.length, count: merged.cacheable.length })
+      : coreMessage(lang, 'analyzeDone', { analyzed: analyzed.length, total: rows.length, count: merged.cacheable.length }),
   }
 }
 

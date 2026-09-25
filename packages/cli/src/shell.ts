@@ -193,7 +193,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     case 'examine':
       return examineCommand(action, ctx, io, deps)
     case 'optimize':
-      return optimizeCommand(action, ctx, io, deps)
+      return optimizeCommand(action, rest, ctx, io, deps)
     default:
       out.push(shellMessage(resolveCliLang(deps), 'usage'))
       return { code: 1, output: out }
@@ -428,7 +428,7 @@ function examineCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot
   }
 }
 
-function optimizeCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoot>, deps: CliDeps): RunResult {
+function optimizeCommand(action: string, rest: readonly string[], ctx: Ctx, io: ReturnType<typeof openRoot>, deps: CliDeps): RunResult {
   const config = io.load()
   const lang = resolveCliLang(deps, config.lang)
   switch (action) {
@@ -444,7 +444,7 @@ function optimizeCommand(action: string, ctx: Ctx, io: ReturnType<typeof openRoo
       const audit = io.auditFor(config)
       try {
         const rules = loadRules(config.rulesPath, config.defaultRulesPath)
-        const result = analyzeLearnedRules({ config, rules, audit }, lang)
+        const result = analyzeLearnedRules({ config, rules, audit }, lang, { full: rest.includes('--full') })
         ctx.out.push(result.message)
         return { code: result.ok ? 0 : 2, output: ctx.out }
       } finally {

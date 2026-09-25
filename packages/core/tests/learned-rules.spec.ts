@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LightAuditStore as AuditStore } from '../src/audit.ts'
-import { emptyLearnedRules, generateLearnedRules, loadLearnedRules, writeLearnedRules } from '../src/learned-rules.ts'
+import { emptyLearnedRules, generateLearnedRules, loadLearnedRules, mergeLearnedRules, writeLearnedRules } from '../src/learned-rules.ts'
 import type { Decision } from '../src/types.ts'
 
 const dirs: string[] = []
@@ -136,6 +136,43 @@ describe('generateLearnedRules', () => {
     const patterns = rules.cacheable.map((r) => r.pattern)
     expect(patterns.filter((p) => p === 'python -m pytest * -q')).toHaveLength(1)
   })
+
+  it('does not learn patterns whose program position is a wildcard', () => {
+    const dir = tmp()
+    const dbPath = join(dir, 'audit.db')
+    // Full interpreter paths and variable assignments render the program
+    // token itself as `*` — the classic over-broad shapes.
+    const commands = [
+      ...Array.from({ length: 8 }, (_, i) => `PY=/c/py/python.exe; cd proj && $PY -c "print(${i})"`),
+      ...Array.from({ length: 8 }, (_, i) => `cd proj && /c/py/python.exe -c "print(${i})"`),
+    ]
+    const audit = seed(dbPath, commands, { kind: 'allow', source: 'llm', risk: 'low', reason: 'ok' })
+    const rules = generateLearnedRules(audit.list(), options)
+    expect(rules.cacheable).toHaveLength(0)
+  })
+
+  it('does not learn patterns anchored on destructive commands', () => {
+    const dir = tmp()
+    const dbPath = join(dir, 'audit.db')
+    const commands = Array.from({ length: 8 }, (_, i) => `rm notes_${i}.txt && ls`)
+    const audit = seed(dbPath, commands, { kind: 'allow', source: 'llm', risk: 'low', reason: 'ok' })
+    const rules = generateLearnedRules(audit.list(), options)
+    expect(rules.cacheable).toHaveLength(0)
+  })
+
+  it('keeps anchored equivalents of the rejected shapes', () => {
+    const dir = tmp()
+    const dbPath = join(dir, 'audit.db')
+    const commands = [
+      ...Array.from({ length: 8 }, (_, i) => `cd "D:/work/proj" && conda run -n py310 python -c "print(${i})"`),
+      ...Array.from({ length: 8 }, (_, i) => `cd "D:/work/proj" && PYTHONIOENCODING=utf-8 /c/py/python.exe -c "print(${i})"`),
+    ]
+    const audit = seed(dbPath, commands, { kind: 'allow', source: 'llm', risk: 'low', reason: 'ok' })
+    const rules = generateLearnedRules(audit.list(), options)
+    const patterns = rules.cacheable.map((r) => r.pattern)
+    expect(patterns).toContain('cd * && conda run -n py310 python -c *')
+    expect(patterns).toContain('cd * && PYTHONIOENCODING=utf-8 * -c *')
+  })
 })
 
 describe('learned rules file', () => {
@@ -182,6 +219,23 @@ describe('learned rules file', () => {
     expect(rules.cacheable).toEqual([{ pattern: 'npm run build', reason: 'ok' }])
   })
 
+  it('filters unanchored patterns from previously written files on load', () => {
+    const dir = tmp()
+    const path = join(dir, 'learned.json')
+    writeFileSync(path, JSON.stringify({
+      version: 1,
+      cacheable: [
+        { pattern: '* && * -c *', reason: 'old bug' },
+        { pattern: 'cd * && * -c *', reason: 'old bug' },
+        { pattern: 'rm * && ls *', reason: 'old bug' },
+        { pattern: 'cd * && conda run -n py310 python -c *', reason: 'anchored' },
+      ],
+    }), 'utf8')
+    expect(loadLearnedRules(path).cacheable).toEqual([
+      { pattern: 'cd * && conda run -n py310 python -c *', reason: 'anchored' },
+    ])
+  })
+
   it('writes a backup before overwriting', () => {
     const dir = tmp()
     const path = join(dir, 'learned.json')
@@ -190,5 +244,18 @@ describe('learned rules file', () => {
     writeLearnedRules(path, backup, { version: 1, cacheable: [{ pattern: 'npm run build', reason: 'new' }] })
     expect(loadLearnedRules(backup).cacheable[0].pattern).toBe('python *')
     expect(loadLearnedRules(path).cacheable[0].pattern).toBe('npm run build')
+  })
+
+  it('merges fresh analysis into existing rules without dropping either side', () => {
+    const generated = { version: 1 as const, cacheable: [{ pattern: 'npm run build *', reason: 'fresh' }] }
+    const existing = { version: 1 as const, cacheable: [{ pattern: 'python -m pytest * -q', reason: 'old' }] }
+    const merged = mergeLearnedRules(generated, existing)
+    expect(merged.cacheable.map((r) => r.pattern)).toEqual(['npm run build *', 'python -m pytest * -q'])
+  })
+
+  it('lets the fresh entry win when both sides carry the same pattern', () => {
+    const generated = { version: 1 as const, cacheable: [{ pattern: 'npm run build *', reason: 'fresh' }] }
+    const existing = { version: 1 as const, cacheable: [{ pattern: 'npm run build *', reason: 'old' }] }
+    expect(mergeLearnedRules(generated, existing).cacheable).toEqual([{ pattern: 'npm run build *', reason: 'fresh' }])
   })
 })

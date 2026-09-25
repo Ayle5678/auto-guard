@@ -36,7 +36,7 @@ const catalog = defineCatalog(
     examineOff: '审查日志已关闭',
     examineClearedOld: '已删除 {count} 条 30 天前记录',
     examineClearedAll: '已清空全部审查日志',
-    optimizeUsage: '用法：auto-guard optimize <status|analyze|list|rollback>',
+    optimizeUsage: '用法：auto-guard optimize <status|analyze [--full]|list|rollback>',
   },
   {
     noRootFound: 'No host config root found; pass --config-root <path> (e.g. ~/.zcode/auto-guard)',
@@ -67,7 +67,7 @@ const catalog = defineCatalog(
     examineOff: 'Audit log disabled',
     examineClearedOld: 'Deleted {count} record(s) older than 30 days',
     examineClearedAll: 'Cleared all audit records',
-    optimizeUsage: 'Usage: auto-guard optimize <status|analyze|list|rollback>',
+    optimizeUsage: 'Usage: auto-guard optimize <status|analyze [--full]|list|rollback>',
   },
 )
 

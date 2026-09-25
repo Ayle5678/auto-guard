@@ -245,7 +245,7 @@ export interface GuardConfig {
   analyzeIntervalMinutes: number
   /** Automatic analysis interval in days (fallback when analyzeIntervalMinutes is 0). */
   analyzeIntervalDays: number
-  /** Maximum number of most-recent audit rows one analysis reads. */
+  /** Maximum number of most-recent audit rows a repeat analysis reads; the first analysis scans the full history. */
   analyzeRowLimit: number
   /** Disk-backed learned template cache path. */
   templateCachePath: string

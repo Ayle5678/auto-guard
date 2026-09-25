@@ -87,7 +87,7 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
       case 'examine':
         return examineCommand(action)
       case 'optimize':
-        return optimizeCommand(action)
+        return optimizeCommand(action, rest)
       default:
         print(message(resolveLang(), 'usage'))
         return 1
@@ -336,7 +336,7 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
     }
   }
 
-  function optimizeCommand(action: string): number {
+  function optimizeCommand(action: string, rest: readonly string[]): number {
     const config = space.loadConfig()
     const lang = resolveLang(config.lang)
     switch (action) {
@@ -347,7 +347,7 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
       case 'analyze': {
         const runtime = kit.bootstrap()
         try {
-          const result = analyzeLearnedRules({ config: runtime.config, rules: runtime.rules, audit: runtime.audit }, lang)
+          const result = analyzeLearnedRules({ config: runtime.config, rules: runtime.rules, audit: runtime.audit }, lang, { full: rest.includes('--full') })
           print(result.message)
           if (result.ok) updateLastAnalysis(config.analyzeStatePath)
           return result.ok ? 0 : 2

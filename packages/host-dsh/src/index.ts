@@ -40,6 +40,7 @@ import {
   analysisIntervalMs,
   TemplateCache,
   loadRules,
+  mergeLearnedRules,
   updateLastAnalysis,
   writeLearnedRules,
   type Decision,
@@ -118,7 +119,7 @@ function createState(
   return { config, rules, service, audit, history, learned, templateCache, lang }
 }
 
-/** Run a learned-rule analysis and overwrite learned-rules.json. */
+/** Run a learned-rule analysis and merge it into learned-rules.json. */
 function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string } {
   const lang = state.lang
   if (!state.config.examineEnabled) {
@@ -127,18 +128,20 @@ function runLearnedAnalysis(state: GuardState): { ok: boolean; message: string }
   if (!state.config.auditPassword) {
     return { ok: false, message: dshMessage(lang, 'analyzeNeedsPassword') }
   }
-  const rules = generateLearnedRules(state.audit.list(), {
+  const excludedRules = [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete]
+  const generated = generateLearnedRules(state.audit.list(), {
     days: state.config.historyDays,
     cacheableMinTotal: state.config.learnedCacheableMinTotal,
     cacheableMinLlm: 1,
     sensitivePaths: state.rules.sensitivePaths,
-    excludedRules: [...state.rules.hardDeny, ...state.rules.alwaysReview, ...state.rules.directoryDelete],
+    excludedRules,
   })
-  writeLearnedRules(state.config.learnedRulesPath, state.config.learnedBackupPath, rules)
-  state.learned = rules
-  state.templateCache.setCacheablePatterns(rules.cacheable)
+  const merged = mergeLearnedRules(generated, loadLearnedRules(state.config.learnedRulesPath, excludedRules))
+  writeLearnedRules(state.config.learnedRulesPath, state.config.learnedBackupPath, merged)
+  state.learned = merged
+  state.templateCache.setCacheablePatterns(merged.cacheable)
   updateLastAnalysis(state.config.analyzeStatePath)
-  return { ok: true, message: dshMessage(lang, 'analyzeDone', { count: rules.cacheable.length }) }
+  return { ok: true, message: dshMessage(lang, 'analyzeDone', { count: merged.cacheable.length }) }
 }
 
 /** Remote service exposed to the settings page via Typert Remote. */

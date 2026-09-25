@@ -58,7 +58,7 @@ export function loadLearnedRules(path: string, excludedRules: PatternRule[] = []
       const first = rule.pattern.split(/\s+/)[0]?.toLowerCase()
       if (NON_LEARNABLE_CACHEABLE.has(first)) return false
       if (excludedRules.length > 0 && matchRule(rule.pattern, excludedRules)) return false
-      return true
+      return isAnchoredPattern(rule.pattern)
     })
     return {
       version: 1,
@@ -76,6 +76,17 @@ export function writeLearnedRules(path: string, backupPath: string, rules: Learn
   }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, `${JSON.stringify(rules, null, 2)}\n`, { encoding: 'utf8' })
+}
+
+/**
+ * Merge one analysis into the previously learned rules — appended, never
+ * replaced, so patterns that slid out of the analysis window survive. When a
+ * pattern appears on both sides the fresh entry wins (its counts are newer).
+ */
+export function mergeLearnedRules(generated: LearnedRulesFile, existing: LearnedRulesFile): LearnedRulesFile {
+  const merged = dedupeByPattern([...generated.cacheable, ...existing.cacheable])
+  merged.sort((a, b) => a.pattern.localeCompare(b.pattern))
+  return { version: 1, cacheable: merged }
 }
 
 export function restoreLearnedRules(path: string, backupPath: string): boolean {
@@ -138,6 +149,49 @@ export interface LearnedRuleGenerationOptions {
   sensitivePaths: string[]
   /** hardDeny + alwaysReview + directoryDelete patterns; matching skeletons are never learned. */
   excludedRules: PatternRule[]
+}
+
+/**
+ * Anchors that must never head a learned rule: unconditional data
+ * removal/overwrite commands. Ordinary `rm file` style calls keep their LLM
+ * review; learning must not create a bypass pattern for them.
+ */
+const NON_LEARNABLE_ANCHORS = new Set([
+  'rm',
+  'mv',
+  'dd',
+  'shred',
+  'rmdir',
+  'unlink',
+  'truncate',
+  'del',
+])
+
+const PROGRAM_POSITION_SEPARATORS = new Set(['&&', '||', ';', '|', '('])
+
+/**
+ * Anchored-pattern invariant: every program position of the rendered pattern
+ * — the start and the first token after each `&&`/`||`/`;`/`|`/`(` — must be
+ * a concrete literal (never `*`) and never a destructive command. Rejects
+ * wildcard-headed shapes like `* && * -c *` or `cd * && * -c *` where the
+ * executed program itself is unknown, and `rm * && ls *` where a destructive
+ * anchor would bypass review. Anchored equivalents (`cd * && conda run -n
+ * py310 python -c *`, `cd * && PYTHONIOENCODING=utf-8 * -c *`) still pass.
+ */
+function isAnchoredPattern(pattern: string): boolean {
+  let expectProgram = true
+  for (const token of pattern.split(/\s+/)) {
+    if (PROGRAM_POSITION_SEPARATORS.has(token)) {
+      expectProgram = true
+      continue
+    }
+    if (expectProgram) {
+      if (token === '*') return false
+      if (NON_LEARNABLE_ANCHORS.has(token.toLowerCase())) return false
+      expectProgram = false
+    }
+  }
+  return true
 }
 
 function patternFromSkeleton(skeleton: string): string {
@@ -204,8 +258,10 @@ export function generateLearnedRules(rows: AuditRow[], options: LearnedRuleGener
     if (NON_LEARNABLE_CACHEABLE.has(first)) continue
     if (fixedTokensAfterFirst(skeleton) < 2) continue
     if (!skeletonHasPlaceholder(skeleton)) continue
+    const pattern = patternFromSkeleton(skeleton)
+    if (!isAnchoredPattern(pattern)) continue
     cacheable.push({
-      pattern: patternFromSkeleton(skeleton),
+      pattern,
       reason: `Learned from ${entry.total} historical low-risk allows (${entry.llm} LLM): ${entry.sample}`,
     })
   }

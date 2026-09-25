@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -147,6 +147,104 @@ describe('commands: examine + optimize groups', () => {
       expect(result.ok).toBe(true)
       audit.close()
     } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  /** One low-risk LLM allow row, timestamped — the only shape learning counts. */
+  function seedAllow(audit: LightAuditStore, command: string, at: string): void {
+    audit.insert({
+      source: 'tool_call',
+      tool: 'Bash',
+      command,
+      finalAction: 'allow',
+      recordedAt: at,
+      decision: { kind: 'allow', risk: 'low', source: 'llm', reason: 'ok' },
+    })
+  }
+
+  function learnedPatterns(path: string): string[] {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { cacheable: Array<{ pattern: string }> }
+    return parsed.cacheable.map((rule) => rule.pattern)
+  }
+
+  it('analyze keeps previously learned rules when the window slides past them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-analyze-merge-'))
+    const audit = new LightAuditStore(join(dir, 'audit.db'))
+    try {
+      const config = makeConfig()
+      config.examineEnabled = true
+      config.learnedRulesPath = join(dir, 'learned.json')
+      config.learnedBackupPath = join(dir, 'learned.bak.json')
+      config.analyzeStatePath = join(dir, 'analyze-state.json')
+      config.analyzeRowLimit = 4
+      const rules = makeRules()
+
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
+      expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
+      expect(learnedPatterns(config.learnedRulesPath)).toContain('npm run build *')
+
+      // Later rows push batch 1 out of the 4-row window; its rule must survive.
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
+      const patterns = learnedPatterns(config.learnedRulesPath)
+      expect(patterns).toContain('git log --oneline *')
+      expect(patterns).toContain('npm run build *')
+    } finally {
+      audit.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('first analysis reads the full audit history regardless of the row limit', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-analyze-full-'))
+    const audit = new LightAuditStore(join(dir, 'audit.db'))
+    try {
+      const config = makeConfig()
+      config.examineEnabled = true
+      config.learnedRulesPath = join(dir, 'learned.json')
+      config.learnedBackupPath = join(dir, 'learned.bak.json')
+      config.analyzeStatePath = join(dir, 'analyze-state.json')
+      config.analyzeRowLimit = 4
+      const rules = makeRules()
+
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
+      const patterns = learnedPatterns(config.learnedRulesPath)
+      expect(patterns).toContain('npm run build *')
+      expect(patterns).toContain('git log --oneline *')
+    } finally {
+      audit.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('analyze full re-reads the whole history even after earlier analyses', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-analyze-fullflag-'))
+    const audit = new LightAuditStore(join(dir, 'audit.db'))
+    try {
+      const config = makeConfig()
+      config.examineEnabled = true
+      config.learnedRulesPath = join(dir, 'learned.json')
+      config.learnedBackupPath = join(dir, 'learned.bak.json')
+      config.analyzeStatePath = join(dir, 'analyze-state.json')
+      config.analyzeRowLimit = 4
+      const rules = makeRules()
+
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
+      expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
+      // Learned rules lost (the overwrite bug) and only later rows sit inside
+      // the window: only a full re-analysis can recover the early pattern.
+      rmSync(config.learnedRulesPath)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      const result = analyzeLearnedRules({ config, rules, audit }, 'zh', { full: true })
+      expect(result.ok).toBe(true)
+      const patterns = learnedPatterns(config.learnedRulesPath)
+      expect(patterns).toContain('npm run build *')
+      expect(patterns).toContain('git log --oneline *')
+    } finally {
+      audit.close()
       rmSync(dir, { recursive: true, force: true })
     }
   })
