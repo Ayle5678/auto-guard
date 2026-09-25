@@ -9,7 +9,7 @@ import { GuardService } from '../src/guard-service.ts'
 import { HistoryStore } from '../src/history.ts'
 import { loadRules } from '../src/rules.ts'
 import type { LlmReviewer, LlmReviewRequest } from '../src/llm.ts'
-import type { GuardConfig, GuardRequest, LlmReviewResult } from '../src/types.ts'
+import type { GuardRequest, GuardTuning, LlmReviewResult } from '../src/types.ts'
 
 class StubReviewer implements LlmReviewer {
   calls: LlmReviewRequest[] = []
@@ -19,46 +19,18 @@ class StubReviewer implements LlmReviewer {
   }
 }
 
-function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
+/** The engine-tuning slice only (SPEC 0019 ticket 04). */
+function makeTuning(overrides: Partial<GuardTuning> = {}): GuardTuning {
   return {
-    enabled: true,
-    rulesPath: '~/.pi/auto-guard/rules.json',
-    defaultRulesPath: '~/.pi/auto-guard/defaults.json',
-    cachePath: '~/.pi/auto-guard/cache.json',
-    apiBase: 'https://api.deepseek.com',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
-    apiKey: '',
-    model: 'deepseek-v4-flash',
-    fallbackModel: 'deepseek-v4-flash',
-    timeoutMs: 100,
     lowRiskTtlDays: 30,
     mediumRiskTtlDays: 7,
-    onTimeout: 'deny',
-    headlessMode: 'deny',
-    notifyCacheHit: true,
-    notifyLlmDecision: true,
-    notifyAllow: 'page',
-    notifyDeny: 'context',
-    notifyAsk: 'context',
-    fileTrackerDefault: 'ask',
-    fileTrackerWindowSec: 5,
-    sessionCacheSize: 16,
     alwaysReviewCacheTtlMinutes: 30,
-    examineEnabled: true,
-    auditDbPath: '~/.pi/auto-guard/audit.db',
+    onTimeout: 'deny',
+    fileTrackerDefault: 'ask',
     historyEnabled: true,
-    autoAnalyzeEnabled: false,
-    historyDays: 60,
+    examineEnabled: true,
     historyMinTotal: 4,
     historyMinLlm: 1,
-    learnedCacheableMinTotal: 8,
-    analyzeIntervalMinutes: 20,
-    analyzeIntervalDays: 15,
-    analyzeRowLimit: 5000,
-    templateCachePath: "template-cache.json",
-    learnedRulesPath: '~/.pi/auto-guard/learned-rules.json',
-    learnedBackupPath: '~/.pi/auto-guard/learned-rules.backup.json',
-    analyzeStatePath: '~/.pi/auto-guard/analyze-state.json',
     ...overrides,
   }
 }
@@ -84,19 +56,14 @@ describe('GuardService: history layer', () => {
       }
       audit.close()
 
-      const config = makeConfig()
-      config.rulesPath = join(dir, 'rules.json')
-      config.defaultRulesPath = join(dir, 'defaults.json')
-      config.cachePath = join(dir, 'cache.json')
-      config.auditDbPath = dbPath
-      const sessionCache = new SessionLruCache(config.sessionCacheSize)
-      const persistentCache = new PersistentCache(config.cachePath)
+      const sessionCache = new SessionLruCache(16)
+      const persistentCache = new PersistentCache(join(dir, 'cache.json'))
       const llm = new StubReviewer()
-      const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
+      const fileTracker = new FileTracker(5 * 1000)
       const history = new HistoryStore({ dbPath, days: 60 })
       const service = new GuardService({
-        config,
-        rules: loadRules(config.rulesPath, config.defaultRulesPath),
+        config: makeTuning(),
+        rules: loadRules(join(dir, 'rules.json'), join(dir, 'defaults.json')),
         sessionCache,
         persistentCache,
         llmReviewer: llm,
@@ -141,19 +108,14 @@ describe('GuardService: history layer', () => {
       }
       audit.close()
 
-      const config = makeConfig({ historyEnabled: false })
-      config.rulesPath = join(dir, 'rules.json')
-      config.defaultRulesPath = join(dir, 'defaults.json')
-      config.cachePath = join(dir, 'cache.json')
-      config.auditDbPath = dbPath
-      const sessionCache = new SessionLruCache(config.sessionCacheSize)
-      const persistentCache = new PersistentCache(config.cachePath)
+      const sessionCache = new SessionLruCache(16)
+      const persistentCache = new PersistentCache(join(dir, 'cache.json'))
       const llm = new StubReviewer()
-      const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
+      const fileTracker = new FileTracker(5 * 1000)
       const history = new HistoryStore({ dbPath, days: 60 })
       const service = new GuardService({
-        config,
-        rules: loadRules(config.rulesPath, config.defaultRulesPath),
+        config: makeTuning({ historyEnabled: false }),
+        rules: loadRules(join(dir, 'rules.json'), join(dir, 'defaults.json')),
         sessionCache,
         persistentCache,
         llmReviewer: llm,

@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildSessionKey, buildWorkspaceKey, PersistentCache, SessionLruCache } from '../src/cache.ts'
+import { prepareDeletionMarker } from '../src/directory-delete.ts'
 import { FileTracker } from '../src/file-tracker.ts'
-import { GuardService, prepareDeletionMarker } from '../src/guard-service.ts'
+import { GuardService } from '../src/guard-service.ts'
 import { TemplateCache } from '../src/template-cache.ts'
 import { memorySink } from '../src/persist-map.ts'
 import { loadRules } from '../src/rules.ts'
-import type { GuardConfig, GuardRequest, LlmReviewResult } from '../src/types.ts'
+import type { GuardRequest, GuardTuning, LlmReviewResult } from '../src/types.ts'
 import type { LlmReviewer, LlmReviewRequest } from '../src/llm.ts'
 
 class StubReviewer implements LlmReviewer {
@@ -25,63 +26,35 @@ class StubReviewer implements LlmReviewer {
   }
 }
 
-function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
+/** The engine-tuning slice only (SPEC 0019 ticket 04): the tests need no full GuardConfig. */
+function makeTuning(overrides: Partial<GuardTuning> = {}): GuardTuning {
   return {
-    enabled: true,
-    rulesPath: '~/.pi/auto-guard/rules.json',
-    defaultRulesPath: '~/.pi/auto-guard/defaults.json',
-    cachePath: '~/.pi/auto-guard/cache.json',
-    apiBase: 'https://api.deepseek.com',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
-    apiKey: '',
-    model: 'deepseek-v4-flash',
-    fallbackModel: 'deepseek-v4-flash',
-    timeoutMs: 100,
     lowRiskTtlDays: 30,
     mediumRiskTtlDays: 7,
-    onTimeout: 'deny',
-    headlessMode: 'deny',
-    notifyCacheHit: true,
-    notifyLlmDecision: true,
-    notifyAllow: 'page',
-    notifyDeny: 'context',
-    notifyAsk: 'context',
-    fileTrackerDefault: 'ask',
-    fileTrackerWindowSec: 5,
-    sessionCacheSize: 16,
     alwaysReviewCacheTtlMinutes: 30,
-    examineEnabled: false,
-    auditDbPath: '~/.pi/auto-guard/audit.db',
+    onTimeout: 'deny',
+    fileTrackerDefault: 'ask',
     historyEnabled: false,
-    autoAnalyzeEnabled: false,
-    historyDays: 60,
+    examineEnabled: false,
     historyMinTotal: 4,
     historyMinLlm: 1,
-    learnedCacheableMinTotal: 8,
-    analyzeIntervalMinutes: 20,
-    analyzeIntervalDays: 15,
-    analyzeRowLimit: 5000,
-    templateCachePath: "template-cache.json",
-    learnedRulesPath: '~/.pi/auto-guard/learned-rules.json',
-    learnedBackupPath: '~/.pi/auto-guard/learned-rules.backup.json',
-    analyzeStatePath: '~/.pi/auto-guard/analyze-state.json',
     ...overrides,
   }
 }
 
-function setup(overrides: { config?: Partial<GuardConfig>; llm?: LlmReviewer } = {}) {
+function setup(overrides: { tuning?: Partial<GuardTuning>; llm?: LlmReviewer } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'pi-guard-svc-'))
-  const config = makeConfig(overrides.config)
-  // Keep test artifacts in a temp dir, never under ~/.pi.
-  config.rulesPath = join(dir, 'rules.json')
-  config.defaultRulesPath = join(dir, 'defaults.json')
-  config.cachePath = join(dir, 'cache.json')
-  const sessionCache = new SessionLruCache(config.sessionCacheSize)
-  const persistentCache = new PersistentCache(config.cachePath)
+  const tuning = makeTuning(overrides.tuning)
+  const rulesPath = join(dir, 'rules.json')
+  const defaultRulesPath = join(dir, 'defaults.json')
+  const sessionCache = new SessionLruCache(16)
+  const persistentCache = new PersistentCache(join(dir, 'cache.json'))
   const llm = overrides.llm ?? new StubReviewer({ decision: 'allow', risk: 'low', reason: 'seems fine' })
-  const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
-  const service = new GuardService({ config, rules: loadRules(config.rulesPath, config.defaultRulesPath), sessionCache, persistentCache, llmReviewer: llm, fileTracker })
-  return { service, sessionCache, persistentCache, fileTracker, dir }
+  const fileTracker = new FileTracker(5 * 1000)
+  const service = new GuardService({ config: tuning, rules: loadRules(rulesPath, defaultRulesPath), sessionCache, persistentCache, llmReviewer: llm, fileTracker })
+  // Tests inspecting .calls use the StubReviewer; the plain-reviewer escape
+  // hatch stays available through the LlmReviewer parameter.
+  return { service, llm: llm as StubReviewer, sessionCache, persistentCache, fileTracker, dir }
 }
 
 function shell(command: string, overrides: Partial<GuardRequest> = {}): GuardRequest {
@@ -89,20 +62,19 @@ function shell(command: string, overrides: Partial<GuardRequest> = {}): GuardReq
 }
 
 /** Like setup, but with the pending directory-deletes sink exposed for inspection. */
-function setupWithPending(overrides: { config?: Partial<GuardConfig>; llm?: StubReviewer; seed?: Record<string, unknown> } = {}) {
+function setupWithPending(overrides: { tuning?: Partial<GuardTuning>; llm?: StubReviewer; seed?: Record<string, unknown> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'pi-guard-svc-'))
-  const config = makeConfig(overrides.config)
-  config.rulesPath = join(dir, 'rules.json')
-  config.defaultRulesPath = join(dir, 'defaults.json')
-  config.cachePath = join(dir, 'cache.json')
-  const sessionCache = new SessionLruCache(config.sessionCacheSize)
-  const persistentCache = new PersistentCache(config.cachePath)
+  const tuning = makeTuning(overrides.tuning)
+  const rulesPath = join(dir, 'rules.json')
+  const defaultRulesPath = join(dir, 'defaults.json')
+  const sessionCache = new SessionLruCache(16)
+  const persistentCache = new PersistentCache(join(dir, 'cache.json'))
   const llm = overrides.llm ?? new StubReviewer({ decision: 'allow', risk: 'low', reason: 'seems fine' })
-  const fileTracker = new FileTracker(config.fileTrackerWindowSec * 1000)
+  const fileTracker = new FileTracker(5 * 1000)
   const store: Record<string, unknown> = overrides.seed ?? {}
   const service = new GuardService({
-    config,
-    rules: loadRules(config.rulesPath, config.defaultRulesPath),
+    config: tuning,
+    rules: loadRules(rulesPath, defaultRulesPath),
     sessionCache,
     persistentCache,
     llmReviewer: llm,
@@ -114,9 +86,8 @@ function setupWithPending(overrides: { config?: Partial<GuardConfig>; llm?: Stub
 
 describe('GuardService: rules layer', () => {
   it('allows static whitelist commands without LLM', async () => {
-    const { service, dir } = setup()
+    const { service, llm, dir } = setup()
     try {
-      const llm = (service as unknown as { llmReviewer: StubReviewer }).llmReviewer
       const d = await service.decide(shell('ls'))
       expect(d).toMatchObject({ kind: 'allow', source: 'static-allow' })
       expect(llm.calls).toHaveLength(0)
@@ -368,7 +339,7 @@ describe('GuardService: caches', () => {
     vi.useFakeTimers()
     try {
       const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'ok' })
-      const { service, dir } = setup({ llm, config: { alwaysReviewCacheTtlMinutes: 30 } })
+      const { service, dir } = setup({ llm, tuning: { alwaysReviewCacheTtlMinutes: 30 } })
       try {
         vi.setSystemTime(0)
         await service.decide(shell('bash setup.sh'))
@@ -1035,9 +1006,8 @@ describe('GuardService: directory delete review flow', () => {
   })
 
   it('routes recursive-flag arrangements the enums miss into the reason flow, uncached and unreviewed', async () => {
-    const { service, persistentCache, dir } = setup()
+    const { service, llm, persistentCache, dir } = setup()
     try {
-      const llm = (service as unknown as { llmReviewer: StubReviewer }).llmReviewer
       const d = await service.decide(shell('rm -f -r ./dist'))
       // First contact: one deterministic denial asking for [删除理由] — no LLM
       // review, and nothing reaches the 30-day persistent cache.
@@ -1431,7 +1401,7 @@ describe('GuardService: LLM failure', () => {
 
   it('can fail open to ask when configured', async () => {
     const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' }, new Error('boom'))
-    const { service, dir } = setup({ config: { onTimeout: 'ask' }, llm })
+    const { service, dir } = setup({ tuning: { onTimeout: 'ask' }, llm })
     try {
       const d = await service.decide(shell('weird-tool'))
       expect(d).toMatchObject({ kind: 'ask', source: 'llm' })
@@ -1503,7 +1473,7 @@ describe('GuardService: sensitive path gate', () => {
 describe('GuardService: file tracker', () => {
   it('asks for a same-command write-and-execute sequence before LLM', async () => {
     const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
-    const { service, dir } = setup({ llm, config: { fileTrackerDefault: 'ask' } })
+    const { service, dir } = setup({ llm, tuning: { fileTrackerDefault: 'ask' } })
     try {
       const d = await service.decide(shell('echo hi > /tmp/same-cmd.sh && bash /tmp/same-cmd.sh'))
       expect(d).toMatchObject({ kind: 'ask', source: 'file-tracker' })
@@ -1515,7 +1485,7 @@ describe('GuardService: file tracker', () => {
 
   it('detects cross-command write-then-execute and honors deny default', async () => {
     const llm = new StubReviewer({ decision: 'allow', risk: 'low', reason: 'x' })
-    const { service, dir } = setup({ llm, config: { fileTrackerDefault: 'deny' } })
+    const { service, dir } = setup({ llm, tuning: { fileTrackerDefault: 'deny' } })
     try {
       // The write command carries a redirect so it goes to LLM review (call 1);
       // the execute phase is denied by the tracker default without another
@@ -1577,12 +1547,8 @@ describe('GuardService: cache write policy (spec 0016)', () => {
   it('writes nothing to either cache for learned template hits', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pi-guard-svc-'))
     try {
-      const config = makeConfig()
-      config.rulesPath = join(dir, 'rules.json')
-      config.defaultRulesPath = join(dir, 'defaults.json')
-      config.cachePath = join(dir, 'cache.json')
-      const sessionCache = new SessionLruCache(config.sessionCacheSize)
-      const persistentCache = new PersistentCache(config.cachePath)
+      const sessionCache = new SessionLruCache(16)
+      const persistentCache = new PersistentCache(join(dir, 'cache.json'))
       const templateCache = new TemplateCache()
       templateCache.setCacheablePatterns([{ pattern: 'python -m pytest * -q', reason: 'learned template' }])
       // Seed the learned entry the way an earlier LLM allow would have.
@@ -1594,12 +1560,12 @@ describe('GuardService: cache write policy (spec 0016)', () => {
         expiresAt: Number.MAX_SAFE_INTEGER,
       })
       const service = new GuardService({
-        config,
-        rules: loadRules(config.rulesPath, config.defaultRulesPath),
+        config: makeTuning(),
+        rules: loadRules(join(dir, 'rules.json'), join(dir, 'defaults.json')),
         sessionCache,
         persistentCache,
         llmReviewer: new StubReviewer({ decision: 'allow', risk: 'low', reason: 'seems fine' }),
-        fileTracker: new FileTracker(config.fileTrackerWindowSec * 1000),
+        fileTracker: new FileTracker(5 * 1000),
         templateCache,
       })
 

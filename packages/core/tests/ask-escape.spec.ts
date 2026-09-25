@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSessionKey, SessionLruCache } from '../src/cache.ts'
 import { GuardService } from '../src/guard-service.ts'
 import { classifyCommand, DEFAULT_RULES_FILE, loadRules } from '../src/rules.ts'
-import type { GuardConfig, GuardRequest, LlmReviewResult } from '../src/types.ts'
+import type { GuardRequest, GuardTuning, LlmReviewResult } from '../src/types.ts'
 import type { LlmReviewer, LlmReviewRequest } from '../src/llm.ts'
 
 class CountingReviewer implements LlmReviewer {
@@ -24,65 +24,33 @@ class CountingReviewer implements LlmReviewer {
   }
 }
 
-function makeConfig(overrides: Partial<GuardConfig> = {}): GuardConfig {
+/** The engine-tuning slice only (SPEC 0019 ticket 04). */
+function makeTuning(): GuardTuning {
   return {
-    enabled: true,
-    rulesPath: '',
-    defaultRulesPath: '',
-    cachePath: '',
-    apiBase: 'https://api.deepseek.com',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
-    apiKey: '',
-    model: 'deepseek-v4-flash',
-    fallbackModel: 'deepseek-v4-flash',
-    timeoutMs: 100,
     lowRiskTtlDays: 30,
     mediumRiskTtlDays: 7,
-    onTimeout: 'deny',
-    headlessMode: 'deny',
-    notifyCacheHit: true,
-    notifyLlmDecision: true,
-    notifyAllow: 'page',
-    notifyDeny: 'context',
-    notifyAsk: 'context',
-    fileTrackerDefault: 'ask',
-    fileTrackerWindowSec: 5,
-    sessionCacheSize: 16,
     alwaysReviewCacheTtlMinutes: 30,
-    examineEnabled: false,
-    auditDbPath: '',
+    onTimeout: 'deny',
+    fileTrackerDefault: 'ask',
     historyEnabled: false,
-    autoAnalyzeEnabled: false,
-    historyDays: 60,
+    examineEnabled: false,
     historyMinTotal: 4,
     historyMinLlm: 1,
-    learnedCacheableMinTotal: 8,
-    analyzeIntervalMinutes: 20,
-    analyzeIntervalDays: 15,
-    analyzeRowLimit: 5000,
-    templateCachePath: '',
-    learnedRulesPath: '',
-    learnedBackupPath: '',
-    analyzeStatePath: '',
-    ...overrides,
   }
 }
 
 function setup(sensitivePaths: string[] = []) {
   const dir = mkdtempSync(join(tmpdir(), 'ag-ask-escape-'))
-  const config = makeConfig({
-    rulesPath: join(dir, 'rules.json'),
-    defaultRulesPath: join(dir, 'defaults.json'),
-    cachePath: join(dir, 'cache.json'),
-  })
-  writeFileSync(config.defaultRulesPath, JSON.stringify({ version: 1, sensitivePaths, staticAllow: [], hardDeny: [], directoryDelete: [], directoryDeleteGuards: [], userConfirmed: [], cacheable: [], alwaysReview: [], staticAllowGuards: [] }))
-  const sessionCache = new SessionLruCache(config.sessionCacheSize)
+  const rulesPath = join(dir, 'rules.json')
+  const defaultRulesPath = join(dir, 'defaults.json')
+  writeFileSync(defaultRulesPath, JSON.stringify({ version: 1, sensitivePaths, staticAllow: [], hardDeny: [], directoryDelete: [], directoryDeleteGuards: [], userConfirmed: [], cacheable: [], alwaysReview: [], staticAllowGuards: [] }))
+  const sessionCache = new SessionLruCache(16)
   // The reviewer always asks — the deterministic pre-LLM ask every escape
   // scenario starts from.
   const llm = new CountingReviewer({ decision: 'ask', risk: 'medium', reason: '需要人工确认' })
   const service = new GuardService({
-    config,
-    rules: loadRules(config.rulesPath, config.defaultRulesPath),
+    config: makeTuning(),
+    rules: loadRules(rulesPath, defaultRulesPath),
     sessionCache,
     persistentCache: { get: () => undefined } as never,
     llmReviewer: llm,

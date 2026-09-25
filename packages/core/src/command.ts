@@ -172,6 +172,27 @@ export function containsShellOperators(command: string): boolean {
   return /[<>|]/.test(normalizeCommand(command))
 }
 
+/** Redirects `<` `>` only, without the pipe. */
+function containsShellRedirection(command: string): boolean {
+  return /[<>]/.test(normalizeCommand(command))
+}
+
+/**
+ * True when a deterministic allowlist hit cannot be trusted because inline
+ * shell syntax rewrites the execution order: substitutions (`$(...)`,
+ * backticks, `<()`, `>(`) run BEFORE the named program, and operators carry
+ * side effects a wildcard tail would swallow. With `pipes` the pipe counts as
+ * an operator too.
+ *
+ * Known inconsistency (ADR-0021, deliberately not unified): the shell decision
+ * path passes `{ pipes: true }`, while the template-cache and history layers
+ * pass `{ pipes: false }` — a piped command may still hit those layers today.
+ * Unifying is a behavior change and stays with a future spec.
+ */
+export function bypassesDeterministicTrust(command: string, options: { pipes: boolean }): boolean {
+  return hasCommandSubstitution(command) || (options.pipes ? containsShellOperators(command) : containsShellRedirection(command))
+}
+
 function readStringArg(value: unknown, key: string): string | undefined {
   if (typeof value === 'object' && value !== null && key in value) {
     const raw: unknown = (value as Record<string, unknown>)[key]

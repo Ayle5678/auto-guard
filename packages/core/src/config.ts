@@ -10,7 +10,27 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expandHome } from './command.ts'
-import type { GuardConfig } from './types.ts'
+import type { GuardConfig, GuardTuning } from './types.ts'
+
+/**
+ * Slice the engine-tuning keys out of the full config (ADR-0021) — the single
+ * composition-root cut; hosts pass their full GuardConfig and the engine
+ * receives only this slice.
+ */
+export function tuningOf(config: GuardConfig): GuardTuning {
+  return {
+    lang: config.lang,
+    lowRiskTtlDays: config.lowRiskTtlDays,
+    mediumRiskTtlDays: config.mediumRiskTtlDays,
+    alwaysReviewCacheTtlMinutes: config.alwaysReviewCacheTtlMinutes,
+    onTimeout: config.onTimeout,
+    fileTrackerDefault: config.fileTrackerDefault,
+    historyEnabled: config.historyEnabled,
+    examineEnabled: config.examineEnabled,
+    historyMinTotal: config.historyMinTotal,
+    historyMinLlm: config.historyMinLlm,
+  }
+}
 
 /**
  * Build the default config for a host config root `dir`

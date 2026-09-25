@@ -9,6 +9,7 @@ import {
   GuardService,
   loadLearnedRules,
   TemplateCache,
+  tuningOf,
   type GuardDeps,
   type GuardConfig,
   type HistoryStore,
@@ -44,7 +45,9 @@ export function buildGuardDeps(parts: GuardDepsParts): GuardWiring {
   const templateCache = new TemplateCache(parts.config.templateCachePath)
   templateCache.setCacheablePatterns(learned.cacheable)
   const deps: GuardDeps = {
-    config: parts.config,
+    // The engine receives only its tuning slice; the full config stays with
+    // the host layer (ADR-0021).
+    config: tuningOf(parts.config),
     rules: parts.rules,
     sessionCache: parts.sessionCache,
     persistentCache: parts.persistentCache,

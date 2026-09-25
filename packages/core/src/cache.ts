@@ -257,6 +257,18 @@ export function buildWorkspaceKey(workspace?: string, commandShape?: string): st
   return [workspace ?? '<no-workspace>', commandShape ?? '<no-command>'].join('|')
 }
 
+/** Split a `session|workspace|command` key back apart; the command may itself contain `|`, so only the first two separators are meaningful. */
+export function splitSessionKey(key: string): { session: string; workspace: string; command: string } {
+  const sessionEnd = key.indexOf('|')
+  const workspaceEnd = sessionEnd >= 0 ? key.indexOf('|', sessionEnd + 1) : -1
+  if (sessionEnd < 0 || workspaceEnd < 0) return { session: '', workspace: '', command: key }
+  return {
+    session: key.slice(0, sessionEnd),
+    workspace: key.slice(sessionEnd + 1, workspaceEnd),
+    command: key.slice(workspaceEnd + 1),
+  }
+}
+
 /** TTL in ms from risk level and configured day counts. */
 export function ttlForRisk(risk: RiskLevel | undefined, lowRiskTtlDays: number, mediumRiskTtlDays: number): number {
   const days = risk === 'medium' ? mediumRiskTtlDays : lowRiskTtlDays

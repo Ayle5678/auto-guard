@@ -40,6 +40,8 @@ export class HistoryStore {
     const next = new Map<string, HistoryEntry>()
     for (const row of this.audit.list()) {
       if (row.recorded_at < cutoff) continue
+      // Audit-row spelling kept verbatim (ADR-0021: the audit-row predicate is
+      // a third recorded口径, unified only by a future spec).
       if (row.command_normalized.includes('$(') || row.command_normalized.includes('`') || /[<>]/.test(row.command_normalized)) continue
       const skeleton = skeletonOf(row.command_normalized)
       const entry = next.get(skeleton) ?? { total: 0, llm: 0, denies: 0 }

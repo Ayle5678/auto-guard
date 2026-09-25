@@ -5,8 +5,6 @@
  * the host adapters' event handlers are thin wrappers over it. All I/O (rules, caches, LLM, file system) is injected so unit tests never
  * touch the network or real home directory.
  */
-import { stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import {
   buildSessionKey,
   buildWorkspaceKey,
@@ -18,7 +16,8 @@ import {
   type CacheEntry,
   type SessionCacheLike,
 } from './cache.ts'
-import { containsShellOperators, expandHome, hasCommandSubstitution, isHighRiskStateChangingCommand, isLowRiskStateChangingCommand, normalizeCommand, normalizePath, splitShellCommand } from './command.ts'
+import { bypassesDeterministicTrust, expandHome, isHighRiskStateChangingCommand, isLowRiskStateChangingCommand, normalizeCommand, splitShellCommand } from './command.ts'
+import { extractDeletionReason, isRemoveItemInvocation, matchPending, removeItemTargetTypeOf, type PendingDirectoryDelete } from './directory-delete.ts'
 import { FileTracker } from './file-tracker.ts'
 import { PersistableMap, type JsonSink } from './persist-map.ts'
 import type { HistoryStore } from './history.ts'
@@ -31,7 +30,7 @@ import { truncateOneLine } from './decision-history.ts'
 import type { Lang } from './lang.ts'
 import { langOf } from './lang.ts'
 import { coreMessage } from './messages.ts'
-import type { Decision, GuardConfig, GuardRequest, LlmReviewResult } from './types.ts'
+import type { Decision, DecisionSource, GuardRequest, GuardTuning, LlmReviewResult } from './types.ts'
 
 export interface PendingPersistence {
   /** Sink mirroring first-hit directory-delete denials (hook model survives process restarts). */
@@ -40,29 +39,9 @@ export interface PendingPersistence {
   denies?: JsonSink
 }
 
-/** A pending first-hit directory delete, awaiting a `[删除理由]` retry. */
-export interface PendingDirectoryDelete {
-  deniedAt: number
-  /** Original command text at first denial, for the deny echo (absent in legacy entries). */
-  command?: string
-}
-
-/**
- * Pending deletes older than this are pruned on touch instead of being matched:
- * the `[删除理由]` retry is a same-session, minutes-scale flow. The window also
- * bounds pending-deletes.json against stale rows (24h mirrors pruneSessions'
- * idle-directory window).
- */
-const PENDING_DELETE_TTL_MS = 24 * 60 * 60 * 1000
-
-/** Command words whose non-flag arguments are deletion targets. */
-const DELETE_COMMAND_WORDS = new Set(['rm', 'rd', 'rmdir', 'del', 'erase', 'remove-item', 'ri'])
-
-/** cmd builtins whose `/x`-style short flags must not count as targets. */
-const WINDOWS_FLAG_DELETE_WORDS = new Set(['rd', 'rmdir', 'del', 'erase'])
-
 export interface GuardDeps {
-  config: GuardConfig
+  /** The engine-tuning slice of the host's GuardConfig (ADR-0021), cut at the composition root (tuningOf). */
+  config: GuardTuning
   rules: RulesFile
   sessionCache: SessionCacheLike
   persistentCache: PersistentCache
@@ -75,13 +54,43 @@ export interface GuardDeps {
   lang?: Lang
 }
 
+/** The rule-hit subset of DecisionSource — the single list its keys and counters derive from (ADR-0021). */
+const RULE_HIT_SOURCES = ['static-allow', 'user-confirmed', 'hard-deny', 'directory-delete', 'file-tracker', 'sensitive-path'] as const
+
+export type RuleHitSource = (typeof RULE_HIT_SOURCES)[number]
+
+function isRuleHitSource(source: DecisionSource): source is RuleHitSource {
+  return (RULE_HIT_SOURCES as readonly string[]).includes(source)
+}
+
+/** The deterministic hard-deny denial — one definition shared by guardReason and every decide loop (ADR-0021). */
+function hardDenyReason(classification: Classification): string {
+  return classification.rule?.reason ?? 'Blocked by absolute blacklist'
+}
+
+function hardDeny(classification: Classification): Decision {
+  return { kind: 'deny', source: 'hard-deny', category: 'hard-deny', reason: hardDenyReason(classification) }
+}
+
+/** Which decide loop a segment evaluation runs in — the loops' genuine divergences (ADR-0021). */
+type SegmentScope =
+  | { loop: 'single' }
+  | { loop: 'pipeline-leaf' }
+  | { loop: 'compound-segment'; wholeCommand: string }
+
+/** What one segment evaluation concluded before the caller's merge policy. */
+type SegmentVerdict =
+  | { how: 'decided'; decision: Decision }
+  | { how: 'approved'; decision: Decision; segment: string }
+  | { how: 'unresolved' }
+
 export interface GuardStats {
   llmCalls: number
   sessionCacheHits: number
   persistentCacheHits: number
   historyHits: number
   learnedHits: number
-  ruleHits: Record<'static-allow' | 'user-confirmed' | 'hard-deny' | 'directory-delete' | 'file-tracker' | 'sensitive-path', number>
+  ruleHits: Record<RuleHitSource, number>
 }
 
 function mergeRisk(risks: Array<RiskLevel | undefined>): RiskLevel | undefined {
@@ -101,19 +110,12 @@ function createStats(): GuardStats {
     persistentCacheHits: 0,
     historyHits: 0,
     learnedHits: 0,
-    ruleHits: {
-      'static-allow': 0,
-      'user-confirmed': 0,
-      'hard-deny': 0,
-      'directory-delete': 0,
-      'file-tracker': 0,
-      'sensitive-path': 0,
-    },
+    ruleHits: Object.fromEntries(RULE_HIT_SOURCES.map((source) => [source, 0])) as GuardStats['ruleHits'],
   }
 }
 
 export class GuardService {
-  private readonly config: GuardConfig
+  private readonly tuning: GuardTuning
   private readonly rules: RulesFile
   private readonly sessionCache: SessionCacheLike
   private readonly persistentCache: PersistentCache
@@ -127,7 +129,7 @@ export class GuardService {
   readonly stats: GuardStats = createStats()
 
   constructor(deps: GuardDeps) {
-    this.config = deps.config
+    this.tuning = deps.config
     this.rules = deps.rules
     this.sessionCache = deps.sessionCache
     this.persistentCache = deps.persistentCache
@@ -161,12 +163,7 @@ export class GuardService {
     this.stats.persistentCacheHits = 0
     this.stats.historyHits = 0
     this.stats.learnedHits = 0
-    this.stats.ruleHits['static-allow'] = 0
-    this.stats.ruleHits['user-confirmed'] = 0
-    this.stats.ruleHits['hard-deny'] = 0
-    this.stats.ruleHits['directory-delete'] = 0
-    this.stats.ruleHits['file-tracker'] = 0
-    this.stats.ruleHits['sensitive-path'] = 0
+    for (const source of RULE_HIT_SOURCES) this.stats.ruleHits[source] = 0
   }
 
   /** Write a user-chosen session memory entry (ask four-state), alive until session end. */
@@ -183,14 +180,9 @@ export class GuardService {
     if (typeof request.command !== 'string') return undefined
     const classification = classifyCommand(request.command, this.rules)
     if (classification.category === 'hard-deny') {
-      return classification.rule?.reason ?? 'Blocked by absolute blacklist'
+      return hardDenyReason(classification)
     }
     return undefined
-  }
-
-  /** Session id used in notifications; never sent to the LLM. */
-  sessionIdOf(request: GuardRequest): string | undefined {
-    return request.session
   }
 
   /**
@@ -198,7 +190,7 @@ export class GuardService {
    */
   async decide(request: GuardRequest): Promise<Decision> {
     const decision = await this.decideRaw(request)
-    this.recordRuleHit(decision)
+    this.record(decision)
     if (decision.source === 'llm' && decision.kind === 'deny' && !decision.reviewerFailed && typeof decision.command === 'string') {
       this.recordPendingDeny(request, decision.command, decision.risk)
     }
@@ -216,25 +208,16 @@ export class GuardService {
     return { kind: 'allow', source: 'passthrough' }
   }
 
-  private recordRuleHit(decision: Decision): void {
-    switch (decision.source) {
-      case 'static-allow': this.stats.ruleHits['static-allow']++
-        break
-      case 'user-confirmed': this.stats.ruleHits['user-confirmed']++
-        break
-      case 'hard-deny': this.stats.ruleHits['hard-deny']++
-        break
-      case 'directory-delete': this.stats.ruleHits['directory-delete']++
-        break
-      case 'file-tracker': this.stats.ruleHits['file-tracker']++
-        break
-      case 'sensitive-path': this.stats.ruleHits['sensitive-path']++
-        break
-      case 'history': this.stats.historyHits++
-        break
-      case 'learned': this.stats.learnedHits++
-        break
-    }
+  /**
+   * The single stats recording point (ADR-0021): rule/history/learned counters
+   * derive from the decision's source. Cache hits are counted where the cache
+   * decision is produced (fromCache); LLM calls where the review happens
+   * (llmDecision) — a pending-deny ask has source `llm` but consumes no call.
+   */
+  private record(decision: Decision): void {
+    if (decision.source === 'history') this.stats.historyHits++
+    else if (decision.source === 'learned') this.stats.learnedHits++
+    else if (isRuleHitSource(decision.source)) this.stats.ruleHits[decision.source]++
   }
 
   private decideFile(request: GuardRequest): Decision {
@@ -245,12 +228,8 @@ export class GuardService {
     // before any cache is consulted.) Keyed on the file path, the stable text
     // a repeat call presents again.
     if (typeof request.filePath === 'string') {
-      const sessionKey = buildSessionKey(request.session, request.workspace, request.filePath)
-      const sessionEntry = this.sessionCache.get(sessionKey)
-      if (sessionEntry) {
-        this.stats.sessionCacheHits++
-        return this.fromCache(sessionEntry, 'session-cache')
-      }
+      const sessionHit = this.consultMemories(request, request.filePath, { session: true })
+      if (sessionHit) return sessionHit
     }
     // One payload can carry several targets (codex apply_patch); every one of
     // them crosses the sensitive gate — a lone first-path check would miss
@@ -288,7 +267,7 @@ export class GuardService {
     const classification = classifyCommand(command, this.rules)
 
     if (classification.category === 'hard-deny') {
-      return { kind: 'deny', source: 'hard-deny', category: 'hard-deny', reason: classification.rule?.reason ?? 'Blocked by absolute blacklist' }
+      return hardDeny(classification)
     }
     if (classification.category === 'directory-delete') {
       return this.decideDirectoryDelete(request, command)
@@ -313,8 +292,8 @@ export class GuardService {
       return this.decidePipeline(request, command, pipelineLeaves)
     }
 
-    if (this.isRemoveItem(command)) {
-      const targetType = await this.removeItemTargetType(request, command)
+    if (isRemoveItemInvocation(command)) {
+      const targetType = await removeItemTargetTypeOf(request.workspace, command)
       if (targetType === 'directory') {
         return this.decideDirectoryDelete(request, command)
       }
@@ -322,64 +301,138 @@ export class GuardService {
         return this.llmDecision(request, { command }, 'llm')
       }
     }
-    // Shell substitution ($(), backticks, <(), >()) executes before the named
-    // program runs; pipes/redirects carry side effects a wildcard tail would
-    // swallow. Either way wildcard allowlist hits are not trustworthy — send
-    // these to the LLM instead.
-    const bypassesStatic = hasCommandSubstitution(command) || containsShellOperators(command)
-    if (!bypassesStatic && (classification.category === 'static-allow' || classification.category === 'user-confirmed')) {
-      const sessionKey = buildSessionKey(request.session, request.workspace, command)
-      const sessionEntry = this.sessionCache.get(sessionKey)
-      if (sessionEntry) {
-        this.stats.sessionCacheHits++
-        return this.fromCache(sessionEntry, 'session-cache')
-      }
-      if (classification.category === 'static-allow') {
-        if (staticAllowGuardHit(command, this.rules)) {
-          return this.llmDecision(request, { command }, 'llm')
-        }
-        return { kind: 'allow', source: 'static-allow', category: 'static-allow', reason: classification.rule?.reason }
-      }
-      if (staticAllowGuardHit(command, this.rules)) {
-        return this.llmDecision(request, { command }, 'llm')
-      }
-      return { kind: 'allow', source: 'user-confirmed', category: 'user-confirmed', reason: classification.rule?.reason }
-    }
 
-    // Cacheable and low/medium-risk unknown commands may be served from cache;
-    // always-review commands use only the short-lived session cache.
-    if (classification.category === 'always-review') {
-      const sessionKey = buildSessionKey(request.session, request.workspace, command)
-      const sessionEntry = this.sessionCache.get(sessionKey)
-      if (sessionEntry) {
-        this.stats.sessionCacheHits++
-        return this.fromCache(sessionEntry, 'session-cache')
-      }
-    }
-    if (classification.category === 'cacheable' || classification.category === 'unknown') {
-      const cached = this.cacheHit(request, command)
-      if (cached) return cached
-    }
+    const verdict = await this.decideSegment(request, command, { loop: 'single' })
+    if (verdict.how !== 'unresolved') return verdict.decision
 
+    // Learned templates, then history, then the LLM with the cache write-back.
     const template = this.templateCacheDecision(command)
     if (template) return template
 
     const history = this.historyDecision(request, command)
     if (history) return history
 
-    const decision = await this.llmDecision(request, { command }, 'llm')
+    return this.reviewUnit(request, command, classification)
+  }
 
-    if (classification.category === 'always-review' && decision.kind === 'allow' && decision.risk !== 'high') {
-      this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason }, this.config.alwaysReviewCacheTtlMinutes * 60 * 1000)
-    }
-    if ((classification.category === 'cacheable' || classification.category === 'unknown') && decision.kind === 'allow' && decision.risk !== 'high') {
-      this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason })
-    }
-    if ((classification.category === 'cacheable' || classification.category === 'unknown') && decision.kind === 'allow' && decision.risk !== 'high') {
-      this.writePersistentCache(request, command, { kind: 'allow', risk: decision.risk, reason: decision.reason })
+  /**
+   * The segment-decision seam (ADR-0021): one evaluation of 「分类 → 记忆 →
+   * 缓存 → (LLM 由调用方收尾)」 shared by the single-command, pipeline-leaf and
+   * compound-segment loops. Private by design — hosts must never bypass
+   * decide(), so this stays an internal seam and is not exported. The scope
+   * carries the loops' genuine divergences; everything else about evaluating
+   * one segment lives here.
+   */
+  private async decideSegment(request: GuardRequest, segment: string, scope: SegmentScope): Promise<SegmentVerdict> {
+    const classification = classifyCommand(segment, this.rules)
+    const bypassesStatic = bypassesDeterministicTrust(segment, { pipes: true })
+
+    if (scope.loop === 'single') {
+      // A deterministic static/user-confirmed allow needs a clean command line
+      // (no substitution, no operators); a session memory still wins first.
+      if (!bypassesStatic && (classification.category === 'static-allow' || classification.category === 'user-confirmed')) {
+        const sessionHit = this.consultMemories(request, segment, { session: true })
+        if (sessionHit) return { how: 'decided', decision: sessionHit }
+        if (staticAllowGuardHit(segment, this.rules)) {
+          return { how: 'decided', decision: await this.reviewUnit(request, segment, classification) }
+        }
+        if (classification.category === 'static-allow') {
+          return { how: 'approved', decision: { kind: 'allow', source: 'static-allow', category: 'static-allow', reason: classification.rule?.reason }, segment }
+        }
+        return { how: 'approved', decision: { kind: 'allow', source: 'user-confirmed', category: 'user-confirmed', reason: classification.rule?.reason }, segment }
+      }
+      // always-review commands use only the short-lived session cache.
+      if (classification.category === 'always-review') {
+        const sessionHit = this.consultMemories(request, segment, { session: true })
+        if (sessionHit) return { how: 'decided', decision: sessionHit }
+      }
+      // cacheable and unknown commands may use the dynamic caches.
+      if (classification.category === 'cacheable' || classification.category === 'unknown') {
+        const cached = this.consultMemories(request, segment, { session: true, pending: true, persistent: true })
+        if (cached) return { how: 'decided', decision: cached }
+      }
+      return { how: 'unresolved' }
     }
 
-    return decision
+    if (scope.loop === 'pipeline-leaf') {
+      // Per-leaf session memory is honored for allow/deny choices.
+      const sessionHit = this.consultMemories(request, segment, { session: true })
+      if (sessionHit) {
+        return sessionHit.kind !== 'allow'
+          ? { how: 'decided', decision: sessionHit }
+          : { how: 'approved', decision: sessionHit, segment }
+      }
+      const plainSafe =
+        (classification.category === 'static-allow' || classification.category === 'user-confirmed') &&
+        !bypassesStatic &&
+        !containsDangerousPattern(segment, this.rules) &&
+        !staticAllowGuardHit(segment, this.rules)
+      if (plainSafe) {
+        const source = classification.category === 'user-confirmed' ? 'user-confirmed' : 'static-allow'
+        return { how: 'approved', decision: { kind: 'allow', source, reason: classification.rule?.reason ?? segment }, segment }
+      }
+      // Already-approved unknown/cacheable leaves may count as deterministic
+      // only when an existing cache entry says allow.
+      const cached = this.consultMemories(request, segment, { session: true, pending: true, persistent: true })
+      if (cached) {
+        return cached.kind !== 'allow'
+          ? { how: 'decided', decision: cached }
+          : { how: 'approved', decision: cached, segment }
+      }
+      return { how: 'unresolved' }
+    }
+
+    // scope.loop === 'compound-segment'
+    if (
+      isLowRiskStateChangingCommand(segment) &&
+      !bypassesStatic &&
+      !containsDangerousPattern(segment, this.rules)
+    ) {
+      return { how: 'approved', decision: { kind: 'allow', source: 'static-allow', reason: 'directory navigation' }, segment }
+    }
+    if (classification.category === 'static-allow' && !bypassesStatic) {
+      const sessionHit = this.consultMemories(request, segment, { session: true })
+      if (sessionHit) {
+        return sessionHit.kind !== 'allow'
+          ? { how: 'decided', decision: sessionHit }
+          : { how: 'approved', decision: sessionHit, segment }
+      }
+      if (staticAllowGuardHit(segment, this.rules)) {
+        return { how: 'decided', decision: await this.llmDecision(request, { command: scope.wholeCommand }, 'llm') }
+      }
+      return { how: 'approved', decision: { kind: 'allow', source: 'static-allow', reason: classification.rule?.reason ?? segment }, segment }
+    }
+    if (classification.category === 'user-confirmed' && !bypassesStatic) {
+      const sessionHit = this.consultMemories(request, segment, { session: true })
+      if (sessionHit) {
+        return sessionHit.kind !== 'allow'
+          ? { how: 'decided', decision: sessionHit }
+          : { how: 'approved', decision: sessionHit, segment }
+      }
+      if (staticAllowGuardHit(segment, this.rules)) {
+        return { how: 'decided', decision: await this.llmDecision(request, { command: scope.wholeCommand }, 'llm') }
+      }
+      return { how: 'approved', decision: { kind: 'allow', source: 'user-confirmed', reason: classification.rule?.reason ?? segment }, segment }
+    }
+    // always-review subcommands use only the short-lived session cache.
+    if (classification.category === 'always-review') {
+      const sessionHit = this.consultMemories(request, segment, { session: true })
+      if (sessionHit) {
+        return sessionHit.kind !== 'allow'
+          ? { how: 'decided', decision: sessionHit }
+          : { how: 'approved', decision: sessionHit, segment }
+      }
+    }
+    // cacheable and unknown subcommands may use the dynamic cache.
+    if (classification.category === 'cacheable' || classification.category === 'unknown') {
+      const cached = this.consultMemories(request, segment, { session: true, pending: true, persistent: true })
+      if (cached) {
+        return cached.kind !== 'allow'
+          ? { how: 'decided', decision: cached }
+          : { how: 'approved', decision: cached, segment }
+      }
+    }
+    return { how: 'unresolved' }
   }
 
   /**
@@ -394,13 +447,13 @@ export class GuardService {
     for (const leaf of leaves) {
       const classification = classifyCommand(leaf, this.rules)
       if (classification.category === 'hard-deny') {
-        return { kind: 'deny', source: 'hard-deny', category: 'hard-deny', reason: classification.rule?.reason ?? 'Blocked by absolute blacklist' }
+        return hardDeny(classification)
       }
       if (classification.category === 'directory-delete') {
         return this.decideDirectoryDelete(request, command)
       }
-      if (this.isRemoveItem(leaf)) {
-        const targetType = await this.removeItemTargetType(request, leaf)
+      if (isRemoveItemInvocation(leaf)) {
+        const targetType = await removeItemTargetTypeOf(request.workspace, leaf)
         if (targetType === 'directory') {
           return this.decideDirectoryDelete(request, command)
         }
@@ -409,16 +462,13 @@ export class GuardService {
 
     // A whole-pipeline session memory (from an ask four-state choice) applies
     // before per-leaf analysis.
-    const wholeSessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, command))
-    if (wholeSessionEntry) {
-      this.stats.sessionCacheHits++
-      return this.fromCache(wholeSessionEntry, 'session-cache')
-    }
+    const wholeSessionHit = this.consultMemories(request, command, { session: true })
+    if (wholeSessionHit) return wholeSessionHit
 
     // A previously denied leaf turns the whole pipeline into an ask before a
     // whole-pipeline persistent allow can mask it.
     for (const leaf of leaves) {
-      const pending = this.pendingDenyDecision(request, leaf)
+      const pending = this.consultMemories(request, leaf, { pending: true })
       if (pending) {
         return { ...pending, command }
       }
@@ -426,7 +476,7 @@ export class GuardService {
 
     // Preserve the existing whole-command cache behavior for pipelines that
     // have already been reviewed and cached as one unit.
-    const wholeCached = this.cacheHit(request, command)
+    const wholeCached = this.consultMemories(request, command, { session: true, pending: true, persistent: true })
     if (wholeCached) return wholeCached
 
     const template = this.templateCacheDecision(command)
@@ -442,58 +492,20 @@ export class GuardService {
     const risks: Array<RiskLevel | undefined> = []
 
     for (const leaf of leaves) {
-      const classification = classifyCommand(leaf, this.rules)
-
-      // Per-leaf session memory is honored for allow/deny choices.
-      const sessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, leaf))
-      if (sessionEntry) {
-        this.stats.sessionCacheHits++
-        if (sessionEntry.decision !== 'allow') return this.fromCache(sessionEntry, 'session-cache')
-        sawSessionCache = true
-        risks.push(sessionEntry.risk)
-        reasons.push(sessionEntry.reason ?? leaf)
-        continue
-      }
-
-      const plainSafe =
-        (classification.category === 'static-allow' || classification.category === 'user-confirmed') &&
-        !hasCommandSubstitution(leaf) &&
-        !containsShellOperators(leaf) &&
-        !containsDangerousPattern(leaf, this.rules) &&
-        !staticAllowGuardHit(leaf, this.rules)
-      if (plainSafe) {
-        if (classification.category === 'user-confirmed') sawUserConfirmed = true
-        reasons.push(classification.rule?.reason ?? leaf)
-        continue
-      }
-
-      // Already-approved unknown/cacheable leaves may count as deterministic
-      // only when an existing cache entry says allow.
-      const cached = this.cacheHit(request, leaf)
-      if (cached) {
-        if (cached.kind !== 'allow') return cached
-        if (cached.source === 'session-cache') sawSessionCache = true
-        if (cached.source === 'persistent-cache') sawPersistentCache = true
-        risks.push(cached.risk)
-        reasons.push(cached.reason ?? leaf)
+      const verdict = await this.decideSegment(request, leaf, { loop: 'pipeline-leaf' })
+      if (verdict.how === 'decided') return verdict.decision
+      if (verdict.how === 'approved') {
+        const contribution = verdict.decision
+        if (contribution.source === 'session-cache') sawSessionCache = true
+        if (contribution.source === 'persistent-cache') sawPersistentCache = true
+        if (contribution.source === 'user-confirmed') sawUserConfirmed = true
+        risks.push(contribution.risk)
+        reasons.push(contribution.reason ?? leaf)
         continue
       }
 
       // Any leaf that needs judgment sends the whole pipeline to the LLM.
-      const wholeClassification = classifyCommand(command, this.rules)
-      const decision = await this.llmDecision(request, { command }, 'llm')
-
-      if (wholeClassification.category === 'always-review' && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason }, this.config.alwaysReviewCacheTtlMinutes * 60 * 1000)
-      }
-      if ((wholeClassification.category === 'cacheable' || wholeClassification.category === 'unknown') && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason })
-      }
-      if ((wholeClassification.category === 'cacheable' || wholeClassification.category === 'unknown') && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writePersistentCache(request, command, { kind: 'allow', risk: decision.risk, reason: decision.reason })
-      }
-
-      return decision
+      return this.reviewUnit(request, command, classifyCommand(command, this.rules))
     }
 
     const source = sawSessionCache
@@ -525,13 +537,13 @@ export class GuardService {
     for (const segment of segments) {
       const classification = classifyCommand(segment, this.rules)
       if (classification.category === 'hard-deny') {
-        return { kind: 'deny', source: 'hard-deny', category: 'hard-deny', reason: classification.rule?.reason ?? 'Blocked by absolute blacklist' }
+        return hardDeny(classification)
       }
       if (classification.category === 'directory-delete') {
         return this.decideDirectoryDelete(request, command)
       }
-      if (this.isRemoveItem(segment)) {
-        const targetType = await this.removeItemTargetType(request, segment)
+      if (isRemoveItemInvocation(segment)) {
+        const targetType = await removeItemTargetTypeOf(request.workspace, segment)
         if (targetType === 'directory') {
           return this.decideDirectoryDelete(request, command)
         }
@@ -540,17 +552,14 @@ export class GuardService {
 
     // A whole-compound session memory (from an ask four-state choice) applies
     // before any whole-compound LLM review path.
-    const wholeSessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, command))
-    if (wholeSessionEntry) {
-      this.stats.sessionCacheHits++
-      return this.fromCache(wholeSessionEntry, 'session-cache')
-    }
+    const wholeSessionHit = this.consultMemories(request, command, { session: true })
+    if (wholeSessionHit) return wholeSessionHit
 
     // A previously denied subcommand turns the whole compound into an ask
     // before any whole-compound LLM review, unless session memory already
     // covers that subcommand.
     for (const segment of segments) {
-      const pending = this.pendingDenyForParts(request, segment)
+      const pending = this.consultMemories(request, segment, { pending: true, pipelineLeaves: true })
       if (pending) {
         return { ...pending, command }
       }
@@ -581,7 +590,6 @@ export class GuardService {
         const sessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, segment))
         if (sessionEntry) {
           if (sessionEntry.decision !== 'allow') {
-            this.stats.sessionCacheHits++
             return this.fromCache(sessionEntry, 'session-cache')
           }
           // Allow hits are counted again in the per-segment loop when they actually
@@ -590,14 +598,12 @@ export class GuardService {
         }
         const plainStaticAllow =
           classification.category === 'static-allow' &&
-          !hasCommandSubstitution(segment) &&
-          !containsShellOperators(segment) &&
+          !bypassesDeterministicTrust(segment, { pipes: true }) &&
           !containsDangerousPattern(segment, this.rules) &&
           !staticAllowGuardHit(segment, this.rules)
         const lowRiskNavigation =
           isLowRiskStateChangingCommand(segment) &&
-          !hasCommandSubstitution(segment) &&
-          !containsShellOperators(segment) &&
+          !bypassesDeterministicTrust(segment, { pipes: true }) &&
           !containsDangerousPattern(segment, this.rules)
         if (!plainStaticAllow && !lowRiskNavigation) {
           allPlainSafe = false
@@ -617,92 +623,20 @@ export class GuardService {
     const risks: Array<RiskLevel | undefined> = []
 
     for (const segment of segments) {
-      const classification = classifyCommand(segment, this.rules)
-
-      const segmentBypassesStatic = hasCommandSubstitution(segment) || containsShellOperators(segment)
-      if (
-        isLowRiskStateChangingCommand(segment) &&
-        !segmentBypassesStatic &&
-        !containsDangerousPattern(segment, this.rules)
-      ) {
-        reasons.push('directory navigation')
-        continue
-      }
-      if (classification.category === 'static-allow' && !segmentBypassesStatic) {
-        const sessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, segment))
-        if (sessionEntry) {
-          this.stats.sessionCacheHits++
-          if (sessionEntry.decision !== 'allow') return this.fromCache(sessionEntry, 'session-cache')
-          sawSessionCache = true
-          risks.push(sessionEntry.risk)
-          reasons.push(sessionEntry.reason ?? segment)
-          continue
-        }
-        if (staticAllowGuardHit(segment, this.rules)) {
-          return this.llmDecision(request, { command }, 'llm')
-        }
-        reasons.push(classification.rule?.reason ?? segment)
-        continue
-      }
-      if (classification.category === 'user-confirmed' && !segmentBypassesStatic) {
-        const sessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, segment))
-        if (sessionEntry) {
-          this.stats.sessionCacheHits++
-          if (sessionEntry.decision !== 'allow') return this.fromCache(sessionEntry, 'session-cache')
-          sawSessionCache = true
-          risks.push(sessionEntry.risk)
-          reasons.push(sessionEntry.reason ?? segment)
-          continue
-        }
-        if (staticAllowGuardHit(segment, this.rules)) {
-          return this.llmDecision(request, { command }, 'llm')
-        }
-        sawUserConfirmed = true
-        reasons.push(classification.rule?.reason ?? segment)
+      const verdict = await this.decideSegment(request, segment, { loop: 'compound-segment', wholeCommand: command })
+      if (verdict.how === 'decided') return verdict.decision
+      if (verdict.how === 'approved') {
+        const contribution = verdict.decision
+        if (contribution.source === 'session-cache') sawSessionCache = true
+        if (contribution.source === 'persistent-cache') sawPersistentCache = true
+        if (contribution.source === 'user-confirmed') sawUserConfirmed = true
+        risks.push(contribution.risk)
+        reasons.push(contribution.reason ?? segment)
         continue
       }
 
-      // always-review subcommands use only the short-lived session cache.
-      const alwaysReviewSegment = classification.category === 'always-review'
-      if (alwaysReviewSegment) {
-        const sessionKey = buildSessionKey(request.session, request.workspace, segment)
-        const sessionEntry = this.sessionCache.get(sessionKey)
-        if (sessionEntry) {
-          this.stats.sessionCacheHits++
-          if (sessionEntry.decision !== 'allow') return this.fromCache(sessionEntry, 'session-cache')
-          sawSessionCache = true
-          risks.push(sessionEntry.risk)
-          reasons.push(sessionEntry.reason ?? segment)
-          continue
-        }
-      }
-
-      // cacheable and unknown subcommands may use the dynamic cache.
-      const cacheableSegment = classification.category === 'cacheable' || classification.category === 'unknown'
-      if (cacheableSegment) {
-        const cached = this.cacheHit(request, segment)
-        if (cached) {
-          if (cached.kind !== 'allow') return cached
-          if (cached.source === 'session-cache') sawSessionCache = true
-          if (cached.source === 'persistent-cache') sawPersistentCache = true
-          risks.push(cached.risk)
-          reasons.push(cached.reason ?? segment)
-          continue
-        }
-      }
-
-      const decision = await this.llmDecision(request, { command: segment }, 'llm')
-
-      if (alwaysReviewSegment && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writeSessionCache(request, segment, { kind: decision.kind, risk: decision.risk, reason: decision.reason }, this.config.alwaysReviewCacheTtlMinutes * 60 * 1000)
-      }
-      if (cacheableSegment && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writeSessionCache(request, segment, { kind: decision.kind, risk: decision.risk, reason: decision.reason })
-      }
-      if (cacheableSegment && decision.kind === 'allow' && decision.risk !== 'high') {
-        this.writePersistentCache(request, segment, { kind: 'allow', risk: decision.risk, reason: decision.reason })
-      }
-
+      // One unmatched subcommand: a per-segment LLM review with the write-back.
+      const decision = await this.reviewUnit(request, segment, classifyCommand(segment, this.rules))
       if (decision.kind !== 'allow') return decision
       sawLlm = true
       risks.push(decision.risk)
@@ -728,23 +662,9 @@ export class GuardService {
   }
 
   private async decideDirectoryDelete(request: GuardRequest, command: string): Promise<Decision> {
-    this.pruneExpiredPendingDeletes()
-    const key = buildSessionKey(request.session, request.workspace, command.toLowerCase())
-    let pending = this.pendingDirectoryDeletes.get(key)
-    let pendingKey = key
-    if (!pending) {
-      // A cleaned `[删除理由]` retry often differs textually from the recorded
-      // original (compound first block vs standalone retry, comment residue,
-      // workspace drift) — fall back to same-session neighbor reuse instead of
-      // stacking another denial.
-      const neighbor = this.nearestPendingDelete(request, command)
-      if (neighbor) {
-        pending = neighbor.entry
-        pendingKey = neighbor.key
-      }
-    }
-    if (!pending) {
-      this.pendingDirectoryDeletes.set(key, { deniedAt: Date.now(), command })
+    const match = matchPending(this.pendingDirectoryDeletes, request, command, this.rules)
+    if (!match) {
+      this.pendingDirectoryDeletes.set(buildSessionKey(request.session, request.workspace, command.toLowerCase()), { deniedAt: Date.now(), command })
       return {
         kind: 'deny',
         source: 'directory-delete',
@@ -754,27 +674,26 @@ export class GuardService {
       }
     }
 
-    const reason = this.extractDeletionReason(request, pending.deniedAt)
+    const reason = extractDeletionReason(request, match.entry.deniedAt)
     if (!reason) {
       return {
         kind: 'deny',
         source: 'directory-delete',
         category: 'directory-delete',
         needsReason: true,
-        reason: coreMessage(this.lang, 'deleteRetryNoReason', { command: truncateOneLine(pending.command ?? command, 120) }),
+        reason: coreMessage(this.lang, 'deleteRetryNoReason', { command: truncateOneLine(match.entry.command ?? command, 120) }),
       }
     }
 
-    const decision = await this.llmDecision(
+    const decision = await this.review(
       request,
       { command, deletionReason: reason, reasoningEffort: 'low' },
       'llm',
-      false,
     )
 
     // Single review per pending delete. Non-allow outcomes are resolved by a
     // human confirmation in the adapter; the pending entry is closed either way.
-    this.pendingDirectoryDeletes.delete(pendingKey)
+    this.pendingDirectoryDeletes.delete(match.key)
     return {
       ...decision,
       source: 'directory-delete',
@@ -783,149 +702,66 @@ export class GuardService {
     }
   }
 
-  /** Drop pending deletes older than the retry TTL so the JSON sink stays bounded. */
-  private pruneExpiredPendingDeletes(): void {
-    const now = Date.now()
-    for (const [key, entry] of this.pendingDirectoryDeletes.entries()) {
-      if (isExpiredPendingDelete(entry, now)) this.pendingDirectoryDeletes.delete(key)
-    }
-  }
-
-  /**
-   * Same-session pending delete whose deletion targets equal the retry's —
-   * most recent first, never expired. Entries with no extractable targets
-   * (e.g. a first block on syntax the extractor cannot tokenize) never match,
-   * so a miss degrades to a fresh denial, never a wrong reuse.
-   */
-  private nearestPendingDelete(request: GuardRequest, command: string): { key: string; entry: PendingDirectoryDelete } | undefined {
-    const targets = extractDeletionTargets(command, this.rules)
-    if (targets.length === 0) return undefined
-    const sessionPrefix = `${request.session ?? '<no-session>'}|`
-    const now = Date.now()
-    let best: { key: string; entry: PendingDirectoryDelete } | undefined
-    for (const [key, entry] of this.pendingDirectoryDeletes.entries()) {
-      if (!key.startsWith(sessionPrefix)) continue
-      if (isExpiredPendingDelete(entry, now)) continue
-      const parts = splitSessionKey(key)
-      if (!sameWorkspaceRoot(parts.workspace, request.workspace)) continue
-      if (!recordsSameDeletion(parts.command, targets, this.rules)) continue
-      if (!best || entry.deniedAt > best.entry.deniedAt) best = { key, entry }
-    }
-    return best
-  }
-
   private recordPendingDeny(request: GuardRequest, command: string, risk?: RiskLevel): void {
     this.pendingDenies.set(buildSessionKey(request.session, request.workspace, command), risk)
   }
 
-  private pendingDenyDecision(request: GuardRequest, command: string): Decision | undefined {
-    const sessionKey = buildSessionKey(request.session, request.workspace, command)
-    if (this.sessionCache.get(sessionKey)) return undefined
-    if (!this.pendingDenies.has(sessionKey)) return undefined
-    const risk = this.pendingDenies.get(sessionKey)
-    return {
-      kind: 'ask',
-      source: 'llm',
-      ...(risk !== undefined ? { risk } : {}),
-      reason: coreMessage(this.lang, 'pendingDenyAskReason'),
-      command,
+  /**
+   * The memory layers for one command shape, in their fixed priority order:
+   * session memory (a decision the human made for exactly this command) →
+   * pending deny (a recent denial must not be masked by an older persistent
+   * allow) → workspace persistent cache. Single owner of that order
+   * (ADR-0021); callers name the layers they may consult.
+   */
+  private consultMemories(
+    request: GuardRequest,
+    command: string,
+    layers: { session?: boolean; pending?: boolean; pipelineLeaves?: boolean; persistent?: boolean },
+  ): Decision | undefined {
+    if (layers.session) {
+      const sessionEntry = this.sessionCache.get(buildSessionKey(request.session, request.workspace, command))
+      if (sessionEntry) {
+        return this.fromCache(sessionEntry, 'session-cache')
+      }
     }
-  }
-
-  /** Check pending deny for a segment, including leaves inside a pipeline segment. */
-  private pendingDenyForParts(request: GuardRequest, command: string): Decision | undefined {
-    const whole = this.pendingDenyDecision(request, command)
-    if (whole) return whole
-    const leaves = splitShellCommand(command, true)
-    if (leaves.length > 1) {
-      for (const leaf of leaves) {
-        const pending = this.pendingDenyDecision(request, leaf)
-        if (pending) return pending
+    if (layers.pending) {
+      const sessionKey = buildSessionKey(request.session, request.workspace, command)
+      if (!this.sessionCache.get(sessionKey) && this.pendingDenies.has(sessionKey)) {
+        const risk = this.pendingDenies.get(sessionKey)
+        return {
+          kind: 'ask',
+          source: 'llm',
+          ...(risk !== undefined ? { risk } : {}),
+          reason: coreMessage(this.lang, 'pendingDenyAskReason'),
+          command,
+        }
+      }
+      if (layers.pipelineLeaves) {
+        const leaves = splitShellCommand(command, true)
+        if (leaves.length > 1) {
+          for (const leaf of leaves) {
+            const leafPending = this.consultMemories(request, leaf, { pending: true })
+            if (leafPending) return leafPending
+          }
+        }
+      }
+    }
+    if (layers.persistent) {
+      const workspaceKey = buildWorkspaceKey(request.workspace, command)
+      const persistentEntry = this.persistentCache.get(workspaceKey)
+      if (persistentEntry) {
+        this.sessionCache.set(buildSessionKey(request.session, request.workspace, command), persistentEntry)
+        return this.fromCache(persistentEntry, 'persistent-cache')
       }
     }
     return undefined
-  }
-
-  private isRemoveItem(command: string): boolean {
-    return /\bremove-item\b/i.test(command)
-  }
-
-  private async removeItemTargetType(request: GuardRequest, command: string): Promise<'directory' | 'file' | 'unknown'> {
-    const target = this.extractRemoveItemPath(command)
-    if (!target) return 'unknown'
-    const absolute = resolve(request.workspace ?? process.cwd(), target)
-    try {
-      const info = await stat(absolute)
-      return info.isDirectory() ? 'directory' : 'file'
-    } catch {
-      return 'unknown'
-    }
-  }
-
-  private extractRemoveItemPath(command: string): string | undefined {
-    const match = /\bremove-item\b/i.exec(command)
-    if (!match) return undefined
-    const rest = command.slice(match.index + match[0].length).trim()
-    const stripQuotes = (value: string): string => value.replace(/^["']|["']$/g, '')
-    const quotedPath = /(?:^|\s)(?:-path|-literalpath)\s+("(?:[^"]*)"|'(?:[^']*)')/i.exec(rest)
-    if (quotedPath) return stripQuotes(quotedPath[1])
-    const unquotedPath = /(?:^|\s)(?:-path|-literalpath)\s+([^\s;"'|&]+)/i.exec(rest)
-    if (unquotedPath) return unquotedPath[1]
-    const tokens = rest.match(/("(?:[^"]*)"|'(?:[^']*)'|[^\s;"'|&]+)/g) ?? []
-    for (const token of tokens) {
-      const value = stripQuotes(token)
-      if (value && !value.startsWith('-')) return value
-    }
-    return undefined
-  }
-
-  private extractDeletionReason(request: GuardRequest, afterTime: number): string | undefined {
-    // Preferred: reason supplied by the interactive UI (or headless marker).
-    if (request.deletionReason && request.deletionReason.trim()) {
-      return request.deletionReason.trim().slice(0, 2800)
-    }
-    // Fallback: scan the command itself for a [删除理由] marker.
-    const commandReason = extractMarkerReason(request.command)
-    if (commandReason) return commandReason
-    // Last resort: scan session events for an assistant message with the marker.
-    const events = request.events
-    if (!Array.isArray(events)) return undefined
-    for (const event of events) {
-      if (typeof event !== 'object' || event === null) continue
-      const candidate = event as { type?: unknown; time?: unknown; data?: unknown }
-      if (candidate.type !== 'assistant/message') continue
-      if (typeof candidate.time !== 'number' || candidate.time <= afterTime) continue
-      const text = this.messageText(candidate.data)
-      const markerIndex = text.indexOf('[删除理由]')
-      if (markerIndex >= 0) {
-        const reason = text.slice(markerIndex + '[删除理由]'.length).trim()
-        if (reason) return reason.slice(0, 2800)
-      }
-    }
-    return undefined
-  }
-
-  private messageText(data: unknown): string {
-    if (typeof data !== 'object' || data === null) return ''
-    const message = (data as { message?: unknown }).message
-    if (typeof message !== 'object' || message === null) return ''
-    const content = (message as { content?: unknown }).content
-    if (typeof content === 'string') return content
-    if (!Array.isArray(content)) return ''
-    return content
-      .map((block) => {
-        if (typeof block !== 'object' || block === null) return ''
-        const textBlock = block as { type?: unknown; text?: unknown }
-        return textBlock.type === 'text' && typeof textBlock.text === 'string' ? textBlock.text : ''
-      })
-      .join('')
   }
 
   private templateCacheDecision(command: string): Decision | undefined {
     if (!this.templateCache) return undefined
     const classification = classifyCommand(command, this.rules)
     if (classification.category !== 'unknown') return undefined
-    if (hasCommandSubstitution(command) || /[<>]/.test(command)) return undefined
+    if (bypassesDeterministicTrust(command, { pipes: false })) return undefined
     if (splitShellCommand(command).some((segment) => isHighRiskStateChangingCommand(segment))) return undefined
     if (containsDangerousPattern(command, this.rules)) return undefined
     const entry = this.templateCache.get(command)
@@ -944,14 +780,14 @@ export class GuardService {
     if (!this.templateCache || decision.kind !== 'allow' || decision.risk === 'high') return
     const entry = entryForDecision(
       { kind: 'allow', risk: decision.risk, reason: decision.reason },
-      ttlForRisk(decision.risk, this.config.lowRiskTtlDays, this.config.mediumRiskTtlDays),
+      ttlForRisk(decision.risk, this.tuning.lowRiskTtlDays, this.tuning.mediumRiskTtlDays),
     )
     this.templateCache.set(command, entry)
   }
 
   private historyDecision(request: GuardRequest, command: string): Decision | undefined {
-    if (!this.config.historyEnabled || !this.config.examineEnabled || !this.historyStore) return undefined
-    if (hasCommandSubstitution(command) || /[<>]/.test(command)) return undefined
+    if (!this.tuning.historyEnabled || !this.tuning.examineEnabled || !this.historyStore) return undefined
+    if (bypassesDeterministicTrust(command, { pipes: false })) return undefined
     const classification = classifyCommand(command, this.rules)
     if (
       classification.category === 'always-review' ||
@@ -961,7 +797,7 @@ export class GuardService {
       return undefined
     }
     if (splitShellCommand(command).some((segment) => isHighRiskStateChangingCommand(segment))) return undefined
-    const decision = this.historyStore.decide(command, this.config.historyMinTotal, this.config.historyMinLlm)
+    const decision = this.historyStore.decide(command, this.tuning.historyMinTotal, this.tuning.historyMinLlm)
     if (!decision) return undefined
     // History hits write no cache: the audit store already serves the repeat
     // LLM-free, and session slots are reserved for LLM-reviewed conclusions
@@ -969,29 +805,13 @@ export class GuardService {
     return decision
   }
 
-  private cacheHit(request: GuardRequest, command: string): Decision | undefined {
-    const sessionKey = buildSessionKey(request.session, request.workspace, command)
-    const sessionEntry = this.sessionCache.get(sessionKey)
-    if (sessionEntry) {
-      this.stats.sessionCacheHits++
-      return this.fromCache(sessionEntry, 'session-cache')
-    }
-
-    // A pending deny asks before an older persistent allow can mask it.
-    const pending = this.pendingDenyDecision(request, command)
-    if (pending) return pending
-
-    const workspaceKey = buildWorkspaceKey(request.workspace, command)
-    const persistentEntry = this.persistentCache.get(workspaceKey)
-    if (persistentEntry) {
-      this.stats.persistentCacheHits++
-      this.sessionCache.set(sessionKey, persistentEntry)
-      return this.fromCache(persistentEntry, 'persistent-cache')
-    }
-    return undefined
-  }
-
+  /**
+   * The single production point of a cache-served decision; cache-hit stats
+   * derive from the source here (ADR-0021), so no lookup site counts manually.
+   */
   private fromCache(entry: CacheEntry, source: 'session-cache' | 'persistent-cache'): Decision {
+    if (source === 'session-cache') this.stats.sessionCacheHits++
+    else this.stats.persistentCacheHits++
     return {
       kind: entry.decision,
       risk: entry.risk,
@@ -1003,7 +823,7 @@ export class GuardService {
   }
 
   private writeSessionCache(request: GuardRequest, command: string, decision: AllowDenyDecision, ttlMs?: number): void {
-    const ttl = ttlMs ?? ttlForRisk(decision.risk, this.config.lowRiskTtlDays, this.config.mediumRiskTtlDays)
+    const ttl = ttlMs ?? ttlForRisk(decision.risk, this.tuning.lowRiskTtlDays, this.tuning.mediumRiskTtlDays)
     const entry = entryForDecision(decision, ttl)
     this.sessionCache.set(buildSessionKey(request.session, request.workspace, command), entry)
   }
@@ -1013,29 +833,72 @@ export class GuardService {
     command: string,
     decision: { kind: 'allow'; risk?: RiskLevel; reason?: string },
   ): void {
-    const ttl = ttlForRisk(decision.risk, this.config.lowRiskTtlDays, this.config.mediumRiskTtlDays)
+    const ttl = ttlForRisk(decision.risk, this.tuning.lowRiskTtlDays, this.tuning.mediumRiskTtlDays)
     const entry = entryForDecision(decision, ttl)
     this.persistentCache.set(buildWorkspaceKey(request.workspace, command), entry)
     this.persistentCache.save()
   }
 
   private fileTrackerDefault(scriptPath: string): Decision {
-    if (this.config.fileTrackerDefault === 'deny') {
+    if (this.tuning.fileTrackerDefault === 'deny') {
       return { kind: 'deny', source: 'file-tracker', reason: `Write-then-execute detected on sensitive script ${scriptPath}; denied by config` }
     }
     return { kind: 'ask', source: 'file-tracker', reason: `Write-then-execute detected on sensitive script ${scriptPath}; please confirm` }
   }
 
+  /**
+   * The seam's LLM step (ADR-0021): review, then the cache write-back policy.
+   * The pending-deny escape hatch is rechecked inside llmDecision, so every
+   * llm-source review funnels through it — single command, whole pipeline,
+   * one compound segment, sensitive-path demotion. The directory-delete
+   * single-review flow calls review directly (no recheck by design).
+   */
+  private async reviewUnit(request: GuardRequest, command: string, classification: Classification): Promise<Decision> {
+    const decision = await this.llmDecision(request, { command }, 'llm')
+    this.writeBackCaches(request, command, classification, decision)
+    return decision
+  }
+
+  /**
+   * The cache write-back policy in one definition (ADR-0021): an LLM allow
+   * below high risk is written back when its classification earns it —
+   * always-review into the session slot only, with the short session TTL;
+   * cacheable/unknown into both the session slot (risk TTL) and the
+   * persistent cache.
+   */
+  private writeBackCaches(request: GuardRequest, command: string, classification: Classification, decision: Decision): void {
+    if (decision.kind !== 'allow' || decision.risk === 'high') return
+    if (classification.category === 'always-review') {
+      this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason }, this.tuning.alwaysReviewCacheTtlMinutes * 60 * 1000)
+    }
+    if (classification.category === 'cacheable' || classification.category === 'unknown') {
+      this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason })
+      this.writePersistentCache(request, command, { kind: 'allow', risk: decision.risk, reason: decision.reason })
+    }
+  }
+
+  /**
+   * An LLM review with the pending-deny escape hatch rechecked first (the
+   * guardMemory behavior every llm-source review had before ADR-0021).
+   */
   private async llmDecision(
     request: GuardRequest,
     ctx: { command: string; script?: string; deletionReason?: string; reasoningEffort?: string },
     source: 'llm' | 'file-tracker',
-    guardMemory = true,
   ): Promise<Decision> {
-    if (guardMemory && source === 'llm') {
-      const pending = this.pendingDenyDecision(request, ctx.command)
+    if (source === 'llm') {
+      const pending = this.consultMemories(request, ctx.command, { pending: true })
       if (pending) return pending
     }
+    return this.review(request, ctx, source)
+  }
+
+  /** The raw reviewer call: llm-call accounting, template remember, fail-closed. No pending-deny recheck. */
+  private async review(
+    request: GuardRequest,
+    ctx: { command: string; script?: string; deletionReason?: string; reasoningEffort?: string },
+    source: 'llm' | 'file-tracker',
+  ): Promise<Decision> {
     this.stats.llmCalls++
     try {
       const result = await this.llmReviewer.review({
@@ -1063,198 +926,9 @@ export class GuardService {
 
   private failClosed(source: 'llm' | 'file-tracker', error?: string): Decision {
     const detail = error ? ` (${error.slice(0, 200)})` : ''
-    if (this.config.onTimeout === 'deny') {
+    if (this.tuning.onTimeout === 'deny') {
       return { kind: 'deny', source, reviewerFailed: true, reason: `Reviewer failed${detail}; denied by fail-closed policy` }
     }
     return { kind: 'ask', source, reviewerFailed: true, reason: `Reviewer failed${detail}; asking for confirmation` }
   }
-}
-
-/** Extract a `[删除理由] <reason>` marker from a command line (headless retry).
- *  Returns the reason and the command with the marker stripped. */
-export function extractDeletionMarker(command?: string): { reason: string; cleaned: string } | undefined {
-  if (!command) return undefined
-  const idx = command.indexOf('[删除理由]')
-  if (idx < 0) return undefined
-  const reason = command.slice(idx + '[删除理由]'.length).trim()
-  if (!reason) return undefined
-  const cleaned = stripTrailingCommentTokens(command.slice(0, idx))
-  return { reason: reason.slice(0, 2800), cleaned }
-}
-
-/** Extract just the `[删除理由]` reason text from a command line, if present. */
-export function extractMarkerReason(command?: string): string | undefined {
-  return extractDeletionMarker(command)?.reason
-}
-
-/**
- * Prepare a headless directory-delete retry: strip the `[删除理由]` marker from
- * the command and supply it as the explicit deletion reason, so the marker is
- * never left in the command that actually executes.
- */
-export function prepareDeletionMarker(request: GuardRequest): { request: GuardRequest; cleanedCommand?: string } {
-  const marker = extractDeletionMarker(request.command)
-  if (!marker) return { request }
-  return {
-    request: { ...request, command: marker.cleaned, deletionReason: marker.reason },
-    cleanedCommand: marker.cleaned || undefined,
-  }
-}
-
-/**
- * Drop comment markers left between the command and an appended `[删除理由]`
- * retry marker (`rm -rf x # [删除理由] r` must clean to `rm -rf x`, not
- * `rm -rf x #`). Only whole trailing tokens are removed: `foo#` is a real
- * path character, and the cleaned text is the command that actually executes.
- */
-function stripTrailingCommentTokens(text: string): string {
-  let cleaned = text.trim()
-  for (;;) {
-    const stripped = cleaned.replace(/\s+(?:#|%%)$/, '')
-    if (stripped === cleaned) return cleaned
-    cleaned = stripped.trim()
-  }
-}
-
-/** Split a `session|workspace|command` key back apart; the command may itself contain `|`, so only the first two separators are meaningful. */
-function splitSessionKey(key: string): { session: string; workspace: string; command: string } {
-  const sessionEnd = key.indexOf('|')
-  const workspaceEnd = sessionEnd >= 0 ? key.indexOf('|', sessionEnd + 1) : -1
-  if (sessionEnd < 0 || workspaceEnd < 0) return { session: '', workspace: '', command: key }
-  return {
-    session: key.slice(0, sessionEnd),
-    workspace: key.slice(sessionEnd + 1, workspaceEnd),
-    command: key.slice(workspaceEnd + 1),
-  }
-}
-
-/** True when a pending delete is past the retry window and must not be matched again. */
-function isExpiredPendingDelete(entry: PendingDirectoryDelete, now: number): boolean {
-  return now - entry.deniedAt > PENDING_DELETE_TTL_MS
-}
-
-/** Windows paths are case-insensitive; POSIX is not — fold only on Windows so target equality stays exact elsewhere. */
-function foldPathCase(text: string): string {
-  return process.platform === 'win32' ? text.toLowerCase() : text
-}
-
-/** Normalize a workspace for comparison: unified separators, no trailing slash, case-folded on Windows. */
-function normalizeWorkspace(workspace: string): string {
-  return foldPathCase(normalizePath(workspace).replace(/\/+$/, ''))
-}
-
-/**
- * True when both workspaces describe the same subtree: equal after
- * normalization, or one a whole path-segment prefix of the other. The
- * effective workspace can shift between the first denial and the retry (hook
- * cwd fallback resolves differently around `cd`), but never across projects.
- */
-function sameWorkspaceRoot(a: string | undefined, b: string | undefined): boolean {
-  if (a === undefined || b === undefined) return a === b
-  const na = normalizeWorkspace(a)
-  const nb = normalizeWorkspace(b)
-  if (na === nb) return true
-  const [short, long] = na.length <= nb.length ? [na, nb] : [nb, na]
-  return long.startsWith(`${short}/`)
-}
-
-/** True when a recorded command deletes exactly the given normalized targets. */
-function recordsSameDeletion(recordedCommand: string, targets: string[], rules: RulesFile): boolean {
-  const recorded = extractDeletionTargets(recordedCommand, rules)
-  return recorded.length > 0 && recorded.join('\n') === targets.join('\n')
-}
-
-/**
- * Quote-aware deletion-target tokens of every directory-delete segment in a
- * command, normalized and sorted — the comparable shape for pending retry
- * alignment. Only segments that classify as directory-delete contribute, so
- * `ls` companions in a compound never count as targets, and a pipeline or
- * redirect tail after an operator ends the argument list.
- */
-export function extractDeletionTargets(command: string, rules: RulesFile): string[] {
-  const collected = new Set<string>()
-  for (const segment of splitShellCommand(normalizeCommand(command))) {
-    if (classifyCommand(segment, rules).category !== 'directory-delete') continue
-    for (const target of deletionTargetsFromSegment(segment)) {
-      const normalized = normalizeTargetToken(target)
-      if (normalized) collected.add(normalized)
-    }
-  }
-  return [...collected].sort()
-}
-
-/** Extract raw target tokens from one already-classified delete segment. */
-function deletionTargetsFromSegment(segment: string): string[] {
-  const markerIdx = segment.indexOf('[删除理由]')
-  const body = markerIdx >= 0 ? segment.slice(0, markerIdx) : segment
-  const tokens = segmentTokens(body)
-  if (tokens.length === 0) return []
-  let word = tokens[0].toLowerCase()
-  let rest = tokens.slice(1)
-  // `cmd /c <builtin>` and `command <builtin>` wrapping shift the command word.
-  if ((word === 'cmd' || word === 'command') && rest.length > 0 && /^\/[ck]$/i.test(rest[0])) {
-    word = (rest[1] ?? '').toLowerCase()
-    rest = rest.slice(2)
-  }
-  if (!DELETE_COMMAND_WORDS.has(word)) return []
-  const windowsFlags = WINDOWS_FLAG_DELETE_WORDS.has(word)
-  const targets: string[] = []
-  let positionalOnly = false
-  for (let i = 0; i < rest.length; i++) {
-    const token = rest[i]
-    if (!positionalOnly) {
-      if (token === '--') {
-        positionalOnly = true
-        continue
-      }
-      if (token.startsWith('-')) {
-        const lower = token.toLowerCase()
-        // Remove-Item's named path parameters consume the next token as the target.
-        if ((lower === '-path' || lower === '-literalpath') && i + 1 < rest.length) targets.push(rest[++i])
-        continue
-      }
-    }
-    if (/[|<>&]/.test(token)) break
-    if (token === '#' || token === '%%') continue
-    if (windowsFlags && /^\/[a-z0-9]+$/i.test(token)) continue
-    targets.push(token)
-  }
-  return targets
-}
-
-/** Whitespace/quote-aware token split of one command segment; backslashes are ordinary characters (Windows path separators). */
-function segmentTokens(segment: string): string[] {
-  const tokens: string[] = []
-  let current = ''
-  let quote: "'" | '"' | undefined
-  for (const ch of segment) {
-    if (quote) {
-      if (ch === quote) {
-        quote = undefined
-        if (current) tokens.push(current)
-        current = ''
-      } else {
-        current += ch
-      }
-      continue
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch
-      continue
-    }
-    if (ch === ' ' || ch === '\t') {
-      if (current) tokens.push(current)
-      current = ''
-      continue
-    }
-    current += ch
-  }
-  if (current) tokens.push(current)
-  return tokens
-}
-
-/** Comparable shape of one deletion target: quotes and trailing separators stripped, separators unified, case-folded on Windows. */
-function normalizeTargetToken(token: string): string {
-  const stripped = token.replace(/^["']|["']+$/g, '').replace(/[\\/]+$/, '')
-  return stripped ? foldPathCase(normalizePath(stripped)) : ''
 }

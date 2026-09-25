@@ -158,6 +158,35 @@ export interface FileTrackerResult {
 
 export type HeadlessMode = 'deny' | 'allow'
 
+/**
+ * The engine-tuning slice of GuardConfig (ADR-0021): exactly the keys
+ * GuardService consumes. Pure data — hosts never build it directly; the
+ * composition root slices it out of the full config (tuningOf), so a new
+ * GuardConfig key never touches the engine interface.
+ */
+export interface GuardTuning {
+  /** Effective output language for engine-authored reasons (undefined → machine default → zh). */
+  lang?: 'zh' | 'en'
+  /** TTL for low-risk cache entries, in days. */
+  lowRiskTtlDays: number
+  /** TTL for medium-risk cache entries, in days. */
+  mediumRiskTtlDays: number
+  /** TTL in minutes for always-review commands allowed by the LLM in the current session. */
+  alwaysReviewCacheTtlMinutes: number
+  /** Fail-closed policy when the reviewer errors or times out. */
+  onTimeout: 'deny' | 'ask'
+  /** Default decision when the file tracker fires and can't review safely. */
+  fileTrackerDefault: 'ask' | 'deny'
+  /** Runtime history layer switch. */
+  historyEnabled: boolean
+  /** Audit/examine switch gating the history layer. */
+  examineEnabled: boolean
+  /** Minimum total allow records for a history hit. */
+  historyMinTotal: number
+  /** Minimum real LLM allow records for a history hit. */
+  historyMinLlm: number
+}
+
 export interface GuardConfig {
   /** Master switch toggled by `/guard on|off` and persisted to config.json; DSH uses the permission preset instead. */
   enabled: boolean
