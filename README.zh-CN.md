@@ -54,7 +54,7 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 - **安全网，不是沙箱。** 守卫不限制文件系统，而是在 full access 之上做裁决、尽量不打断正常开发。它不是绝对安全边界——LLM 裁决可能被提示词注入，所以高风险命令永不缓存、敏感文件内容永不送审。
 - **处处 fail-closed。** 审查超时、缺 API key、没有确认 UI——所有异常路径都落到拒绝或人工确认，绝不静默放行。（唯一例外：用户显式关闸必须永远有效。）
 - **密钥不落仓库。** API key 解析顺序：环境变量 → 加密存储（AES-256-GCM 机器绑定）→ 遗留明文字段（只读，永不回写）。
-- **审查模型专属，用多少花多少。** 审查调用只是一条极简 prompt（不带上下文内容），发往任意 OpenAI 兼容端点、走独立的 API key——用 `apiBase` + `set-api` 指向按量计费的便宜供应商（DeepSeek、opencode Zen 等）、`model` 配个小模型即可。审查费用单独计量；规则与缓存裁决过的命令，一分钱不花。
+- **审查模型专属，用多少花多少。** 审查调用只是一条极简 prompt（不带上下文内容），发往任意 OpenAI 兼容端点、走独立的 API key——用 `apiBase` + `set-api` 指向按量计费的便宜供应商（DeepSeek、opencode Zen 等）、`model` 配个小模型即可；多宿主机器用 `sync-api` 一条命令把端点与模型铺到所有宿主根（SPEC 0023）。审查费用单独计量；规则与缓存裁决过的命令，一分钱不花。
 
 ## 裁决管线（所有宿主共用）
 
@@ -119,7 +119,7 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 - **`@auto-guard/host-qoder`** — Qoder（国际版 IDE）PreToolUse hook 适配层（Claude 兼容 hook 协议、工具双命名映射、原生确认框）。
 - **`@auto-guard/host-codex`** — OpenAI Codex CLI hooks 适配层（Claude 兼容 `hooks.json` 协议、apply_patch 补丁文本路径提取；ask 类裁决按拒绝处理——codex 对不支持的 `"ask"` 会弃用并继续执行，SPEC 0015，详见[适配现状](#auto-guardhost-codex--openai-codex-cli-hooks-适配层)）。
 - **`@auto-guard/cli`** — 统一 `auto-guard` 管理 CLI 与安装器。
-- **`@auto-guard/tui`** — 全屏交互管理控制台（`auto-guard-tui`，SPEC 0009 / ADR-0014）：零依赖手写 ANSI TUI，覆盖全部命令面（安装器 + guard/set/examine/optimize），另设 `:` 命令模式直通任意 CLI 命令。为没有设置 UI 的宿主（zcode/claude/opencode/qoder/codex/pi）而生，DSH 用户同样可用。所有动作经 `runCli`/`runInstallerCommand` 执行（语义单一来源）；非 TTY 启动拒绝（exit 2）。
+- **`@auto-guard/tui`** — 全屏交互管理控制台（`auto-guard-tui`，SPEC 0009 / ADR-0014）：零依赖手写 ANSI TUI，覆盖全部命令面（安装器 + guard/set/examine/optimize + sync-api 入口），另设 `:` 命令模式直通任意 CLI 命令。为没有设置 UI 的宿主（zcode/claude/opencode/qoder/codex/pi）而生，DSH 用户同样可用。所有动作经 `runCli`/`runInstallerCommand` 执行（语义单一来源）；非 TTY 启动拒绝（exit 2）。
 
 七个宿主跑同一条管线、同一套默认值、同一套规则文件；不同的只是集成外壳（见[宿主适配层](#宿主适配层)）。
 
@@ -205,7 +205,7 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 
 ## 命令行操作
 
-全部宿主共用一套命令面：安装器（`init` / `list` / `remove`）+ 四个管理组（`guard` / `set` / `examine` / `optimize`）。每个宿主不同的只是 **CLI 在哪**、**指向哪个配置根**。
+全部宿主共用一套命令面：安装器（`init` / `list` / `remove`）+ 四个管理组（`guard` / `set` / `examine` / `optimize`）+ 统一入口专属的 `sync-api`（跨宿主同步评审 API，SPEC 0023）。每个宿主不同的只是 **CLI 在哪**、**指向哪个配置根**。
 
 ### 统一 CLI —— 一个入口管所有宿主
 
@@ -231,7 +231,7 @@ ZCode、Claude Code、OpenCode、Qoder 四个适配层还各自带一个 `dist/c
 
 `<host-…>` 即适配层包目录：npm 安装后在 `<npm 全局目录>/node_modules/@auto-guard/host-…`，本仓库内是 `packages/host-…`。确切的绝对路径也在安装器写入的 hook 命令里（`~/.zcode/cli/config.json`、`~/.claude/settings.json`、`~/.qoder/settings.json`、`~/.config/opencode/opencode.json` 的 `plugin` 条目）——同一个 `dist/` 目录下、`hook-cli.js` 旁边就是 `cli.js`。
 
-两种入口的动作完全一致：`guard on|off|status|recent [n]|stats|report [days]|ping`、`set set-key|show-key|clear-key|set-api …|history …|reload`、`examine on|off|status|clear-old|clear-all`、`optimize status|analyze|list|rollback`——完整速查见 [CLI 指南](docs/cli.md)。`guard report` 按裁决种类与决策来源（LLM / 各规则层 / 各缓存层）统计审计窗口。
+两种入口的动作完全一致：`guard on|off|status|recent [n]|stats|report [days]|ping`、`set set-key|show-key|clear-key|set-api …|history …|reload`、`examine on|off|status|clear-old|clear-all`、`optimize status|analyze|list|rollback`——完整速查见 [CLI 指南](docs/cli.md)。`guard report` 按裁决种类与决策来源（LLM / 各规则层 / 各缓存层）统计审计窗口。唯一例外是 `sync-api <base> <model> [--fallback <model>] [--propagate-key]`（统一入口专属，SPEC 0023）：一条命令把评审端点 + 模型定向补丁到所有已装且已播种的宿主根（未装/未播种自动跳过，绝不凭空创建），`--propagate-key` 顺带把当前根已存的加密 Key 复制到其余同步根。
 
 两个带 UI 的宿主日常不需要终端：
 
@@ -251,6 +251,7 @@ ZCode、Claude Code、OpenCode、Qoder 四个适配层还各自带一个 `dist/c
 auto-guard set set-key --config-root ~/.pi/auto-guard   # 给 Pi 配 Key
 auto-guard examine on  --config-root ~/.dsh/auto-guard  # 给 dsh 开审计
 auto-guard guard status                                # 不带 flag = 多宿主状态总览
+auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --propagate-key  # 端点+模型（和已存 Key）一次铺到所有宿主根
 ```
 
 完整命令面见[使用手册 §3](docs/usage.md#3-管理命令)。

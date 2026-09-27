@@ -54,7 +54,7 @@ Adding a host means one profile plus one adapter package — no installer change
 - **Safety net, not a sandbox.** The guard does not restrict the filesystem; it adjudicates on top of full access and tries not to interrupt normal work. It is not an absolute security boundary — a prompt-injected LLM verdict is possible, which is why high-risk commands are never cached and sensitive file content is never sent for review.
 - **Fail-closed everywhere.** Reviewer timeout, missing API key, missing UI — every abnormal path lands on deny or human confirmation, never on silent allow. (An explicit user off-switch always wins; that is the one exception.)
 - **Keys never in the repo.** API keys resolve env var → encrypted store (AES-256-GCM, machine-bound) → legacy plaintext field (read-only, never rewritten).
-- **Bring your own cheap reviewer.** The review call is one minimal prompt (no context payload) to any OpenAI-compatible endpoint under a dedicated API key — point `apiBase` + `set-api` at a pay-as-you-go provider (DeepSeek, opencode Zen, …) with a small model, and review spend runs on its own meter: pay for what actually gets reviewed, and rule/cache verdicts cost nothing.
+- **Bring your own cheap reviewer.** The review call is one minimal prompt (no context payload) to any OpenAI-compatible endpoint under a dedicated API key — point `apiBase` + `set-api` at a pay-as-you-go provider (DeepSeek, opencode Zen, …) with a small model; on multi-host machines `sync-api` stamps the endpoint and model onto every host root in one command (SPEC 0023). Review spend runs on its own meter: pay for what actually gets reviewed, and rule/cache verdicts cost nothing.
 
 ## Decision pipeline (shared by all hosts)
 
@@ -124,7 +124,7 @@ Each decision carries a source tag you can see in notifications: `[Allowlist]`, 
 - **`@auto-guard/host-qoder`** — Qoder (international IDE) PreToolUse hook adapter (Claude-compatible hook protocol, dual tool-naming mapping, native confirmation box).
 - **`@auto-guard/host-codex`** — OpenAI Codex CLI hooks adapter (Claude-compatible `hooks.json` protocol, apply_patch patch-text path extraction; ask-class verdicts land as deny — codex discards the unsupported `"ask"` decision, SPEC 0015).
 - **`@auto-guard/cli`** — unified `auto-guard` management CLI + installer.
-- **`@auto-guard/tui`** — full-screen interactive management console (`auto-guard-tui`, SPEC 0009 / ADR-0014): zero-dep hand-rolled ANSI TUI covering the whole command surface — installer + guard/set/examine/optimize — plus a `:` command mode for anything the CLI can do. Built for hosts without a settings UI (zcode/claude/opencode/qoder/codex/pi); dsh users welcome too. Every action runs through `runCli`/`runInstallerCommand` (single semantic source); non-TTY starts are refused (exit 2).
+- **`@auto-guard/tui`** — full-screen interactive management console (`auto-guard-tui`, SPEC 0009 / ADR-0014): zero-dep hand-rolled ANSI TUI covering the whole command surface — installer + guard/set/examine/optimize + a sync-api entry — plus a `:` command mode for anything the CLI can do. Built for hosts without a settings UI (zcode/claude/opencode/qoder/codex/pi); dsh users welcome too. Every action runs through `runCli`/`runInstallerCommand` (single semantic source); non-TTY starts are refused (exit 2).
 
 All seven hosts run the same pipeline with the same defaults and the same rule files; only the integration shell differs (see [Host adapters](#host-adapters)).
 
@@ -210,7 +210,7 @@ Known coverage caveat (opencode, ADR-0015): your own permission rules that `allo
 
 ## Command-line operations
 
-One command surface everywhere: the installer (`init` / `list` / `remove`) plus four management groups (`guard` / `set` / `examine` / `optimize`). What differs per host is only **where the CLI lives** and **which config root it targets**.
+One command surface everywhere: the installer (`init` / `list` / `remove`) plus four management groups (`guard` / `set` / `examine` / `optimize`), plus the unified-entry-only `sync-api` (syncs the review API across host roots, SPEC 0023). What differs per host is only **where the CLI lives** and **which config root it targets**.
 
 ### Unified CLI — one entry for every host
 
@@ -236,7 +236,7 @@ The ZCode, Claude Code, OpenCode and Qoder adapters each also ship a `dist/cli.j
 
 `<host-…>` is the adapter package directory: `<npm global>/node_modules/@auto-guard/host-…` after an npm install, `packages/host-…` inside this repo. The concrete absolute path is also visible in the hook command the installer wrote (`~/.zcode/cli/config.json`, `~/.claude/settings.json`, `~/.qoder/settings.json`, the `plugin` entry in `~/.config/opencode/opencode.json`) — `cli.js` sits in the same `dist/` directory as the `hook-cli.js` named there.
 
-Both entry points expose the same actions: `guard on|off|status|recent [n]|stats|report [days]|ping`, `set set-key|show-key|clear-key|set-api …|history …|reload`, `examine on|off|status|clear-old|clear-all`, `optimize status|analyze|list|rollback` — full table in the [CLI guide](docs/cli.md). `guard report` totals the audit window by verdict kind and decision source (LLM vs each rule/cache layer).
+Both entry points expose the same actions: `guard on|off|status|recent [n]|stats|report [days]|ping`, `set set-key|show-key|clear-key|set-api …|history …|reload`, `examine on|off|status|clear-old|clear-all`, `optimize status|analyze|list|rollback` — full table in the [CLI guide](docs/cli.md). `guard report` totals the audit window by verdict kind and decision source (LLM vs each rule/cache layer). The one exception is `sync-api <base> <model> [--fallback <model>] [--propagate-key]` (unified entry only, SPEC 0023): one command patches the review endpoint + model onto every installed-and-seeded host root (uninstalled hosts and unseeded roots are skipped, never created), and `--propagate-key` copies the current root's stored key to the other synced roots.
 
 The two UI hosts never need a terminal:
 
@@ -256,6 +256,7 @@ Everything is configured from the command line or by editing the JSON in a confi
 auto-guard set set-key --config-root ~/.pi/auto-guard   # key for Pi
 auto-guard examine on  --config-root ~/.dsh/auto-guard  # audit for dsh
 auto-guard guard status                                # no flag = overview of all hosts
+auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --propagate-key  # one review API (and stored key) across every host root
 ```
 
 Full command surface: [usage manual §3](docs/usage.md).
