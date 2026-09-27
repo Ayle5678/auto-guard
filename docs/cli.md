@@ -7,6 +7,7 @@ The management CLI is a thin terminal shell over the shared core operations laye
 
 ```
 auto-guard [--config-root <path>] <group> <action> [args]                             # management
+auto-guard sync-api <base> <model> [--fallback <model>] [--propagate-key]             # one review API for every host root
 auto-guard <init|list|remove> [--host dsh,pi,zcode,claude,opencode,qoder,codex] [--yes] [--lang zh|en] # installer
 ```
 
@@ -35,6 +36,8 @@ auto-guard examine on  --config-root ~/.dsh/auto-guard  # audit for dsh
 export AUTO_GUARD_CONFIG_ROOT=~/.pi/auto-guard          # or pin the whole session
 ```
 
+The multi-host exception is `sync-api` (SPEC 0023): one command patches the review API (endpoint + model) onto every installed host root in one sweep — uninstalled hosts and unseeded roots are skipped, never created.
+
 `guard status` has two views: with an explicitly selected root it renders that root only; when the root is auto-detected it aggregates every installed host — seeded roots in full, installed-but-never-run hosts as an "unseeded" hint, absent hosts skipped. Both views show the effective language (`lang : en` — one line per root in the aggregate view, so per-host choices are visible). It is read-only and never creates config. All other management commands act on the single resolved root.
 
 | Group | Actions |
@@ -43,6 +46,7 @@ export AUTO_GUARD_CONFIG_ROOT=~/.pi/auto-guard          # or pin the whole sessi
 | `set` | `set-key`（three-step TTY wizard, echo disabled）`show-key` `clear-key` `set-api base <url>` / `model <id>` / `reset` `lang <zh\|en>`（per-host output language; receipt in the new language）`history on\|off` `reload` |
 | `examine` | `on` `off` `status` `clear-old`（30d）`clear-all` |
 | `optimize` | `status` `analyze` `list` `rollback` |
+| `sync-api` | `<base> <model> [--fallback <model>] [--propagate-key]` — one review API for every installed & seeded host root. Targeted JSON patch: only `apiBase`/`model`/`fallbackModel` change, host-specific fields (dsh provider family) survive. `--propagate-key` copies the current root's stored key to the other synced roots (never through argv). Unified entry only. |
 
 Windows discipline: the process exits naturally (`process.exitCode`, never `process.exit`) so libuv can drain handles after fetch calls; `set set-key` requires a real TTY; exit codes are 0 (ok) or 2 (refused/failed).
 

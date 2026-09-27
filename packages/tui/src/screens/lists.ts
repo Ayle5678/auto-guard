@@ -92,6 +92,12 @@ export function listActions(state: AppState, screen: 'guard' | 'examine' | 'opti
           run: () => null,
         },
         { id: 'set-api-reset', label: tr('actSetApiReset'), run: () => pending('set set-api reset', ['set', 'set-api', 'reset']) },
+        {
+          id: 'sync-api',
+          label: tr('actSyncApi'),
+          ask: { prompt: translate(L, 'syncInputBase', { value: config?.apiBase ?? '' }), owner: 'sync-base', preset: config?.apiBase },
+          run: () => null,
+        },
         { id: 'group-prefs', header: tr('groupPrefs') },
       ]
       if (config?.historyEnabled) {

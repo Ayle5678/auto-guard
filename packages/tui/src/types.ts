@@ -65,6 +65,9 @@ export type InputOwner =
   | 'wizard-base'
   | 'wizard-model'
   | 'wizard-key'
+  | 'sync-base'
+  | 'sync-model'
+  | 'sync-propagate'
 
 /** An open inline input (command mode, numeric prompts, wizard steps). */
 export interface InputRequest {
@@ -125,6 +128,8 @@ export interface AppState {
   autoloaded: Partial<Record<ScreenId, boolean>>
   installer: InstallerState
   wizard: WizardState | null
+  /** sync-api input chain accumulator (SPEC 0024); cleared on Esc/submit. */
+  sync?: { base: string; model: string } | null
   input: InputRequest | null
   dialog: DialogState | null
   busy: PendingRun | null

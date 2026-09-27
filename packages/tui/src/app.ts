@@ -55,6 +55,7 @@ export function initialState(options: { width: number; height: number; deps?: Ac
       removeChecked: {},
     },
     wizard: null,
+    sync: null,
     input: null,
     dialog: null,
     busy: null,
@@ -210,8 +211,8 @@ function autoloadEffects(state: AppState, screen: ScreenId): Effect[] {
 
 function inputKeyRouting(state: AppState, key: KeyEvent): { state: AppState; effects: Effect[] } {
   if (key.name === 'escape') {
-    // Esc in a wizard step cancels the whole wizard.
-    return { state: { ...state, input: null, wizard: null }, effects: [] }
+    // Esc in a wizard/sync step cancels the whole flow.
+    return { state: { ...state, input: null, wizard: null, sync: null }, effects: [] }
   }
   if (key.name === 'enter') return resolveInput(state)
   return { state: { ...state, input: { ...state.input!, model: inputKey(state.input!.model, key) } }, effects: [] }
@@ -249,6 +250,52 @@ function resolveInput(state: AppState): { state: AppState; effects: Effect[] } {
       const wizard = { ...state.wizard!, key: value }
       return { state: { ...state, wizard, input: null }, effects: [] }
     }
+    case 'sync-base': {
+      // sync-api chain (SPEC 0024): base → model → propagate y/N → confirm.
+      const base = value.trim()
+      if (!base) return { state: { ...state, notice: t(state.lang, 'syncRequired') }, effects: [] }
+      const model = rootSummary(state)?.config?.model ?? ''
+      return {
+        state: {
+          ...state,
+          ...close,
+          sync: { base, model: '' },
+          input: wizardInput('sync-model', t(state.lang, 'syncInputModel', { value: model }), model),
+        },
+        effects: [],
+      }
+    }
+    case 'sync-model': {
+      const model = value.trim()
+      if (!model) return { state: { ...state, notice: t(state.lang, 'syncRequired') }, effects: [] }
+      return {
+        state: {
+          ...state,
+          ...close,
+          sync: { ...state.sync!, model },
+          input: wizardInput('sync-propagate', t(state.lang, 'syncInputKey'), ''),
+        },
+        effects: [],
+      }
+    }
+    case 'sync-propagate': {
+      const sync = state.sync!
+      const propagate = /^y/i.test(value.trim())
+      const run: PendingRun = {
+        kind: 'mgmt',
+        argv: propagate ? ['sync-api', sync.base, sync.model, '--propagate-key'] : ['sync-api', sync.base, sync.model],
+        label: 'sync-api',
+      }
+      const dialog: DialogState = {
+        message: [t(state.lang, 'confirmSyncApi'), `base=${sync.base}  model=${sync.model}`, ...(propagate ? [t(state.lang, 'syncKeyLine')] : [])],
+        danger: false,
+        confirmFocused: false,
+        yesLabel: t(state.lang, 'confirmYes'),
+        noLabel: t(state.lang, 'confirmNo'),
+        pending: run,
+      }
+      return { state: { ...state, ...close, sync: null, dialog }, effects: [] }
+    }
   }
 }
 
@@ -256,7 +303,7 @@ function mgmt(argv: string[]): PendingRun {
   return { kind: 'mgmt', argv, label: argv.slice(0, 2).join(' ') }
 }
 
-function wizardInput(owner: 'wizard-model' | 'wizard-key' | 'wizard-base', prompt: string, preset: string, masked = false): InputRequest {
+function wizardInput(owner: 'wizard-model' | 'wizard-key' | 'wizard-base' | 'sync-model' | 'sync-propagate', prompt: string, preset: string, masked = false): InputRequest {
   const model = emptyInput(masked)
   model.value = preset
   model.cursor = [...preset].length

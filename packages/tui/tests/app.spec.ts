@@ -277,6 +277,68 @@ describe('list screen actions', () => {
   })
 })
 
+describe('sync-api action (SPEC 0024)', () => {
+  const openChain = (): ReturnType<typeof reduce>['state'] => {
+    let s = state({ screen: 'set' })
+    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state // cursor on sync-api (index 8)
+    return reduce(s, { type: 'key', key: key('enter') }).state
+  }
+
+  it('opens the chain preset from the current root', () => {
+    const s = openChain()
+    expect(s.input?.owner).toBe('sync-base')
+    expect(s.input?.model.value).toBe('https://api.local')
+    expect(s.sync).toBeUndefined()
+  })
+
+  it('chains to the confirm dialog; y adds --propagate-key and confirm runs', () => {
+    let s = openChain()
+    s = reduce(s, { type: 'key', key: key('enter') }).state // keep preset base
+    expect(s.input?.owner).toBe('sync-model')
+    expect(s.input?.model.value).toBe('deepseek-chat')
+    s = reduce(s, { type: 'key', key: key('enter') }).state // keep preset model
+    expect(s.input?.owner).toBe('sync-propagate')
+    s = reduce(s, { type: 'key', key: key('char', 'y') }).state
+    const done = reduce(s, { type: 'key', key: key('enter') })
+    expect(done.state.dialog?.pending?.argv).toEqual(['sync-api', 'https://api.local', 'deepseek-chat', '--propagate-key'])
+    expect(done.state.dialog?.danger).toBe(false)
+    expect(done.state.sync).toBeNull()
+    const focused = reduce(done.state, { type: 'key', key: key('left') }).state
+    const ran = reduce(focused, { type: 'key', key: key('enter') })
+    expect(ran.effects).toEqual([
+      { type: 'run', run: { kind: 'mgmt', argv: ['sync-api', 'https://api.local', 'deepseek-chat', '--propagate-key'], label: 'sync-api' } },
+    ])
+  })
+
+  it('empty propagate input defaults to no key propagation', () => {
+    let s = state({ screen: 'set' })
+    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state
+    for (let i = 0; i < 4; i++) s = reduce(s, { type: 'key', key: key('enter') }).state // open + base + model + empty propagate
+    expect(s.dialog?.pending?.argv).toEqual(['sync-api', 'https://api.local', 'deepseek-chat'])
+    expect(s.dialog?.message.join(' ')).not.toContain(t('zh', 'syncKeyLine'))
+  })
+
+  it('empty required field keeps the input open with the notice', () => {
+    const seeded = state()
+    let s = state({ screen: 'set', roots: [{ ...seeded.roots[0]!, config: config({ apiBase: '' }) }] })
+    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state
+    s = reduce(s, { type: 'key', key: key('enter') }).state // preset empty
+    const submitted = reduce(s, { type: 'key', key: key('enter') })
+    expect(submitted.state.input?.owner).toBe('sync-base')
+    expect(submitted.state.notice).toBe(t('zh', 'syncRequired'))
+    expect(submitted.state.sync).toBeUndefined()
+  })
+
+  it('Esc cancels the chain and clears the accumulator', () => {
+    let s = openChain()
+    s = reduce(s, { type: 'key', key: key('enter') }).state // base submitted
+    expect(s.sync).toEqual({ base: 'https://api.local', model: '' })
+    const cancelled = reduce(s, { type: 'key', key: key('escape') })
+    expect(cancelled.state.input).toBeNull()
+    expect(cancelled.state.sync).toBeNull()
+  })
+})
+
 describe('render', () => {
   it('composes a full frame with header/nav/footer at any size', () => {
     const frame = render(state({ width: 100, height: 30 }))
@@ -518,9 +580,9 @@ describe('set screen groups (SPEC 0011)', () => {
   })
 
   it('stepping down from API reset skips the preferences title onto history', () => {
-    let s = state({ screen: 'set', cursor: { set: 7 } }) // reset API (after title at 4, base 5, model 6)
+    let s = state({ screen: 'set', cursor: { set: 8 } }) // sync-api, the API group's last action (SPEC 0024 row)
     s = reduce(s, { type: 'key', key: key('down') }).state
-    expect(s.cursor.set).toBe(9) // history, not the group title at 8
+    expect(s.cursor.set).toBe(10) // history, not the group title at 9
     const entered = reduce(s, { type: 'key', key: key('enter') })
     expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'history', 'on'] } })
   })

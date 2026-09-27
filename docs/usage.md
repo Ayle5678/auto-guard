@@ -403,6 +403,21 @@ auto-guard optimize list         # 看已生成的学习规则
 auto-guard optimize rollback     # 回滚到备份
 ```
 
+### 3.5 `sync-api` — 统一评审 API（全部宿主，SPEC 0023）
+
+```bash
+auto-guard sync-api https://api.deepseek.com deepseek-v4-flash                    # 端点+模型一次铺到所有已装宿主
+auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --fallback deepseek-chat
+auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --propagate-key    # 同时把当前根已存的加密 Key 复制到其它根
+```
+
+- **目标根**：宿主已安装（homeDir 存在）且 auto-guard 已播种（config.json 存在）的根；未装宿主与未播种根自动跳过并留一行说明，绝不凭空创建。
+- **写入方式**：定向 JSON 补丁，只改 `apiBase` / `model` / `fallbackModel` 三键，其余字段与键序原样保留（dsh 的 provider 族字段不受影响）；`--fallback` 缺省回落到 model。
+- **Key 传播**：源 = 当前根（探测或 `--config-root` 指定）；`loadApiKey → saveApiKey` 直写加密存储，不经命令行、不回显；当前根无存储 Key 时提示并跳过传播，端点同步照常。
+- **退出码**：≥1 根成功 → 0；全部失败或无目标根 → 1。
+- 仅统一入口 `auto-guard` 提供（能力门控，运行时入口命令面不变）；TUI 密钥屏也有「复制API到其他host」入口（§6），或 `:` 命令模式直通。
+- 已知限制：DSH 设置服务在线时以设置层为主存储，config.json 补丁可能被其下次设置同步覆盖。
+
 ---
 
 ## 4. 首次使用完整流程
@@ -454,7 +469,7 @@ node packages/tui/src/tui.ts         # Node 22.18+ 免构建直跑
 auto-guard-tui
 ```
 
-**八屏布局**：总览（每宿主状态卡 + 选根 + ping + 界面语言切换行）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（按 密钥管理 / API 端点 / 偏好 / 维护 分组：show-key、三步 set-key 向导掩码输入、clear-key、set-api、历史层、reload）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
+**八屏布局**：总览（每宿主状态卡 + 选根 + ping + 界面语言切换行）→ 守卫（开关/status/recent/stats/report/ping）→ 审计（开关/清理）→ 优化（analyze/list/rollback）→ 密钥（按 密钥管理 / API 端点 / 偏好 / 维护 分组：show-key、三步 set-key 向导掩码输入、clear-key、set-api、复制API到其他host（sync-api，可选传播 Key，过确认框）、历史层、reload）→ 安装（检测多选 → 规则更新选择 → 预览 → 确认安装 / list / remove）→ 日志（全部回执流水）→ 帮助（键位 + 命令对照表）。
 
 **关键约定**：
 

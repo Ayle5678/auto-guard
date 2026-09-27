@@ -32,7 +32,7 @@ const COMMAND_MAP: readonly { screen: UiKey; commands: string[] }[] = [
   { screen: 'tabGuard', commands: ['guard on|off', 'guard status', 'guard recent [n]', 'guard stats', 'guard report [days]', 'guard ping'] },
   { screen: 'tabExamine', commands: ['examine on|off', 'examine status', 'examine clear-old', 'examine clear-all'] },
   { screen: 'tabOptimize', commands: ['optimize status', 'optimize analyze', 'optimize list', 'optimize rollback'] },
-  { screen: 'tabSet', commands: ['set set-key (wizard)', 'set show-key', 'set clear-key', 'set set-api base|model|reset', 'set lang zh|en', 'set history on|off', 'set reload'] },
+  { screen: 'tabSet', commands: ['set set-key (wizard)', 'set show-key', 'set clear-key', 'set set-api base|model|reset', 'sync-api <base> <model> [--propagate-key]', 'set lang zh|en', 'set history on|off', 'set reload'] },
 ]
 
 /** The full help document at current width (scrolling slices it, never cuts). */
