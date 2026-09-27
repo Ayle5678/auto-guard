@@ -24,6 +24,10 @@ _Avoid_: 适配器基类、宿主框架、shared（泛指时）
 一个 hook 宿主全部差异的纯数据声明：hostId、配置根目录、守卫工具名表、路径/内容字段拼写、会话与工作区 env 名、宿主能力值、出口序列化器槽。新 hook 宿主 = 写一个描述符文件，不改运行时代码。
 _Avoid_: 宿主 profile（那是安装器的检测/写入数据）、配置文件（那是用户侧的）
 
+**宿主门面（Host Facade）**:
+hook 宿主包对宿主运行时的薄再导出层：描述符 + 入口 stub + 真宿主耦合件（如 opencode 的 payload builders），不承载行为；安装器与已装用户引用其入口路径，故包不可删、可瘦。
+_Avoid_: 适配器（那是「宿主适配层」的代码概念）、宿主壳
+
 **权限预设（Permission Preset）**:
 DSH 特有的会话级权限配置选择；选择 `auto-guard` 预设是 DSH 宿主的唯一启停开关。
 _Avoid_: 模式、开关（泛指时）
@@ -41,6 +45,10 @@ _Avoid_: hook payload、事件
 **裁决码（Verdict Code）**:
 LLM 评审的紧凑输出契约（ADR-0020）：字母编码决策（A=allow / B=deny / C=ask）× 数字编码风险（1=low / 2=medium / 3=high）；allow 只回码（如 `A1`），deny/ask 回 `码: 一句话理由`。解析器对历史三键 JSON 保底回退。
 _Avoid_: 短码（泛指）、选项字母
+
+**评审通道（Review Channel）**:
+LLM 评审的两条执行通道：直连（core 单发 DeepSeek 兼容 API，prompt 组装、fallback 梯与超时预算的唯一所有者）与宿主流式（dsh 经 ctx.llm 注入件）。两通道共享同一 prompt 与裁决码解析契约（ADR-0024）。
+_Avoid_: 评审模式、直连评审（那是通道之一不是对立面）
 
 **裁决管线（Decision Pipeline）**:
 GuardService 内的固定分层顺序：写后执行 → 绝对黑名单 → 目录删除复核 → 敏感路径 → 复合命令拆分 → 静态放行 → 缓存 → 模板缓存 → 历史层 → LLM 兜底。文件工具（read/write/edit）例外：在敏感路径门**之前**先查会话记忆——`guard ask` 裁决（ADR-0019）是该路径上更晚的人类决定，优先于确定性门；shell 命中敏感路径仍整条降级 LLM、不查缓存。
@@ -173,6 +181,10 @@ _Avoid_: 初始化（泛指时）
 每个配置根里两层生效文件：defaults.json（播种的出厂拷贝，可编辑）与 rules.json（用户覆盖）。加载时用户文件的字段**整体胜出**，仅缺失的顶层字段才从出厂侧补齐——新出厂模式不会自动进入存量安装的已有数组（见 ADR-0013）。
 _Avoid_: 规则合并、配置继承
 
+**引擎调参切片（Guard Tuning）**:
+裁决引擎构造与运行实际消费的约十键配置切片（TTL、always-review TTL、超时回调、文件追踪默认、历史阈值、语言）；由单点组合根从全量 GuardConfig 切出（ADR-0021），全量 schema 仍归宿主配置层、持久化格式不变。
+_Avoid_: 小配置、配置子集（泛指）
+
 **key 水合（key hydration）**:
 API key 的解析顺序：环境变量 > 加密存储 > 遗留明文字段。只在内存水合，不回写明文。
 _Avoid_: key 加载
@@ -194,7 +206,7 @@ _Avoid_: locale、i18n（那是实现机制）
 _Avoid_: 全局配置根（配置根都是每宿主的）
 
 **消息目录（message catalog）**:
-一个包的中英扁平文案字典，键一致、类型系统强制对齐；文案归各包所有，跨包只共享取词函数。
+一个包的中英扁平文案字典，键一致、类型系统强制对齐。守卫面文案（回执、usage、删除流程、密钥与审计回执）归 core 共享守卫面目录（ADR-0023）；宿主 chrome 文案（安装器、TUI、宿主对话框/设置页）归各包；跨包只共享取词函数。宿主措辞差异走描述符的 catalogOverride 数据槽。
 _Avoid_: i18n 资源文件、翻译文件
 
 **裁决理由（decision reason）**:

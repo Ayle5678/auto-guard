@@ -268,3 +268,102 @@
 ➡️ 弹窗内永远不可能有输入框——真话是：对话本身就是输入框。守卫能做的是把闭环铺通：ask reason 文末提示出路（仅 native 宿主）；deny-session 的 reason 在后续命中时作为 `permissionDecisionReason` 进模型上下文，模型按理由调整而不是原样重试。补充（2026-08-31 查证后修订）：ZCode 官方 hook 文档核实 `additionalContext` 注入对话、可与 PreToolUse permission decision 共存——ask 出线时预注射模型指引（拒绝后按理由调整不重试 / 本会话拒绝可走 `guard ask deny --reason`），把它从「未核实收益不实」升级为决策 4（ADR-0019）；它仍是守卫→模型通道，替代不了用户输入。拒绝项：把它当输入框用（方向反了，用户无法借此打字）。
 **Q4 Q11 算不算被推翻？**
 ➡️ 窄口径重开：四态记忆给 zcode 补上（弹窗外的守卫自有通道），但「ask 委托宿主原生弹窗」的出线方式不变、能力声明不变——Q11 反对的「为统一而统一改弹窗内体验」仍然成立。pi/codex 行为零变化（落盘与文案门控 `askStyle === 'native'`）。
+
+## Round 15 — 架构评审②：core 引擎内聚——段裁决内缝 / 调参切片 / 删除复核模块（2026-09-25，ADR-0021 / SPEC 0019）
+
+> 起因：improve-codebase-architecture 第二次全仓扫描（HTML 报告落临时目录 architecture-review-20260925-1011.html）产出 8 个 deepening 候选，用户拍板「不改变 auto-guard 的判断、不怎么改变使用即可全做；自问自答（授权代答）；只落 ADR/CONTEXT/spec 文档，不实施」。本轮至 Round 17 为自问自答，按报告顺序 grilling（候补 1 段裁决内缝、2 GuardConfig 收窄、3 双 CLI 合一、4 守卫面目录、5 DSH 收编、6 删除复核模块、7 宿主策略下沉、8 门面瘦身）。根约束（用户拍板，凌驾全部后续答案）：**纯结构重构**——裁决结果、缓存行为、出线协议字节、prompt 字节、持久化 schema、CLI 语法全部不变；拷贝间已漂移的语义点**显式保留**，本次不做任何裁决。
+
+**Q0 行为不变的验证标准是什么？**
+➡️ 自答：四条门禁——(a) 既有测试断言一条不改（只许改 import 路径与纯搬家导致的构造调用）；(b) prompt 与 wire 出线保持逐字节（既有 pin 测试继续钉）；(c) stats 计数口径与缓存回写时机以既有断言钉死；(d) conformance 跨宿主等价矩阵全绿。新增测试只加不断。任何「顺手修正语义」的冲动都转为显式记录的已知不一致，留给未来 spec。
+
+**Q1 段裁决内缝的形状？**
+➡️ 自答：私有 `decideSegment(request, segment, ctx)` → 段结论（Decision + 命中详情 + 回写副作用收口）；decideShell / decidePipeline / decideCompound 退为围绕它的薄组合策略。**内缝（internal seam），不进公共 barrel**——GuardService 对外 interface 一字不变。三份拷贝逐块做等价性审计：逐字相同块（缓存回写三连 if、首过 hard-deny 块）直接合一；同义异形块合一；语义真分歧块（见 Q2）参数化保留并注明。
+拒绝项：把 decideSegment 升为公开导出（外缝会诱惑宿主绕过 decide() 直接调段评估，出线协议失控）；先设计「可配置管线」（没有第二个 adapter，假缝）。
+
+**Q2 管道谓词分歧怎么办——统一到哪端都会改判断？**
+➡️ 自答：事实核verified——shell 侧 bypass 检查用 `containsShellOperators`（`/ [<>|]/`，含 `|`），templateCacheDecision/historyDecision 内联 `/[<>]/`（不含 `|`），history.ts 对审计行是第三种拼法（`includes('$(')||includes('\`')||/[<>]/`）。今天带管道的命令**可以**命中模板缓存/历史层，这是活语义而非笔误。决策：抽唯一谓词 `bypassesDeterministicTrust(command, {pipes})` 落 command.ts（紧邻它组合的两个原语），各调用点**保留当前选择**（shell 侧 pipes:true、模板/历史侧 pipes:false、history 行侧维持现状拼法）；三处口径差异记录为已知不一致清单，独立裁决留给未来 spec。本次零行为变化。
+拒绝项：统一到严格端（管道命中即禁模板/历史层缓存——今天会放行的命令改走 LLM，改判断）；统一到宽松端（反向同罪）；「反正没人依赖」式猜测（无证据不改）。
+
+**Q3 pending-deny 优先序的三个落点？**
+➡️ 自答：`consultMemories(request, command)` 收拢「会话 deny → pending deny → 持久 allow」优先序为单一函数——今天它靠 cacheHit 内**语句位置**（会话读与持久读之间）+ llmDecision 的 guardMemory 复查 + compound 的第三个 helper 三处手工维持。优先序本身不变，只是获得唯一所有者与唯一测试面；`guardMemory=false` 逃生舱随缝内化。
+拒绝项：改优先序哪怕「更合理」（根约束）；把 pending-deny 提升为独立公开模块（域概念是 Guard Memory 的实现细节，CONTEXT 已有词条，不加新词）。
+
+**Q4 stats 手织 11 处递增怎么办？**
+➡️ 自答：`record(decision)` 单点记录——source 已在每条 Decision 上，cache 命中从 source 推导；「计数口径与今天逐点相同」作为验收断言（既有 stats 断言原样保留）。GuardStats 类型、createStats/resetStats/recordRuleHit 四处同步的税随之消失。ruleHits 的 6-of-14 枚举改为从 DecisionSource 全集推导——类型形状不变（键集合相同），只是不再手工维护两份清单。
+
+**Q5 调参切片的边界画在哪？**
+➡️ 自答：新类型 `GuardTuning`（暂名，SPEC 定稿）= GuardService 实际消费的 ~10 键（lang、lowRiskTtlDays、mediumRiskTtlDays、alwaysReviewCacheTtlMinutes、onTimeout、fileTrackerDefault、historyEnabled、examineEnabled、historyMinTotal、historyMinLlm）。GuardService 构造签名从 GuardConfig 收窄为切片；**全量 GuardConfig 留在宿主配置层**（持久化 schema 零变化），切片在单点组合根（host-runtime/guard-deps.ts）发生。纯数据，无方法。
+拒绝项：拆 GuardConfig 落盘子 schema（改持久化格式）；切片带行为（那是 service 的事）；langs 解析逻辑随切片搬家（langOf 留在 core 语言层，切片只带结果值）。
+
+**Q6 9 个 spec 文件里 45 行 makeConfig 模板怎么办？**
+➡️ 自答：随切片收敛为个位数键的 makeTuning()；既有行为断言不动。顺手治好 guard-service.spec:119 伸进私有 llmReviewer 的钩子——setup() 返回它创建的依赖引用（测试基建修复，非行为变化）。
+
+**Q7 删除复核模块的边界与 session key 语法归属？**
+➡️ 自答：新文件 `core/src/directory-delete.ts`，surface = prepareRetry / matchPending / targetsOf + 既有标记协议导出（extractDeletionMarker 等经 core index 原**路径** re-export，7 个调用方零改动）；guard-service.ts 1260 → ~820 行纯管线。session key 语法（`session|workspace|command`）成对归属 cache.ts——build 与 split 同主，directory-delete 消费不自制（今天 splitSessionKey 与 cache.ts buildSessionKey 分持正是要消灭的）。纯搬家：私有函数转模块内导出，逻辑零改动；Pi 事件格式解析（messageText）一并入该文件（它是删除理由的数据源，不是管线逻辑）。
+拒绝项：key 语法第三处安家；改动标记协议字节（`[删除理由]` 是域协议，ADR-0012/0013 语境）；为新模块设公开子入口（走 barrel re-export 即可）。
+
+**Q8 搬家与抽缝谁先？**
+➡️ 自答：搬家（Q7）先——纯移动零语义风险，且把 guard-service 缩到 ~820 行后，段缝的 diff 才可审。施工序 6 → 1 → 2；grilling 序仍按报告 1 → 2 → …（两序解耦，记录在案）。
+
+**Q9 收敛检查：还有没访问的分支？**
+➡️ 自答：decideSegment 不为 file 工具留位（decideFile 本就独立且薄，敏感路径门无段概念）；`sessionIdOf` 死透传删除（全仓零调用者，deletion test 平凡通过）；`guardReason` 与 decideShell 的确定性前缀共享——实施期做等价抽取但两者返回值逐字节不变；testTimeout 抖动与本轮无关（机器负载，非代码问题）。无新分支，树收敛。
+
+## Round 16 — 架构评审③：管理 CLI 单引擎 + 守卫面目录 + DSH 收编（2026-09-25，ADR-0022/0023/0024 / SPEC 0020/0021/0022）
+
+**Q1 两 CLI 合一后，能力面怎么保住「不改使用」？**
+➡️ 自答：CliParts 增**能力声明**（命令组开关）：cli 驱动声明「无 ask 组、含聚合状态」，runtime 驱动声明「含 ask 组与 set-key 向导、无聚合状态」——今天每个入口能做什么，明天逐字节相同。createCliMain 深化为唯一 dispatch/渲染/退出码/usage 引擎；两个真实变量点（根解析模式：自动探测 vs 描述符钉根；输出 sink）+ 能力声明 = adapter 参数。conformance 先钉两 CLI 当前行为快照，再动工。
+拒绝项：借合并顺手把 ask 组带给 cli（扩大命令面 = 改使用，无人要求）；两个 CLI 强行对齐向导/聚合差异（同罪）。
+
+**Q2 usage 文案的程序名前缀（`auto-guard` vs `node dist/cli.js`）？**
+➡️ 自答：程序名作 CliParts 字段，字符串参数化；usage 键本身随 Q4 进共享目录。
+
+**Q3 packages/cli 剩什么？**
+➡️ 自答：安装器 + 根探测 + 聚合视图 + 驱动壳。TUI 的 runCli(argv) interface 不变（内部换引擎），回执语义不变；安装器 profile 与入口路径零改动（ADR-0008 可逆性不碰）。
+
+**Q4 守卫面目录的键怎么选正典——三种漂移措辞统一会改用户可见文案？**
+➡️ 自答：三步审计——(a) 同键逐字相同（pingOk、examine*、showKey* 多数）→ 直接搬 core；(b) 同义异形（deleteFail 双标题 ×3 措辞、rollbackDone ×3、analyzeDone ×3）→ 选语义最准者统一：微调文案不改变判断与操作方式，属用户授权的「不怎么改使用」范围，且键级 diff 清单进 SPEC 验收可审计；(c) 措辞承载宿主上下文的 → catalogOverride 数据槽保留（ADR-0016 已建机制）。共享目录落 core（defineCatalog 旁）；host-runtime/pi/dsh/cli 目录瘦身为宿主 chrome。
+拒绝项：三份措辞全保留靠 override（重复制度化，漂移照旧——正是要治的病）；动 defineCatalog 类型对齐机制（ADR-0011 机制不动，动的只是键的家）；顺带统一 zh/en 双语以外的格式问题（不存在）。
+
+**Q5 CONTEXT「消息目录」词条「文案归各包所有」要不要修订？**
+➡️ 自答：要——这是候补 4 唯一真正推翻的旧表述，修订为「守卫面文案归 core 共享目录，宿主 chrome 归各包；跨包只共享取词函数不变」。ADR-0011 的四层解析与每包目录机制不受影响（目录还在，只是守卫面键搬家）。
+
+**Q6 评审 seam 上移的形状——directChatReview 放哪、边界多大？**
+➡️ 自答：core 导出单函数 `directChatReview(tuning, lang, request, apiKey) → ReviewOutcome`：prompt 组装、单发调用、400→fallbackModel 重试梯、超时预算、combineSignals 兜底全部内化。DeepSeekReviewer.review 退为薄包装（LlmReviewer 外缝不变——两 adapter 仍坐同一 seam）；DshLlmReviewer 只留 ctx.llm.stream 路由 + hasDirectEndpoint 分支委托 core。dsh 缺的 combineSignals 兜底顺手补齐（node≥22 均有 AbortSignal.any，正常环境行为不变，纯健壮性对齐）。HttpError/ping/用户消息组装三份拷贝随之消亡。
+拒绝项：把 dsh 流式路由搬进 core（ctx.llm 是宿主注入件，进 core 违反 ADR-0002）；directChatReview 吞掉 LlmReviewer 接口（外缝有两个真 adapter，保留）。
+
+**Q7 dsh 默认值五处静默分歧怎么办？**
+➡️ 自答：声明式增量：`DSH_DEFAULTS = { ...defaultGuardConfig(root), /* 评审走 ctx.llm 注入件，不需要直连地址 */ apiBase: '', /* dsh 设置页等待窗更长 */ timeoutMs: 15000, ... }` 逐行注明故意原因；三份键清单（CONFIG_KEYS / USER_CONFIG_KEYS / GUARD_SETTINGS_SCHEMA.keys）从单一 FieldSpec[] 派生，新增 GuardConfig 字段不再靠手工三处镜像。**现值零变化**——分歧从考古现场变注释。
+拒绝项：借机把 dsh 默认值「修正」向 core 看齐（改现网行为，违反根约束）；FieldSpec[] 引入校验框架（YAGNI，纯派生清单）。
+
+**Q8 dsh 私有分析/回滚操作回归 core？**
+➡️ 自答：AnalyzeOptions 扩展 `full`（dsh remote「立即分析」传 true，**保持今天永远全量的行为**）+ 可选 gate（auditPassword 门以配置标志或回调注入）；删私有 runLearnedAnalysis 与私有 rollback 包装（core rollbackLearnedRules 已存在）。pi/cli/zcode 既有调用零改动。
+拒绝项：顺手把 dsh 分析改回窗口模式（改行为；窗口 vs 全量的取舍未来再议）。
+
+**Q9 收敛检查？**
+➡️ 自答：cli 的 set-key TTY 拒绝 stub vs runtime 向导——能力声明各自保留不强行对齐；tui/i18n 与 installer/i18n 是包内 chrome，合法不动；两 CLI 的 exit code 表合并后逐值相同（0/1/2 语义既有测试钉）。无新分支，树收敛。
+
+## Round 17 — 架构评审④：宿主策略下沉 + 门面瘦身 + 全局收敛（2026-09-25，ADR-0025 / SPEC 0022）
+
+**Q1 三个策略函数放 core 还是 host-runtime？**
+➡️ 自答：core——`translateDecision(decision, capabilities)`（返回 action/reason/needsHumanVeto/vetoTitleKey）、`resolveNotify(decision, config, capabilities)`（返回 route/text 或 undefined）、`recordToolCallAudit(store, ...)`（source 参数化吸收 user_bash 变体）。三者只依赖 core 自有类型（HostCapabilities/AuditStore/classifyCommand）；host-runtime/pi/dsh 改调用，各自只剩 sink（wire / ui.notify / session inject）。审计记录 schema 逐字段不变。
+拒绝项：放 host-runtime（pi/dsh 不经 host-runtime，放那里等于给第二份拷贝安家）；translateDecision 返回文案而非键名（文案的家在目录，见 Round 16 Q4）。
+
+**Q2 与守卫面目录的联动顺序？**
+➡️ 自答：translateDecision 返回 vetoTitle **键名**，查词走共享守卫面目录——键的家随 SPEC 0021（候补 4），策略的家随本票（候补 7）；4 先 7 后施工更顺，但互不阻塞（7 可先带旧键名落地）。
+
+**Q3 门面瘦身到什么程度？**
+➡️ 自答：createHookHost(descriptor) 增导出绑定好的 bootstrap/extraction/render 对象（或平级 bindHost(descriptor) helper）；五宿主（zcode/claude/qoder/codex/opencode）的 bootstrap/config/hook-output/*-adapter 仪式文件退成单行 re-export 或删除；tests/conformance import 改指 bindHost。安装器 profile 与宿主入口路径零变化（ADR-0008 可逆性）；opencode 的 plugin.ts/payload builders 是真宿主耦合，保留。
+拒绝项：删宿主包本身（安装器与已装用户引用其入口）；为此设新 ADR（ADR-0016「宿主包保留薄门面」的延伸，票内记录即可）。
+
+**Q4 候补 8 的优先级？**
+➡️ 自答：Speculative 维持——收益依赖第 8 宿主是否到来；排全部候选最末，工单标低优先，允许无限期搁置。
+
+**Q5 施工总序与 spec 切分？**
+➡️ 自答：四个 spec 覆盖八候选——**SPEC 0019 core 引擎内聚**（施工序：6 搬家 → 1 段缝 → 2 切片；ADR-0021）；**SPEC 0020 管理 CLI 单引擎**（3；ADR-0022）；**SPEC 0021 守卫面共享目录**（4；ADR-0023，施工在 0020 后——usage 程序名参数化先就位）；**SPEC 0022 宿主层收拢**（5 DSH 收编 → 7 策略下沉 → 8 门面；ADR-0024 + ADR-0025，8 无 ADR）。切分理由：0019 同一文件族（guard-service.ts）不可并行；3 与 4 在 cli/host-runtime/messages 文件族重叠；5/7/8 全在宿主层且 5 的翻译拷贝由 7 承接、8 收尾。四 spec 间依赖：0019 与 0020/0021/0022 完全独立可并行；0021 依赖 0020 的参数化；0022 的 7 依赖 0021 的键搬家更顺（软依赖）。
+拒绝项：一个伞 spec（八候选跨四个文件族，票据图退化成全连通）；每候选一 spec 共八个（3/4 与 5/7/8 各自强耦合，切开制造假边界）。
+
+**Q6 全局验收门禁？**
+➡️ 自答：每票 tracer-bullet——typecheck / test / smoke 三门禁 + conformance 全绿；既有断言只许改 import 与构造调用；SPEC 0021 验收附**键级文案 diff 清单**（用户可见文本每一处变化可审计）；prompt/wire 字节 pin 维持；SPEC 0019 验收附 stats 口径与缓存回写时机的等价断言清单。全部完成后重跑 improve-codebase-architecture 对照——漂移点应只剩「已知不一致」清单显式记录的管道谓词一处。
+
+**Q7 收敛检查：还有没访问的分支？**
+➡️ 自答：conformance 包自身结构（未在候选内，不动）；audit-sqlcipher 未触及；learned-rules 刚交付的锚定/合并（今日两提交）不动；guardReason 同步守卫的等价抽取已在 Round 15 Q9 记录。无新分支，树收敛。
