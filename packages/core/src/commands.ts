@@ -99,17 +99,20 @@ export function applySetLang(config: GuardConfig, value: string | undefined): { 
   return { ok: true, lang: parsed }
 }
 
-/** Apply `set set-api base|model|reset`; mutates `config` when valid. */
+/** Apply `set set-api base|model|fallback-base|fallback-model|reset`; mutates `config` when valid. */
 export function applySetApi(config: GuardConfig, sub: string | undefined, value: string | undefined, defaults: GuardConfig, lang: Lang = langOf(config)): { ok: boolean; message: string } {
   if (sub === 'reset') {
     config.apiBase = defaults.apiBase
     config.model = defaults.model
     config.fallbackModel = defaults.fallbackModel
+    config.fallbackApiBase = defaults.fallbackApiBase
     return { ok: true, message: coreMessage(lang, 'setApiResetOk', { base: defaults.apiBase, model: defaults.model }) }
   }
-  if ((sub === 'base' || sub === 'model') && value !== undefined) {
+  if ((sub === 'base' || sub === 'model' || sub === 'fallback-base' || sub === 'fallback-model') && value !== undefined) {
     if (sub === 'base') config.apiBase = value
-    else config.model = value
+    else if (sub === 'model') config.model = value
+    else if (sub === 'fallback-base') config.fallbackApiBase = value
+    else config.fallbackModel = value
     return { ok: true, message: coreMessage(lang, 'setApiUpdateOk', { sub, value }) }
   }
   return { ok: false, message: coreMessage(lang, 'setApiUsage') }

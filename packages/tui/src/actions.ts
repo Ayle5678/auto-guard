@@ -28,6 +28,7 @@ import {
   readMachineLang,
   saveApiKey,
   saveConfig,
+  saveFallbackApiKey,
   writeMachineLang,
   type GuardConfig,
   type Lang,
@@ -202,4 +203,41 @@ export function saveWizard(root: string, input: WizardInput, lang: Lang): { chan
   if (changedEndpoint) saveConfig(config, configPath)
   saveApiKey(root, input.key.trim())
   return { changedEndpoint }
+}
+
+/**
+ * Fallback wizard save (ADR-0026 update): the backup endpoint is a
+ * machine-global resource — write `fallbackApiBase`/`fallbackModel` (when
+ * submitted) and the encrypted fallback key to EVERY installed-and-seeded
+ * host root, so hosts without a key of their own review on the backup API.
+ * Mirrors sync-api's root targeting (installed host + seeded config).
+ */
+export interface FallbackWizardInput {
+  base: string
+  model: string
+  key: string
+}
+
+export function saveFallbackWizard(input: FallbackWizardInput, lang: Lang, deps: ActionDeps = {}): { lines: string[]; synced: number } {
+  const home = deps.home ?? homedir()
+  const exists = deps.exists ?? existsSync
+  const base = input.base.trim().replace(/\/+$/, '')
+  const model = input.model.trim()
+  const key = input.key.trim()
+  const lines: string[] = []
+  let synced = 0
+  for (const profile of PROFILES) {
+    const hostHome = join(home, profile.detection.dirs[0]!)
+    const root = join(hostHome, 'auto-guard')
+    if (!exists(hostHome) || !exists(join(root, 'config.json'))) continue
+    const configPath = join(root, 'config.json')
+    const config = loadConfig(configPath, defaultGuardConfig(root))
+    if (base) applySetApi(config, 'fallback-base', base, config, lang)
+    if (model) applySetApi(config, 'fallback-model', model, config, lang)
+    saveConfig(config, configPath)
+    saveFallbackApiKey(root, key)
+    lines.push(`  ✓ ${profile.label.replace(/ Coding Agent$/, '')} → ${join(root, 'config.json')}`)
+    synced++
+  }
+  return { lines, synced }
 }

@@ -23,6 +23,8 @@ const PINNED_DEFAULTS = {
   reasoningEffort: 'off',
   fallbackProvider: 'deepseek-official',
   fallbackModel: 'deepseek-v4-flash',
+  fallbackApiBase: '',
+  fallbackApiKeyEnv: '',
   timeoutMs: 15000,
   lowRiskTtlDays: 30,
   mediumRiskTtlDays: 7,

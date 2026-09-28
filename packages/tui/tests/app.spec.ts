@@ -280,7 +280,7 @@ describe('list screen actions', () => {
 describe('sync-api action (SPEC 0024)', () => {
   const openChain = (): ReturnType<typeof reduce>['state'] => {
     let s = state({ screen: 'set' })
-    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state // cursor on sync-api (index 8)
+    for (let i = 0; i < 10; i++) s = reduce(s, { type: 'key', key: key('down') }).state // cursor on sync-api (index 12)
     return reduce(s, { type: 'key', key: key('enter') }).state
   }
 
@@ -312,7 +312,7 @@ describe('sync-api action (SPEC 0024)', () => {
 
   it('empty propagate input defaults to no key propagation', () => {
     let s = state({ screen: 'set' })
-    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state
+    for (let i = 0; i < 10; i++) s = reduce(s, { type: 'key', key: key('down') }).state
     for (let i = 0; i < 4; i++) s = reduce(s, { type: 'key', key: key('enter') }).state // open + base + model + empty propagate
     expect(s.dialog?.pending?.argv).toEqual(['sync-api', 'https://api.local', 'deepseek-chat'])
     expect(s.dialog?.message.join(' ')).not.toContain(t('zh', 'syncKeyLine'))
@@ -321,7 +321,7 @@ describe('sync-api action (SPEC 0024)', () => {
   it('empty required field keeps the input open with the notice', () => {
     const seeded = state()
     let s = state({ screen: 'set', roots: [{ ...seeded.roots[0]!, config: config({ apiBase: '' }) }] })
-    for (let i = 0; i < 6; i++) s = reduce(s, { type: 'key', key: key('down') }).state
+    for (let i = 0; i < 10; i++) s = reduce(s, { type: 'key', key: key('down') }).state
     s = reduce(s, { type: 'key', key: key('enter') }).state // preset empty
     const submitted = reduce(s, { type: 'key', key: key('enter') })
     expect(submitted.state.input?.owner).toBe('sync-base')
@@ -336,6 +336,71 @@ describe('sync-api action (SPEC 0024)', () => {
     const cancelled = reduce(s, { type: 'key', key: key('escape') })
     expect(cancelled.state.input).toBeNull()
     expect(cancelled.state.sync).toBeNull()
+  })
+})
+
+describe('fallback endpoint actions (SPEC 0025)', () => {
+  const downs = (from: ReturnType<typeof state>, count: number) => {
+    let s = from
+    for (let i = 0; i < count; i++) s = reduce(s, { type: 'key', key: key('down') }).state
+    return s
+  }
+
+  it('fallback base input presets from config and runs the set-api subcommand', () => {
+    const seeded = state({ screen: 'set' })
+    let s = state({ screen: 'set', roots: [{ ...seeded.roots[0]!, config: config({ fallbackApiBase: 'https://mimo.local' }) }] })
+    s = downs(s, 7) // set-api-fallback-base (index 9)
+    const opened = reduce(s, { type: 'key', key: key('enter') }).state
+    expect(opened.input?.owner).toBe('set-api-fallback-base')
+    expect(opened.input?.model.value).toBe('https://mimo.local')
+    const done = reduce(opened, { type: 'key', key: key('enter') })
+    expect(done.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'set-api', 'fallback-base', 'https://mimo.local'] } })
+  })
+
+  it('set-fallback-key opens the global fallback wizard and saves via the wizard effect (ADR-0026 update)', () => {
+    let s = downs(state({ screen: 'set' }), 3) // set-fallback-key (index 4)
+    const opened = reduce(s, { type: 'key', key: key('enter') }).state
+    expect(opened.wizard?.slot).toBe('fallback')
+    expect(opened.input?.owner).toBe('wizard-base')
+
+    let typing = opened
+    for (const ch of 'https://api.deepseek.com') typing = reduce(typing, { type: 'key', key: key('char', ch) }).state
+    let step = reduce(typing, { type: 'key', key: key('enter') }).state
+    expect(step.input?.owner).toBe('wizard-model')
+    // Keep the preset model (defaultGuardConfig fallbackModel = deepseek-v4-flash).
+    step = reduce(step, { type: 'key', key: key('enter') }).state
+    expect(step.input?.owner).toBe('wizard-key')
+
+    let keyTyping = step
+    for (const ch of 'sk-backup-000000') keyTyping = reduce(keyTyping, { type: 'key', key: key('char', ch) }).state
+    const review = reduce(keyTyping, { type: 'key', key: key('enter') }).state
+    expect(review.input).toBeNull()
+    expect(review.wizard?.key).toBe('sk-backup-000000')
+
+    const done = reduce(review, { type: 'key', key: key('enter') })
+    expect(done.effects).toEqual([
+      { type: 'wizard', input: { slot: 'fallback', base: 'https://api.deepseek.com', model: 'deepseek-v4-flash', key: 'sk-backup-000000', currentBase: '', currentModel: 'deepseek-v4-flash' } },
+    ])
+  })
+
+  it('fallback wizard rejects a short key at the review step', () => {
+    let s = downs(state({ screen: 'set' }), 3) // set-fallback-key (index 4)
+    let flow = reduce(s, { type: 'key', key: key('enter') }).state // wizard-base
+    flow = reduce(flow, { type: 'key', key: key('enter') }).state // keep empty base → wizard-model
+    flow = reduce(flow, { type: 'key', key: key('enter') }).state // keep preset model → wizard-key
+    for (const ch of 'short') flow = reduce(flow, { type: 'key', key: key('char', ch) }).state
+    flow = reduce(flow, { type: 'key', key: key('enter') }).state // → review
+    const rejected = reduce(flow, { type: 'key', key: key('enter') })
+    expect(rejected.state.wizard?.error).toBe(t('zh', 'wizInvalidKey'))
+    expect(rejected.effects).toEqual([])
+  })
+
+  it('clear-fallback-key routes through the danger dialog', () => {
+    const s = downs(state({ screen: 'set' }), 4) // clear-fallback-key (index 5)
+    const entered = reduce(s, { type: 'key', key: key('enter') })
+    expect(entered.effects).toEqual([])
+    expect(entered.state.dialog?.pending?.argv).toEqual(['set', 'clear-fallback-key'])
+    expect(entered.state.dialog?.danger).toBe(true)
   })
 })
 
@@ -580,9 +645,9 @@ describe('set screen groups (SPEC 0011)', () => {
   })
 
   it('stepping down from API reset skips the preferences title onto history', () => {
-    let s = state({ screen: 'set', cursor: { set: 8 } }) // sync-api, the API group's last action (SPEC 0024 row)
+    let s = state({ screen: 'set', cursor: { set: 12 } }) // sync-api, the API group's last action (SPEC 0024 row)
     s = reduce(s, { type: 'key', key: key('down') }).state
-    expect(s.cursor.set).toBe(10) // history, not the group title at 9
+    expect(s.cursor.set).toBe(14) // history, not the group title at 13
     const entered = reduce(s, { type: 'key', key: key('enter') })
     expect(entered.effects[0]).toMatchObject({ type: 'run', run: { argv: ['set', 'history', 'on'] } })
   })

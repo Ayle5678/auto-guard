@@ -15,6 +15,7 @@ import { loadOrCreateMachineKey } from './secret.ts'
 import type { GuardConfig } from './types.ts'
 
 const API_KEY_FILE = 'api-key.json'
+const FALLBACK_API_KEY_FILE = 'api-key-fallback.json'
 
 interface ApiKeyFile {
   version: 1
@@ -22,19 +23,19 @@ interface ApiKeyFile {
   data: string
 }
 
-export function saveApiKey(dir: string, key: string): void {
+function saveApiKeyFile(dir: string, file: string, key: string): void {
   const machineKey = loadOrCreateMachineKey(dir)
   const salt = randomBytes(16)
   const fieldKey = deriveKey(machineKey.toString('hex'), salt)
   const payload = encryptField(fieldKey, key)
   const data: ApiKeyFile = { version: 1, salt: salt.toString('base64url'), data: payload }
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, API_KEY_FILE), `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  writeFileSync(join(dir, file), `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 }
 
 /** Decrypt the stored key; undefined when absent or undecryptable (never throws). */
-export function loadApiKey(dir: string): string | undefined {
-  const path = join(dir, API_KEY_FILE)
+function loadApiKeyFile(dir: string, file: string): string | undefined {
+  const path = join(dir, file)
   if (!existsSync(path)) return undefined
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<ApiKeyFile>
@@ -47,16 +48,48 @@ export function loadApiKey(dir: string): string | undefined {
   }
 }
 
+function clearApiKeyFile(dir: string, file: string): void {
+  try {
+    rmSync(join(dir, file), { force: true })
+  } catch {
+    // Already gone.
+  }
+}
+
+export function saveApiKey(dir: string, key: string): void {
+  saveApiKeyFile(dir, API_KEY_FILE, key)
+}
+
+export function loadApiKey(dir: string): string | undefined {
+  return loadApiKeyFile(dir, API_KEY_FILE)
+}
+
 export function hasStoredApiKey(dir: string): boolean {
   return existsSync(join(dir, API_KEY_FILE))
 }
 
 export function clearApiKey(dir: string): void {
-  try {
-    rmSync(join(dir, API_KEY_FILE), { force: true })
-  } catch {
-    // Already gone.
-  }
+  clearApiKeyFile(dir, API_KEY_FILE)
+}
+
+/**
+ * Backup-endpoint key slot (SPEC 0025): same encryption scheme as the primary
+ * slot, separate file, so primary and fallback keys coexist in one root.
+ */
+export function saveFallbackApiKey(dir: string, key: string): void {
+  saveApiKeyFile(dir, FALLBACK_API_KEY_FILE, key)
+}
+
+export function loadFallbackApiKey(dir: string): string | undefined {
+  return loadApiKeyFile(dir, FALLBACK_API_KEY_FILE)
+}
+
+export function hasStoredFallbackApiKey(dir: string): boolean {
+  return existsSync(join(dir, FALLBACK_API_KEY_FILE))
+}
+
+export function clearFallbackApiKey(dir: string): void {
+  clearApiKeyFile(dir, FALLBACK_API_KEY_FILE)
 }
 
 /**
@@ -71,6 +104,22 @@ export function hydrateApiKey(config: GuardConfig, loadStored: () => string | un
   const stored = loadStored()
   if (stored) {
     config.apiKey = stored
+    return config
+  }
+  return config
+}
+
+/**
+ * Resolve the backup endpoint key (SPEC 0025): env var named by
+ * `config.fallbackApiKeyEnv`, then encrypted storage (via `loadStored`). No
+ * legacy-plaintext layer — the fallback slot has no history. In-memory only,
+ * like {@link hydrateApiKey}; mutates and returns `config`.
+ */
+export function hydrateFallbackApiKey(config: GuardConfig, loadStored: () => string | undefined = () => undefined): GuardConfig {
+  if (config.fallbackApiKeyEnv && process.env[config.fallbackApiKeyEnv]) return config
+  const stored = loadStored()
+  if (stored) {
+    config.fallbackApiKey = stored
     return config
   }
   return config

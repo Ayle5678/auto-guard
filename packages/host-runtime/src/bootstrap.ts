@@ -26,8 +26,10 @@ import {
   GuardService,
   HistoryStore,
   hydrateApiKey,
+  hydrateFallbackApiKey,
   LightAuditStore,
   loadApiKey,
+  loadFallbackApiKey,
   loadAuditPassword,
   loadAnalyzeState,
   machineConfigPath,
@@ -118,7 +120,10 @@ export function createBootstrap(descriptor: HostDescriptor, space: HostConfigSpa
   }
 
   function bootstrap(): GuardRuntime {
-    const config = hydrateApiKey(space.loadConfig(), () => loadApiKey(space.autoGuardDir))
+    const config = hydrateFallbackApiKey(
+      hydrateApiKey(space.loadConfig(), () => loadApiKey(space.autoGuardDir)),
+      () => loadFallbackApiKey(space.autoGuardDir),
+    )
     const lang = effectiveLang({
       env: envLang(),
       configLang: config.lang,

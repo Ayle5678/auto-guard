@@ -227,6 +227,78 @@ describe('DeepSeekReviewer: api key resolution', () => {
   })
 })
 
+describe('DeepSeekReviewer: backup endpoint (SPEC 0025)', () => {
+  it('switches to the backup endpoint on a primary timeout with the hydrated fallback key', async () => {
+    process.env.DEEPSEEK_API_KEY = 'primary-key'
+    const primary = await startMock()
+    const backup = await startMock()
+    // Never respond: the primary leg times out and the backup leg takes over.
+    primary.respond(() => {})
+    backup.respond(chatOk('A1'))
+    const reviewer = new DeepSeekReviewer(
+      makeConfig({
+        apiBase: primary.apiBase,
+        fallbackApiBase: backup.apiBase,
+        fallbackModel: 'mimo-v2.6-flash',
+        fallbackApiKey: 'hydrated-backup',
+        timeoutMs: 100,
+      }),
+    )
+
+    const result = await reviewer.review({ command: 'ls' })
+
+    expect(result.decision).toBe('allow')
+    expect(backup.requests).toHaveLength(1)
+    expect(JSON.parse(backup.requests[0]!.body).model).toBe('mimo-v2.6-flash')
+    expect(backup.requests[0]!.headers.authorization).toBe('Bearer hydrated-backup')
+    expect(reviewer.lastReview?.ok).toBe(true)
+  })
+
+  it('prefers the fallback env var over the hydrated key', async () => {
+    process.env.DEEPSEEK_API_KEY = 'primary-key'
+    process.env.AG_TEST_FALLBACK_KEY = 'env-backup'
+    try {
+      const primary = await startMock()
+      const backup = await startMock()
+      primary.respond((_req, res) => {
+        res.statusCode = 500
+        res.end('boom')
+      })
+      backup.respond(chatOk('A1'))
+      const reviewer = new DeepSeekReviewer(
+        makeConfig({
+          apiBase: primary.apiBase,
+          fallbackApiBase: backup.apiBase,
+          fallbackApiKeyEnv: 'AG_TEST_FALLBACK_KEY',
+          fallbackApiKey: 'hydrated-backup',
+        }),
+      )
+
+      await reviewer.review({ command: 'ls' })
+
+      expect(backup.requests[0]!.headers.authorization).toBe('Bearer env-backup')
+    } finally {
+      delete process.env.AG_TEST_FALLBACK_KEY
+    }
+  })
+
+  it('reviews on the backup endpoint when no primary key is configured (SPEC 0026)', async () => {
+    // No primary env var (afterEach clears it) and no stored config key: the
+    // review goes straight to the backup endpoint (ADR-0026 update).
+    const backup = await startMock()
+    backup.respond(chatOk('A1'))
+    const reviewer = new DeepSeekReviewer(
+      makeConfig({ apiBase: 'https://primary.invalid', fallbackApiBase: backup.apiBase, fallbackApiKey: 'hydrated-backup' }),
+    )
+
+    const result = await reviewer.review({ command: 'ls' })
+
+    expect(result.decision).toBe('allow')
+    expect(backup.requests[0]!.headers.authorization).toBe('Bearer hydrated-backup')
+    expect(reviewer.lastReview?.ok).toBe(true)
+  })
+})
+
 describe('DeepSeekReviewer: ping', () => {
   it('returns ok when the API replies', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret'
