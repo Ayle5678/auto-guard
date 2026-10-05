@@ -17,7 +17,9 @@ import {
   type SessionCacheLike,
 } from './cache.ts'
 import { bypassesDeterministicTrust, expandHome, isHighRiskStateChangingCommand, isLowRiskStateChangingCommand, normalizeCommand, splitShellCommand } from './command.ts'
-import { extractDeletionReason, isRemoveItemInvocation, matchPending, removeItemTargetTypeOf, type PendingDirectoryDelete } from './directory-delete.ts'
+import { extractDeletionReason, deletionTierTargets, isRemoveItemInvocation, matchPending, removeItemTargetTypeOf, type PendingDirectoryDelete } from './directory-delete.ts'
+import { tierForDeletionTargets, type DeleteTier } from './delete-tiering.ts'
+import { readReviewableScript } from './script-re-review.ts'
 import { FileTracker } from './file-tracker.ts'
 import { PersistableMap, type JsonSink } from './persist-map.ts'
 import type { HistoryStore } from './history.ts'
@@ -70,6 +72,11 @@ function hardDenyReason(classification: Classification): string {
 
 function hardDeny(classification: Classification): Decision {
   return { kind: 'deny', source: 'hard-deny', category: 'hard-deny', reason: hardDenyReason(classification) }
+}
+
+/** An LLM allow that earns a cache write-back (ADR-0021): never high risk, never a fail-closed placeholder. */
+function isCacheableAllow(decision: Decision): decision is Decision & { kind: 'allow' } {
+  return decision.kind === 'allow' && decision.risk !== 'high' && !decision.reviewerFailed
 }
 
 /** Which decide loop a segment evaluation runs in — the loops' genuine divergences (ADR-0021). */
@@ -270,7 +277,10 @@ export class GuardService {
       return hardDeny(classification)
     }
     if (classification.category === 'directory-delete') {
-      return this.decideDirectoryDelete(request, command)
+      const tiered = await this.decideTieredDirectoryDelete(request, command)
+      if (tiered) return tiered
+      // Plain-file targets fall back to the normal pipeline below (grill
+      // 2026-10-05 Round 2 Q9) — the sensitive-path gate still runs first.
     }
 
     // Shell sensitive-path guard: before any static/compound/pipeline allow, if
@@ -295,7 +305,8 @@ export class GuardService {
     if (isRemoveItemInvocation(command)) {
       const targetType = await removeItemTargetTypeOf(request.workspace, command)
       if (targetType === 'directory') {
-        return this.decideDirectoryDelete(request, command)
+        const tiered = await this.decideTieredDirectoryDelete(request, command)
+        if (tiered) return tiered
       }
       if (targetType === 'unknown') {
         return this.llmDecision(request, { command }, 'llm')
@@ -450,12 +461,14 @@ export class GuardService {
         return hardDeny(classification)
       }
       if (classification.category === 'directory-delete') {
-        return this.decideDirectoryDelete(request, command)
+        const tiered = await this.decideTieredDirectoryDelete(request, command)
+        if (tiered) return tiered
       }
       if (isRemoveItemInvocation(leaf)) {
         const targetType = await removeItemTargetTypeOf(request.workspace, leaf)
         if (targetType === 'directory') {
-          return this.decideDirectoryDelete(request, command)
+          const tiered = await this.decideTieredDirectoryDelete(request, command)
+          if (tiered) return tiered
         }
       }
     }
@@ -540,12 +553,14 @@ export class GuardService {
         return hardDeny(classification)
       }
       if (classification.category === 'directory-delete') {
-        return this.decideDirectoryDelete(request, command)
+        const tiered = await this.decideTieredDirectoryDelete(request, command)
+        if (tiered) return tiered
       }
       if (isRemoveItemInvocation(segment)) {
         const targetType = await removeItemTargetTypeOf(request.workspace, segment)
         if (targetType === 'directory') {
-          return this.decideDirectoryDelete(request, command)
+          const tiered = await this.decideTieredDirectoryDelete(request, command)
+          if (tiered) return tiered
         }
       }
     }
@@ -575,7 +590,7 @@ export class GuardService {
     // can hijack later subcommands or persist config, so the whole compound is
     // reviewed by the LLM instead of approving subcommands independently.
     if (segments.some((segment) => isHighRiskStateChangingCommand(segment))) {
-      return this.llmDecision(request, { command }, 'llm')
+      return this.llmDecisionWithAttach(request, command, command)
     }
 
     // Low-risk state changers (cd/pushd/popd) are only allowed when every
@@ -611,7 +626,7 @@ export class GuardService {
         }
       }
       if (!allPlainSafe) {
-        return this.llmDecision(request, { command }, 'llm')
+        return this.llmDecisionWithAttach(request, command, command)
       }
     }
 
@@ -636,7 +651,7 @@ export class GuardService {
       }
 
       // One unmatched subcommand: a per-segment LLM review with the write-back.
-      const decision = await this.reviewUnit(request, segment, classifyCommand(segment, this.rules))
+      const decision = await this.reviewUnit(request, segment, classifyCommand(segment, this.rules), command)
       if (decision.kind !== 'allow') return decision
       sawLlm = true
       risks.push(decision.risk)
@@ -661,7 +676,53 @@ export class GuardService {
     }
   }
 
-  private async decideDirectoryDelete(request: GuardRequest, command: string): Promise<Decision> {
+  /**
+   * The tiered entry of the directory-delete flow (ADR-0027): stat the
+   * command's deletion targets, then hand the disposition to
+   * {@link decideDirectoryDelete}. Plain-file targets return undefined so the
+   * caller falls back to the normal pipeline. Tiering happens inside the
+   * flow — classification and ADR-0012 ordering are untouched.
+   */
+  private async decideTieredDirectoryDelete(request: GuardRequest, command: string): Promise<Decision | undefined> {
+    const { tier, allPlainFiles } = await tierForDeletionTargets({
+      targets: deletionTierTargets(command, this.rules),
+      workspace: request.workspace,
+      sensitivePaths: this.rules.sensitivePaths,
+      policy: this.rules.directoryDeletePolicy,
+    })
+    if (allPlainFiles) return undefined
+    return this.decideDirectoryDelete(request, command, tier)
+  }
+
+  /**
+   * The light disposition: no reason protocol — one normal review of the
+   * whole command, its allow written back to the session slot with the short
+   * always-review TTL so a repeated cleanup loop pays no second review
+   * (grill 2026-10-05 Round 2 Q8; never a persistent entry — directories
+   * regenerate differently than today's verdict).
+   */
+  private async decideLightDirectoryDelete(request: GuardRequest, command: string): Promise<Decision> {
+    const sessionHit = this.consultMemories(request, command, { session: true })
+    if (sessionHit) return sessionHit
+    const decision = await this.llmDecision(request, { command }, 'llm')
+    const marked: Decision = {
+      ...decision,
+      reason: coreMessage(this.lang, 'deleteTierLight', { reason: decision.reason ?? 'Reviewed by LLM' }),
+    }
+    if (isCacheableAllow(marked)) {
+      this.writeSessionCache(
+        request,
+        command,
+        { kind: 'allow', risk: marked.risk, reason: marked.reason },
+        this.tuning.alwaysReviewCacheTtlMinutes * 60 * 1000,
+      )
+    }
+    return marked
+  }
+
+  private async decideDirectoryDelete(request: GuardRequest, command: string, tier: DeleteTier): Promise<Decision> {
+    if (tier === 'light') return this.decideLightDirectoryDelete(request, command)
+
     const match = matchPending(this.pendingDirectoryDeletes, request, command, this.rules)
     if (!match) {
       this.pendingDirectoryDeletes.set(buildSessionKey(request.session, request.workspace, command.toLowerCase()), { deniedAt: Date.now(), command })
@@ -687,13 +748,32 @@ export class GuardService {
 
     const decision = await this.review(
       request,
-      { command, deletionReason: reason, reasoningEffort: 'low' },
+      { command, deletionReason: reason, reasoningEffort: tier === 'strict' ? 'high' : 'low' },
       'llm',
     )
 
     // Single review per pending delete. Non-allow outcomes are resolved by a
     // human confirmation in the adapter; the pending entry is closed either way.
     this.pendingDirectoryDeletes.delete(match.key)
+    if (tier === 'strict') {
+      // The strict cap (ADR-0027): the reviewer cannot allow a root-proximate
+      // or oversized deletion alone — allow degrades to a human confirmation.
+      if (decision.kind === 'allow' && !decision.reviewerFailed) {
+        return {
+          kind: 'ask',
+          risk: decision.risk,
+          source: 'directory-delete',
+          category: 'directory-delete',
+          reason: coreMessage(this.lang, 'deleteStrictCapped', { command: truncateOneLine(command, 120) }),
+        }
+      }
+      return {
+        ...decision,
+        source: 'directory-delete',
+        category: 'directory-delete',
+        reason: coreMessage(this.lang, 'deleteTierStrict', { reason: decision.reason ?? 'Directory deletion requires human confirmation' }),
+      }
+    }
     return {
       ...decision,
       source: 'directory-delete',
@@ -852,11 +932,51 @@ export class GuardService {
    * llm-source review funnels through it — single command, whole pipeline,
    * one compound segment, sensitive-path demotion. The directory-delete
    * single-review flow calls review directly (no recheck by design).
+   *
+   * A first deny/ask on this plain-review path also gets the script
+   * attach-recheck (SPEC 0027 A3): when the unit runs a resolvable,
+   * in-limit local script, one re-review with the script text attached
+   * settles the verdict. `wholeCommand` carries the surrounding compound
+   * so relative script paths resolve through its leading `cd` segments.
    */
-  private async reviewUnit(request: GuardRequest, command: string, classification: Classification): Promise<Decision> {
-    const decision = await this.llmDecision(request, { command }, 'llm')
+  private async reviewUnit(request: GuardRequest, command: string, classification: Classification, wholeCommand = command): Promise<Decision> {
+    const decision = await this.llmDecisionWithAttach(request, command, wholeCommand)
     this.writeBackCaches(request, command, classification, decision)
     return decision
+  }
+
+  /**
+   * llmDecision plus the script attach-recheck (SPEC 0027 A3): the plain
+   * review verdict shared by reviewUnit and the whole-compound review sites.
+   * A pending-deny ask is a memory verdict, not a first review — the recheck
+   * must not hand a previously denied command a fresh window.
+   */
+  private async llmDecisionWithAttach(request: GuardRequest, command: string, wholeCommand: string): Promise<Decision> {
+    const pending = this.consultMemories(request, command, { pending: true })
+    const decision = await this.llmDecision(request, { command }, 'llm')
+    if (pending) return decision
+    return (await this.attachScriptReReview(request, command, wholeCommand, decision)) ?? decision
+  }
+
+  /**
+   * The script attach-recheck (SPEC 0027 A3): exactly one re-review with the
+   * script text in the existing script slot; its verdict is final and the
+   * cache write-back follows the unit's normal policy. Only the plain review
+   * path reaches here — sensitive demotion, the delete flow and
+   * write-then-execute call the reviewer directly, and a failed recheck
+   * keeps the first verdict (fail-closing a recheck would only double the
+   * timeout).
+   */
+  private async attachScriptReReview(request: GuardRequest, command: string, wholeCommand: string, first: Decision): Promise<Decision | undefined> {
+    if (first.kind !== 'deny' && first.kind !== 'ask') return undefined
+    if (first.reviewerFailed) return undefined
+    const interpreters = this.rules.scriptReviewInterpreters
+    if (!interpreters || interpreters.length === 0) return undefined
+    const script = await readReviewableScript({ unit: command, wholeCommand, workspace: request.workspace, interpreters })
+    if (script === undefined) return undefined
+    const recheck = await this.review(request, { command, script }, 'llm')
+    if (recheck.reviewerFailed) return undefined
+    return { ...recheck, reason: coreMessage(this.lang, 'scriptReReviewed', { reason: recheck.reason ?? 'Reviewed by LLM' }) }
   }
 
   /**
@@ -867,7 +987,7 @@ export class GuardService {
    * persistent cache.
    */
   private writeBackCaches(request: GuardRequest, command: string, classification: Classification, decision: Decision): void {
-    if (decision.kind !== 'allow' || decision.risk === 'high') return
+    if (!isCacheableAllow(decision)) return
     if (classification.category === 'always-review') {
       this.writeSessionCache(request, command, { kind: decision.kind, risk: decision.risk, reason: decision.reason }, this.tuning.alwaysReviewCacheTtlMinutes * 60 * 1000)
     }

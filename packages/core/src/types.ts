@@ -93,6 +93,29 @@ export interface DirectoryDeleteGuard {
   reason?: string
 }
 
+/**
+ * Directory-delete tiering thresholds (ADR-0027 / SPEC 0028): one data field
+ * under the rules file's top level. Strict signals judge first; light needs
+ * every target inside the workspace or a temp root and regenerable-named or
+ * trivially small; everything else is standard.
+ */
+export interface DirectoryDeletePolicy {
+  /** Directory levels below the drive root or home directory that count as root-proximate (strict). */
+  strictMaxDepth: number
+  /** File count at which a target tree is "large" (strict); the size walk stops there. */
+  largeMinFiles: number
+  /** Total bytes at which a target tree is "large" (strict). */
+  largeMinBytes: number
+  /** File count up to which a located target may qualify as light. */
+  trivialMaxFiles: number
+  /** Total bytes up to which a located target may qualify as light. */
+  trivialMaxBytes: number
+  /** Basename patterns of regenerable caches (`__pycache__`, `node_modules`, `*.egg-info`, ...) — light-eligible without a size scan. */
+  regenerableNames: string[]
+  /** Temp-zone roots treated like the workspace for light eligibility; empty means the OS temp dir. */
+  tempRoots: string[]
+}
+
 export interface RulesFile {
   version: 1
   staticAllow: PatternRule[]
@@ -104,6 +127,13 @@ export interface RulesFile {
   alwaysReview: PatternRule[]
   staticAllowGuards: StaticAllowGuard[]
   sensitivePaths: string[]
+  /**
+   * Interpreters whose local-script invocations get one script-attached
+   * re-review after a first deny/ask (SPEC 0027 A3); absent disables it.
+   */
+  scriptReviewInterpreters?: string[]
+  /** Tiering data for the directory-delete flow (ADR-0027); absent means every deletion stays standard. */
+  directoryDeletePolicy?: DirectoryDeletePolicy
 }
 
 /**

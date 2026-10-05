@@ -233,6 +233,37 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/')
 }
 
+/** Whitespace/quote-aware token split of one command segment; backslashes are ordinary characters (Windows path separators). Quotes group a span into one token. */
+export function segmentTokens(segment: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let quote: "'" | '"' | undefined
+  for (const ch of segment) {
+    if (quote) {
+      if (ch === quote) {
+        quote = undefined
+        if (current) tokens.push(current)
+        current = ''
+      } else {
+        current += ch
+      }
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      continue
+    }
+    if (ch === ' ' || ch === '\t') {
+      if (current) tokens.push(current)
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current) tokens.push(current)
+  return tokens
+}
+
 /** Best-effort expansion of a `~` prefix to the OS home directory. */
 export function expandHome(path: string): string {
   if (path === '~') return process.env.HOME ?? process.env.USERPROFILE ?? '~'

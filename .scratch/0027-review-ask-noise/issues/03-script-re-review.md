@@ -9,15 +9,16 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] deny→附审→复审 allow；ask→附审→终审 deny（stub reviewer 调用计数恰为 2）
-- [ ] allow 不触发第二次调用；reviewerFailed 不触发；敏感路径降级不触发；写后执行（script 已置）不重复触发
-- [ ] >100 行 / 二进制 / `$VAR` 路径三种不附场景：首审结论维持、只调一次
-- [ ] `cd <dir> && node 相对路径.mjs` 经前导 cd 段解析命中；解析不到文件跳过
-- [ ] 解释器清单从 defaults 数据字段读取（顶层缺省补齐语义可到达存量安装）
-- [ ] 附审留痕出现在 decision-history 详情
+- [x] deny→附审→复审 allow；ask→附审→终审 deny（stub reviewer 调用计数恰为 2）
+- [x] allow 不触发第二次调用；reviewerFailed 不触发；敏感路径降级不触发；写后执行（script 已置）不重复触发
+- [x] >100 行 / 二进制 / `$VAR` 路径三种不附场景：首审结论维持、只调一次
+- [x] `cd <dir> && node 相对路径.mjs` 经前导 cd 段解析命中；解析不到文件跳过（整条 compound 单位也识别第一个解释器段）
+- [x] 解释器清单从 defaults 数据字段读取（顶层缺省补齐语义可到达存量安装）
+- [x] 附审留痕出现在 decision-history 详情（理由前缀「经脚本附审复审」，经 lastDetail 落 decision-history）
 
 ## Comments
 
 - 与 01（提示词）无阻塞关系：01 压低首审 deny/ask 总量，03 兜住剩下确因内容未知的部分；先上 01 再上 03 观测更干净，但可并行施工。
+- 实施补充（2026-10-05）：在 spec 四类排除之外加了第五类——**pending-deny 记忆命中不触发附审**。pending ask 是"此前已拒、待人确认"的记忆裁决而非首审，若对其附审复审出 allow，会让先前被拒的脚本借附审通道绕过人工确认；故跳过（guard-service.ts `llmDecisionWithAttach` 前置 pending 查询）。

@@ -65,8 +65,13 @@ command (bash / pwsh)
   → File Tracker          write-then-execute: a freshly written script run immediately
                           is materialized and reviewed (sensitive content is not sent to the LLM)
   → Absolute blacklist    hard-deny, cannot be overridden by cache/learned/LLM
-  → Directory-delete      denied once; agent retries with [deletion reason]; a low-reasoning
-    review                LLM re-reviews exactly once; non-allow goes to a human
+  → Directory-delete      targets are stat-tiered inside the flow (ADR-0027): plain files fall back
+    review                to the normal pipeline; light tiers (regenerable caches like __pycache__ /
+                          node_modules, small temp trees inside the workspace or temp zone) skip the
+                          reason protocol and take one normal review; strict tiers (sensitive /
+                          root-proximate / oversized) keep the protocol, re-review at high reasoning
+                          and cap an LLM allow at a human ask; standard stays as ever — denied once,
+                          agent retries with [删除理由], one low-reasoning review, non-allow → human
   → Sensitive-path guard  command references .env / .ssh / *.pem … → whole command demoted
                           to LLM (never silently allowed, never cached)
   → Compound commands     split on ; && ||; most restrictive sub-verdict wins; state-changing
@@ -83,7 +88,10 @@ command (bash / pwsh)
                           commands merged into one entry; LLM denies never enter
   → Template cache        learned approvals match parameter variants (--days 7 ≈ --days 8)
   → History layer         recent low-risk allows of the same skeleton with zero denies → allow
-  → LLM fallback          unknown commands; any failure fails closed
+  → LLM fallback          unknown commands; a deny/ask on an interpreter + local-script unit
+                          (node/python/… running a resolvable file) attaches the in-limit script
+                          text (whole file ≤100 lines, ≤16 KB, decodable) and re-reviews exactly
+                          once; any failure fails closed
 ```
 
 File operations (`write` / `edit` / `read`) are gated by the sensitive-path list only: a hit is ask-only and the content never leaves the machine; everything else passes. Commands outside guard scope pass through untouched.
@@ -101,7 +109,7 @@ Each decision carries a source tag you can see in notifications: `[Allowlist]`, 
 |---|---|---|---|
 | Static allowlist | direct allow | `ls`, `git status`, `git diff`, `git commit` | no |
 | Absolute blacklist | direct deny | `rm -rf /`, `mkfs`, `dd of=/dev/...` | no |
-| Directory-delete review | agent reason + one low-reasoning LLM re-review | `rm -rf ./dist`, `Remove-Item -Recurse` | no |
+| Directory-delete review | stat-tiered: plain files → normal pipeline; light (regenerable / small, located) → one normal review; standard → agent reason + one low-reasoning re-review; strict (sensitive / root-proximate / oversized) → reason + high-reasoning re-review, LLM allow capped to a human ask | `rm -rf ./dist`, `Remove-Item -Recurse` | session-only for light allows |
 | User-confirmed | user-declared "always allow" | `git push` | no |
 | Cacheable | LLM approval cached by TTL | `npm run build`, `npm test` | yes |
 | Always-review | LLM every time; allow gets short session cache | `npm install`, `Invoke-Expression`, `curl \| bash` | session-only, 30 min |
@@ -286,7 +294,7 @@ Path-valued keys (`rulesPath`, `defaultRulesPath`, `cachePath`, `auditDbPath`, �
 
 ### Rules files
 
-Rules are eight glob-style, case-insensitive pattern lists: `staticAllow`, `hardDeny`, `directoryDelete`, `userConfirmed`, `cacheable`, `alwaysReview`, `staticAllowGuards`, `sensitivePaths`. On first run the engine provisions an editable `defaults.json` (copy of the shipped rules) into the config root; your `rules.json` lists only deltas — missing fields are merged back in. Example:
+Rules are eight glob-style, case-insensitive pattern lists: `staticAllow`, `hardDeny`, `directoryDelete`, `userConfirmed`, `cacheable`, `alwaysReview`, `staticAllowGuards`, `sensitivePaths`. Two data fields tune the newer behaviors: `scriptReviewInterpreters` (which first tokens qualify for the script attach-recheck) and `directoryDeletePolicy` (delete-tiering thresholds: `strictMaxDepth`, `largeMinFiles`/`largeMinBytes`, `trivialMaxFiles`/`trivialMaxBytes`, `regenerableNames`, `tempRoots` — empty `tempRoots` means the OS temp dir). On first run the engine provisions an editable `defaults.json` (copy of the shipped rules) into the config root; your `rules.json` lists only deltas — missing fields are merged back in. Example:
 
 ```json
 {

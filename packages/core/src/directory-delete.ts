@@ -11,7 +11,7 @@
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { buildSessionKey, splitSessionKey } from './cache.ts'
-import { normalizeCommand, normalizePath, splitShellCommand } from './command.ts'
+import { normalizeCommand, normalizePath, segmentTokens, splitShellCommand } from './command.ts'
 import { classifyCommand } from './rules.ts'
 import type { GuardRequest, RulesFile } from './types.ts'
 
@@ -35,6 +35,9 @@ const DELETE_COMMAND_WORDS = new Set(['rm', 'rd', 'rmdir', 'del', 'erase', 'remo
 
 /** cmd builtins whose `/x`-style short flags must not count as targets. */
 const WINDOWS_FLAG_DELETE_WORDS = new Set(['rd', 'rmdir', 'del', 'erase'])
+
+/** Shell wrappers whose command payload must be unwrapped before first-word target judgment (SPEC 0028 B2). */
+const WRAPPER_WORDS = new Set(['powershell', 'pwsh', 'cmd'])
 
 /** Read/write view the retry matcher needs of the pending-delete store. */
 export interface PendingDeleteStore {
@@ -272,10 +275,16 @@ function recordsSameDeletion(recordedCommand: string, targets: string[], rules: 
 export function extractDeletionTargets(command: string, rules: RulesFile): string[] {
   const collected = new Set<string>()
   for (const segment of splitShellCommand(normalizeCommand(command))) {
-    if (classifyCommand(segment, rules).category !== 'directory-delete') continue
-    for (const target of deletionTargetsFromSegment(segment)) {
-      const normalized = normalizeTargetToken(target)
-      if (normalized) collected.add(normalized)
+    if (classifyCommand(segment, rules).category === 'directory-delete') {
+      collectSegmentTargets(collected, segment)
+      continue
+    }
+    // Wrapped deletions (powershell/cmd) classify as always-review, never
+    // directory-delete — unwrap the wrapper and judge each inner statement
+    // by first word (SPEC 0028 B2), so their retries neighbor-match by
+    // target instead of stacking fresh denials.
+    for (const statement of unwrapShellWrapper(segment)) {
+      collectSegmentTargets(collected, statement)
     }
   }
   return [...collected].sort()
@@ -283,6 +292,60 @@ export function extractDeletionTargets(command: string, rules: RulesFile): strin
 
 /** Module-surface alias of {@link extractDeletionTargets} (SPEC 0019 ticket 01). */
 export const targetsOf = extractDeletionTargets
+
+/**
+ * Tier-gate target set (ADR-0027): the shared delete-target extraction plus,
+ * when it extracts nothing, the Remove-Item path — the non-recursive
+ * Remove-Item branch enters the flow by runtime stat detection and matches
+ * no enum pattern.
+ */
+export function deletionTierTargets(command: string, rules: RulesFile): string[] {
+  const targets = extractDeletionTargets(command, rules)
+  if (targets.length > 0) return targets
+  if (!isRemoveItemInvocation(command)) return []
+  const path = extractRemoveItemPath(command)
+  return path ? [path] : []
+}
+
+function collectSegmentTargets(collected: Set<string>, segment: string): void {
+  for (const target of deletionTargetsFromSegment(segment)) {
+    const normalized = normalizeTargetToken(target)
+    if (normalized) collected.add(normalized)
+  }
+}
+
+/**
+ * Inner statements of a powershell/pwsh `-Command` (any leading arguments)
+ * or `cmd /c|/k` wrapper segment, split on `;`/`&&`/`||`; empty when the
+ * segment is not a wrapper invocation. One level only.
+ */
+function unwrapShellWrapper(segment: string): string[] {
+  const tokens = segmentTokens(segment)
+  const word = (tokens[0] ?? '').toLowerCase().replace(/\.exe$/, '')
+  if (!WRAPPER_WORDS.has(word)) return []
+  const inner = innerCommandOf(segment)
+  if (!inner) return []
+  return splitShellCommand(inner)
+}
+
+/**
+ * The payload after a wrapper's `-Command`/`-c` (powershell, pwsh) or
+ * `/c`/`/k` (cmd) flag: the quoted span when the value is quoted, else the
+ * rest of the segment. Flags match as whole tokens only, so
+ * `-EncodedCommand` and friends never unwrap.
+ */
+function innerCommandOf(segment: string): string | undefined {
+  const flag = /(?:^|\s)(?:-[cC]ommand|-c|\/[cCkK])(?=\s|$)/.exec(segment)
+  if (!flag) return undefined
+  let rest = segment.slice(flag.index + flag[0].length).replace(/^\s+/, '')
+  if (rest.startsWith('"') || rest.startsWith("'")) {
+    const quote = rest[0] as '"' | "'"
+    const end = rest.indexOf(quote, 1)
+    rest = end < 0 ? rest.slice(1) : rest.slice(1, end)
+  }
+  const trimmed = rest.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
 
 /** Extract raw target tokens from one already-classified delete segment. */
 function deletionTargetsFromSegment(segment: string): string[] {
@@ -321,37 +384,6 @@ function deletionTargetsFromSegment(segment: string): string[] {
     targets.push(token)
   }
   return targets
-}
-
-/** Whitespace/quote-aware token split of one command segment; backslashes are ordinary characters (Windows path separators). */
-function segmentTokens(segment: string): string[] {
-  const tokens: string[] = []
-  let current = ''
-  let quote: "'" | '"' | undefined
-  for (const ch of segment) {
-    if (quote) {
-      if (ch === quote) {
-        quote = undefined
-        if (current) tokens.push(current)
-        current = ''
-      } else {
-        current += ch
-      }
-      continue
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch
-      continue
-    }
-    if (ch === ' ' || ch === '\t') {
-      if (current) tokens.push(current)
-      current = ''
-      continue
-    }
-    current += ch
-  }
-  if (current) tokens.push(current)
-  return tokens
 }
 
 /** Comparable shape of one deletion target: quotes and trailing separators stripped, separators unified, case-folded on Windows. */

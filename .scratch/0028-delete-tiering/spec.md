@@ -1,6 +1,6 @@
 # 0028 — 删除分级：三级门 + 剥壳修复
 
-> Status: ready-for-agent
+> Status: resolved
 > 决策依据：ADR-0012（递归删除不变式：分类优先序冻结，分级以数据表达、只改流内处置）、ADR-0027（本 spec 落的删除分级决策）、ADR-0013（顶层字段补齐语义：policy 块可到达存量安装）、ADR-0021（删除流单次复审纪律）、grill-log 2026-10-05 两轮。
 
 ## Problem Statement

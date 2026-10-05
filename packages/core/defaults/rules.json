@@ -988,5 +988,30 @@
     "/etc/",
     "/var/lib/private/",
     "*/auto-guard/config.json"
-  ]
+  ],
+  "scriptReviewInterpreters": [
+    "node",
+    "python",
+    "python3",
+    "py",
+    "deno",
+    "bun",
+    "tsx"
+  ],
+  "directoryDeletePolicy": {
+    "strictMaxDepth": 2,
+    "largeMinFiles": 1000,
+    "largeMinBytes": 524288000,
+    "trivialMaxFiles": 200,
+    "trivialMaxBytes": 52428800,
+    "regenerableNames": [
+      "__pycache__",
+      "node_modules",
+      ".pytest_cache",
+      ".mypy_cache",
+      ".ruff_cache",
+      "*.egg-info"
+    ],
+    "tempRoots": []
+  }
 }

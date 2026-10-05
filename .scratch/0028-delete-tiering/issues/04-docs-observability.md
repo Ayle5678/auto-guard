@@ -4,13 +4,14 @@
 
 **Blocked by:** 02（分级接线落地后文档才有所指）；软依赖 0027/03（脚本附审说明）。
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] usage 文档：三级删除处置与 directoryDeletePolicy 阈值调法、脚本附审触发条件与边界（含"敏感路径内容永不送 LLM"重申）
-- [ ] troubleshooting：powershell 包裹删除理由已能一次接上（移除/改写相关旧 workaround，如有）
-- [ ] 观测口径落盘（统计脚本片段或命令序列进 docs），跑出基线数并记录在本票 Comments
-- [ ] CONTEXT.md 术语与实现无漂移（脚本附审/删除分级/根邻近三词条核对）
+- [x] usage 文档：三级删除处置与 directoryDeletePolicy 阈值调法、脚本附审触发条件与边界（含"敏感路径内容永不送 LLM"重申）——usage.md §3.6 + README 决策管线两处同步
+- [x] troubleshooting：powershell 包裹删除理由已能一次接上（旧版无既有 workaround 条目，新增现状说明 + 旧 pending 24h 自过期提示）
+- [x] 观测口径落盘（docs/observability.md：两个可重跑聚合 + 验收线），跑出基线数并记录在本票 Comments
+- [x] CONTEXT.md 术语与实现无漂移（脚本附审/删除分级/根邻近三词条核对）
 
 ## Comments
 
 - 基线（2026-10-05 调研，decision-history 30 天窗口）：llm-ask 203 次 / 28,322 决策（2.5%，月度趋势 1.0→1.7→2.5）；删除流 143 次决策 = 80 首击要理由 + 11 理由未接上 + 约 50 复审（35 allow / 13 ask）。
+- 基线（2026-10-05 实施日复跑，zcode 宿主，observability.md 同口径）：LLM 层裁决 10,231，llm-ask 202（LLM 层内 1.97%）；删除流 141 = 79 首击要理由 + 11 理由未接上，协议往返占 63.8%。验收线：14 天后 llm-ask ≤1.2%、协议往返 ≤32%、严格级 100% 人工确认。

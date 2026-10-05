@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 替换后按语言拼装的系统提示词 pin（llm-lang 用例）更新为有意快照，双语两份一致
-- [ ] 既有 core 测试全绿（无行为断言变化；语义变化靠线上 ask 率观测，不在本票断言）
-- [ ] 提示词其余行逐字节不变（裁决码契约 ADR-0020 部分零触碰）
+- [x] 替换后按语言拼装的系统提示词 pin（llm-lang 用例）更新为有意快照，双语两份一致
+- [x] 既有 core 测试全绿（无行为断言变化；语义变化靠线上 ask 率观测，不在本票断言）
+- [x] 提示词其余行逐字节不变（裁决码契约 ADR-0020 部分零触碰）
 
 ## Comments
 

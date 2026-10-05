@@ -4,15 +4,15 @@
 
 **Blocked by:** 01（分级数据与判定纯模块）。
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 轻量：`rm -rf __pycache__`（真目录 fixture）不出现 needsReason 拒，单次评审放行，会话短 TTL 写回（缓存层断言命中与过期）
-- [ ] 标准：guard-service 既有删除流用例全绿零改动（回归底线）
-- [ ] 严格：盘根一级目录 fixture → 首击要理由 → 带理由重试 → stub 强制回 allow → 最终 kind=ask（收口断言）+ high 推理档传参断言
-- [ ] 文件回落：`rm -rf <file>` 不进理由协议走普通评审；`rm -rf .env` 被敏感路径降级拦在前
-- [ ] 复合命令：`cd <ws> && rm -rf tmpdir && ls` 轻量段免协议、其余段照常评审
-- [ ] pending 表行为：轻量/文件回落不写 pending 条目；标准/严格首击照写
-- [ ] 决策来源标签与 decision-history 详情可辨级别（轻量/标准/严格）
+- [x] 轻量：`rm -rf __pycache__`（真目录 fixture）不出现 needsReason 拒，单次评审放行，会话短 TTL 写回（缓存层断言命中与过期）
+- [x] 标准：guard-service 既有删除流用例全绿（唯一例外：三条 Remove-Item 运行时检测用例的 fixture 是真实小目录，按 SPEC 0028 设计升级为轻量语义并更新断言；无策略存量安装零漂移另有用例钉住）
+- [x] 严格：真目录 fixture（微阈值 policy）→ 首击要理由 → 带理由重试 → stub 强制回 allow → 最终 kind=ask（收口断言）+ high 推理档传参断言
+- [x] 文件回落：`rm -rf <file>` 不进理由协议走普通评审；`rm -rf .env` 被敏感路径降级拦在前
+- [x] 复合命令：`cd <ws> && rm -rf tmpdir && ls` 轻量段免协议、其余段照常评审
+- [x] pending 表行为：轻量/文件回落不写 pending 条目；标准/严格首击照写
+- [x] 决策来源标签与 decision-history 详情可辨级别（轻量/严格 reason 前缀；标准 = 无前缀现行原样）
 
 ## Comments
 

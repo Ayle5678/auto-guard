@@ -1,6 +1,6 @@
 # 0027 — 审查降噪：ask 提示词校准 + 脚本附审 + 用户规则热修
 
-> Status: ready-for-agent
+> Status: resolved
 > 决策依据：ADR-0020（裁决码契约；系统提示词是其上层指令文本）、ADR-0024（两评审通道共享同一 prompt，直连/宿主流式同受影响）、ADR-0013（规则双层文件：数组项不自动到达存量用户侧，热修须直接改用户 rules.json）、grill-log 2026-10-05 两轮。
 
 ## Problem Statement

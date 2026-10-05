@@ -4,12 +4,12 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 五条模式追加进用户 staticAllow（带一句话 reason，沿用现有条目风格）
-- [ ] 用 decision-history 实录形态做 matchPattern 断言全命中：`taskkill //PID 40136 //F`、`curl -s -m 3 http://127.0.0.1:8600/health`、`node scripts/registry-offline.mjs 2>&1`
-- [ ] 不误放行断言：`taskkill //IM explorer.exe //F`、`curl https://外网`、`node /绝对路径/外 部脚本` 均不命中
-- [ ] 用户已知悉并接受权衡：rules.json 全局生效（跨 workspace 放行 `scripts/`）；`powershell -Command*` 在 alwaysReview 优先级更高，Stop-Process 包裹型仍靠提示词（已知残余）
+- [x] 五条模式追加进用户 staticAllow（带一句话 reason，沿用现有条目风格）——已写入 `~/.zcode/auto-guard/rules.json`（130 条 staticAllow）
+- [x] 用 decision-history 实录形态做 matchPattern 断言全命中：`taskkill //PID 40136 //F`、`curl -s -m 3 http://127.0.0.1:8600/health`、`node scripts/registry-offline.mjs 2>&1`（tests/user-rules-hotfix.spec.ts，含分类端到端）
+- [x] 不误放行断言：`taskkill //IM explorer.exe //F`、`curl https://外网`、`node /绝对路径/外部脚本` 均不命中
+- [x] 用户已知悉并接受权衡：rules.json 全局生效（跨 workspace 放行 `scripts/`）；`powershell -Command*` 在 alwaysReview 优先级更高，Stop-Process 包裹型仍靠提示词（已知残余）
 
 ## Comments
 
