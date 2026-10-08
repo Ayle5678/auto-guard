@@ -184,6 +184,11 @@ describe('commands: examine + optimize groups', () => {
     })
   }
 
+  /** ISO timestamp `days` before now — fixed calendar dates rot out of the 60-day learn window. */
+  function daysAgoIso(days: number): string {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  }
+
   function learnedPatterns(path: string): string[] {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { cacheable: Array<{ pattern: string }> }
     return parsed.cacheable.map((rule) => rule.pattern)
@@ -201,12 +206,12 @@ describe('commands: examine + optimize groups', () => {
       config.analyzeRowLimit = 4
       const rules = makeRules()
 
-      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, daysAgoIso(50 - i))
       expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
       expect(learnedPatterns(config.learnedRulesPath)).toContain('npm run build *')
 
       // Later rows push batch 1 out of the 4-row window; its rule must survive.
-      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, daysAgoIso(20 - i))
       expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
       const patterns = learnedPatterns(config.learnedRulesPath)
       expect(patterns).toContain('git log --oneline *')
@@ -229,8 +234,8 @@ describe('commands: examine + optimize groups', () => {
       config.analyzeRowLimit = 4
       const rules = makeRules()
 
-      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
-      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, daysAgoIso(50 - i))
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, daysAgoIso(20 - i))
       expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
       const patterns = learnedPatterns(config.learnedRulesPath)
       expect(patterns).toContain('npm run build *')
@@ -253,12 +258,12 @@ describe('commands: examine + optimize groups', () => {
       config.analyzeRowLimit = 4
       const rules = makeRules()
 
-      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, `2026-08-0${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `npm run build ${100 + i}`, daysAgoIso(50 - i))
       expect(analyzeLearnedRules({ config, rules, audit }).ok).toBe(true)
       // Learned rules lost (the overwrite bug) and only later rows sit inside
       // the window: only a full re-analysis can recover the early pattern.
       rmSync(config.learnedRulesPath)
-      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, `2026-08-1${i + 1}T00:00:00.000Z`)
+      for (let i = 0; i < 4; i++) seedAllow(audit, `git log --oneline ${i + 1}`, daysAgoIso(20 - i))
       const result = analyzeLearnedRules({ config, rules, audit }, 'zh', { full: true })
       expect(result.ok).toBe(true)
       const patterns = learnedPatterns(config.learnedRulesPath)
