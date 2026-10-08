@@ -64,8 +64,12 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 命令（bash / pwsh）
   → 写后执行追踪        刚写入的脚本被立即执行时物化脚本内容送审（内容疑似敏感则不送 LLM）
   → 绝对黑名单          hard-deny，缓存/学习规则/LLM 均不可推翻
-  → 目录删除复核        先拒一次；agent 带 [删除理由] 重试；低推理 LLM 复核恰好一次；
-                        非 allow 一律转人工
+  → 目录删除复核        流程内按 stat 信号三级分级（ADR-0027）：普通文件回落常规管线；轻量级
+                        （工作区或系统临时区内、可再生缓存名如 __pycache__ / node_modules 或
+                        小规模临时树）免理由协议、走一次普通评审；严格级（命中敏感路径 /
+                        根邻近 / 超大规模）保留协议、high 推理复核且 LLM 结论上限收为人工
+                        ask；标准级保持原样——先拒一次、agent 带 [删除理由] 重试、低推理
+                        LLM 复核恰好一次、非 allow 转人工
   → 敏感路径守卫        命令引用 .env / .ssh / *.pem … 时整条降级 LLM（不静默放行、不写缓存）
   → 复合命令            按 ; && || 拆分，取最严子裁决；状态改变命令（export、cd、trap、
                         git config …）强制整条送 LLM
@@ -78,7 +82,9 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
                         无容量上限（TTL 过期即清），完全相同命令合并为单条；LLM deny 永不入内
   → 模板缓存            学习放行按骨架匹配，参数变体可命中（--days 7 ≈ --days 8）
   → 历史判断层          同一骨架近期多次低风险放行且零拒绝 → 免审放行
-  → LLM 兜底            未分类命令；任何故障 fail-closed
+  → LLM 兜底            未分类命令；"解释器 + 本地脚本"单元（node/python/… 运行可解析文件）
+                        首审 deny/ask 时附带合限脚本文本（整文件 ≤100 行、≤16 KB、可解码）
+                        复核恰好一次；任何故障 fail-closed
 ```
 
 文件操作（`write` / `edit` / `read`）只过敏感路径门禁：命中即 ask 且内容永不出本机，其余直接放行。守卫范围之外的工具调用原样透传。
@@ -96,7 +102,7 @@ node packages/tui/src/tui.ts                 # 同一套命令面的全屏 TUI
 |---|---|---|---|
 | 静态白名单 | 直接放行 | `ls`、`git status`、`git diff`、`git commit` | 否 |
 | 绝对黑名单 | 直接拒绝 | `rm -rf /`、`mkfs`、`dd of=/dev/...` | 否 |
-| 目录删除复核 | agent 理由 + 低推理 LLM 复核一次 | `rm -rf ./dist`、`Remove-Item -Recurse` | 否 |
+| 目录删除复核 | 按 stat 分级：普通文件 → 常规管线；轻量（可再生 / 小规模、位置安全）→ 一次普通评审；标准 → agent 理由 + 低推理 LLM 复核一次；严格（敏感 / 根邻近 / 超大规模）→ 理由 + high 推理复核，LLM 结论上限收为人工 ask | `rm -rf ./dist`、`Remove-Item -Recurse` | 轻量放行仅本会话 |
 | 用户预授权 | 用户主动声明"永远放行" | `git push` | 否 |
 | 可缓存类 | LLM 放行后按 TTL 缓存 | `npm run build`、`npm test` | 是 |
 | 必审类 | 每次都过 LLM；allow 只进短时会话缓存 | `npm install`、`Invoke-Expression`、`curl \| bash` | 仅会话 30 分钟 |
@@ -282,7 +288,7 @@ auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --propagate-key  
 
 ### 规则文件
 
-规则是八类大小写不敏感的 glob 模式列表：`staticAllow`、`hardDeny`、`directoryDelete`、`userConfirmed`、`cacheable`、`alwaysReview`、`staticAllowGuards`、`sensitivePaths`。首次运行时引擎把出厂规则复制为可编辑的 `defaults.json` 播种到配置根；你的 `rules.json` 只写增量——缺失字段自动合并补齐。示例：
+规则是八类大小写不敏感的 glob 模式列表：`staticAllow`、`hardDeny`、`directoryDelete`、`userConfirmed`、`cacheable`、`alwaysReview`、`staticAllowGuards`、`sensitivePaths`。两个数据字段调节新行为：`scriptReviewInterpreters`（哪些首 token 有资格触发脚本附审）与 `directoryDeletePolicy`（删除分级阈值：`strictMaxDepth`、`largeMinFiles`/`largeMinBytes`、`trivialMaxFiles`/`trivialMaxBytes`、`regenerableNames`、`tempRoots`——`tempRoots` 为空即系统临时目录）。首次运行时引擎把出厂规则复制为可编辑的 `defaults.json` 播种到配置根；你的 `rules.json` 只写增量——缺失字段自动合并补齐。示例：
 
 ```json
 {
