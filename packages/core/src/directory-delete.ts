@@ -87,7 +87,10 @@ export function matchPending(
     if (isExpiredPendingDelete(entry, now)) continue
     const parts = splitSessionKey(neighborKey)
     if (!sameWorkspaceRoot(parts.workspace, request.workspace)) continue
-    if (!recordsSameDeletion(parts.command, targets, rules)) continue
+    // The key lowercases the command for exact-retry lookup, but POSIX target
+    // equality is case-sensitive — extract from the recorded original-case
+    // command when the entry carries one (legacy entries fall back to the key).
+    if (!recordsSameDeletion(entry.command ?? parts.command, targets, rules)) continue
     if (!best || entry.deniedAt > best.entry.deniedAt) best = { key: neighborKey, entry }
   }
   return best
