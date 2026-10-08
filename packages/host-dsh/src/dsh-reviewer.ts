@@ -127,15 +127,20 @@ export class DshLlmReviewer implements LlmReviewer {
     }
   }
 
-  /** Direct-endpoint branch: delegate to the core direct channel (ADR-0024). */
+  /** Direct-endpoint branch: delegate to the core direct channel (ADR-0024), backup endpoint included (ADR-0026 update). */
   private async reviewDirect(request: LlmReviewRequest): Promise<LlmReviewResult> {
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
-    if (!apiKey) {
+    const fallbackApiKey =
+      (this.config.fallbackApiKeyEnv && process.env[this.config.fallbackApiKeyEnv]) || this.config.fallbackApiKey || undefined
+    const backup = this.config.fallbackApiBase?.trim()
+    // No primary key of its own: review straight on the backup endpoint when one is usable.
+    const usableBackup = Boolean(backup && backup !== this.config.apiBase.trim() && fallbackApiKey)
+    if (!apiKey && !usableBackup) {
       this.lastReview = { ok: false, at: Date.now(), error: `missing ${this.config.apiKeyEnv}` }
       throw new Error(`missing ${this.config.apiKeyEnv}`)
     }
     try {
-      const result = await directChatReview(this.config, this.lang, request, apiKey)
+      const result = await directChatReview(this.config, this.lang, request, apiKey ?? '', fallbackApiKey)
       this.lastReview = { ok: true, at: Date.now() }
       return result
     } catch (error) {

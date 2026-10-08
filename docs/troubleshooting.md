@@ -34,6 +34,12 @@
 - Qoder 的 hooks 配置在 IDE / CLI 入口间共享：CLI 若支持同名事件也会执行本守卫——接受的副作用，不另做适配。
 - `delete_file` 工具按单文件 bash `rm "<路径>"` 合成守卫（与真实 bash `rm` 同流）；递归目录删除仍走 bash `rm -rf` 的两段式复核。
 
+## powershell / cmd 包裹的删除反复要理由（已修复，SPEC 0028）
+
+- 症状（旧版）：`powershell -Command "Remove-Item 'C:\…' -Recurse -Force"` 被拦后，重试带 `[删除理由]` 仍再次被要理由——目标提取只认段首删除词，包裹形态提不出目标，邻居匹配接不上（2026-09-30 六连拒实录）。
+- 现行为：目标提取先剥 powershell/pwsh（任意参数 + `-Command`）与 `cmd /c|/k` 包装，内层按 `;` / `&&` 拆语句逐条提目标——同目标裸 `rm` 带理由重试一次即接上协议。升级后旧 pending 记录 24 小时自动过期，无需清理。
+- 删除还分级了（ADR-0027）：可再生缓存与小临时目录免理由直接评审；盘根/家目录浅层或超大规模的删除，即使评审放行也必须人工确认——这是设计不是误拦。分级阈值在 defaults.json 的 `directoryDeletePolicy` 可调，见 usage 3.6。
+
 ## 权限被宿主配置默认禁用
 
 - 守卫要写宿主配置文件（pi 的 `settings.json`、zcode 的 `config.json`、claude 的 `settings.json`、opencode 的 `opencode.json`、qoder 的 `settings.json`）。若宿主处于"只读/安全模式"或配置文件被锁定（宿主正在运行且缓存了配置），写入会失败或被宿主下次启动覆盖。

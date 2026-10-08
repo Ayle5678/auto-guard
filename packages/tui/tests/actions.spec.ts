@@ -140,3 +140,58 @@ describe('saveWizard success path', () => {
     expect(saved.model).toBe('new-model')
   })
 })
+
+describe('saveFallbackWizard: global backup endpoint (ADR-0026 update)', () => {
+  it('writes config + fallback key to every seeded root, skips unseeded and absent hosts', async () => {
+    const { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { saveFallbackWizard } = await import('../src/actions.ts')
+    const { hasStoredFallbackApiKey } = await import('@auto-guard/core')
+    const home = mkdtempSync(join(tmpdir(), 'ag-tui-fbwiz-'))
+    // zcode + claude seeded; pi installed but never ran; qoder not installed.
+    for (const dir of ['.zcode', '.claude']) {
+      const root = join(home, dir, 'auto-guard')
+      mkdirSync(root, { recursive: true })
+      writeFileSync(join(root, 'config.json'), JSON.stringify({ apiBase: 'https://old', model: 'old-model' }), 'utf8')
+    }
+    mkdirSync(join(home, '.pi'), { recursive: true })
+
+    const { lines, synced } = saveFallbackWizard({ base: 'https://api.deepseek.com', model: 'deepseek-v4-flash', key: 'sk-backup-000000' }, 'zh', {
+      home,
+      exists: existsSync,
+    })
+
+    expect(synced).toBe(2)
+    expect(lines).toHaveLength(2)
+    for (const dir of ['.zcode', '.claude']) {
+      const root = join(home, dir, 'auto-guard')
+      const saved = JSON.parse(readFileSync(join(root, 'config.json'), 'utf8'))
+      expect(saved.fallbackApiBase).toBe('https://api.deepseek.com')
+      expect(saved.fallbackModel).toBe('deepseek-v4-flash')
+      expect(hasStoredFallbackApiKey(root)).toBe(true)
+      // The primary endpoint is untouched.
+      expect(saved.apiBase).toBe('https://old')
+      expect(saved.model).toBe('old-model')
+    }
+    expect(existsSync(join(home, '.pi', 'auto-guard', 'config.json'))).toBe(false)
+  })
+
+  it('empty base/model keep each root own values; only the key propagates', async () => {
+    const { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { saveFallbackWizard } = await import('../src/actions.ts')
+    const home = mkdtempSync(join(tmpdir(), 'ag-tui-fbwiz2-'))
+    const root = join(home, '.zcode', 'auto-guard')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, 'config.json'), JSON.stringify({ fallbackApiBase: 'https://keep-me', fallbackModel: 'keep-model' }), 'utf8')
+
+    const { synced } = saveFallbackWizard({ base: '', model: '', key: 'sk-backup-000000' }, 'zh', { home, exists: existsSync })
+
+    expect(synced).toBe(1)
+    const saved = JSON.parse(readFileSync(join(root, 'config.json'), 'utf8'))
+    expect(saved.fallbackApiBase).toBe('https://keep-me')
+    expect(saved.fallbackModel).toBe('keep-model')
+  })
+})

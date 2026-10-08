@@ -238,13 +238,23 @@ function resolveInput(state: AppState): { state: AppState; effects: Effect[] } {
       return { state: { ...state, ...close }, effects: [{ type: 'run', run: mgmt(['set', 'set-api', 'base', value.trim()]) }] }
     case 'set-api-model':
       return { state: { ...state, ...close }, effects: [{ type: 'run', run: mgmt(['set', 'set-api', 'model', value.trim()]) }] }
+    case 'set-api-fallback-base':
+      return { state: { ...state, ...close }, effects: [{ type: 'run', run: mgmt(['set', 'set-api', 'fallback-base', value.trim()]) }] }
+    case 'set-api-fallback-model':
+      return { state: { ...state, ...close }, effects: [{ type: 'run', run: mgmt(['set', 'set-api', 'fallback-model', value.trim()]) }] }
     case 'wizard-base': {
       const wizard = { ...state.wizard!, base: value.trim() }
+      if (wizard.slot === 'fallback') {
+        // The backup wizard presets the model from the current root's fallbackModel.
+        const modelPreset = rootSummary(state)?.config?.fallbackModel ?? ''
+        return { state: { ...state, wizard, input: wizardInput('wizard-model', t(state.lang, 'wizFbModel', { value: modelPreset }), modelPreset) }, effects: [] }
+      }
       return { state: { ...state, wizard, input: wizardInput('wizard-model', t(state.lang, 'wizModel', { value: wizard.model }), wizard.model) }, effects: [] }
     }
     case 'wizard-model': {
       const wizard = { ...state.wizard!, model: value.trim() }
-      return { state: { ...state, wizard, input: wizardInput('wizard-key', t(state.lang, 'wizKey'), '', true) }, effects: [] }
+      const keyPrompt = wizard.slot === 'fallback' ? t(state.lang, 'wizFbKey') : t(state.lang, 'wizKey')
+      return { state: { ...state, wizard, input: wizardInput('wizard-key', keyPrompt, '', true) }, effects: [] }
     }
     case 'wizard-key': {
       const wizard = { ...state.wizard!, key: value }
@@ -334,12 +344,15 @@ function wizardReviewRouting(state: AppState, key: KeyEvent): { state: AppState;
   if (key.name === 'escape') return { state: { ...state, wizard: null }, effects: [] }
   if (key.name !== 'enter') return { state, effects: [] }
   const summary = rootSummary(state)
+  const config = summary?.config
+  const fallback = wizard.slot === 'fallback'
   const input: WizardInput = {
+    slot: wizard.slot,
     base: wizard.base,
     model: wizard.model,
     key: wizard.key,
-    currentBase: summary?.config?.apiBase ?? '',
-    currentModel: summary?.config?.model ?? '',
+    currentBase: fallback ? config?.fallbackApiBase ?? '' : config?.apiBase ?? '',
+    currentModel: fallback ? config?.fallbackModel ?? '' : config?.model ?? '',
   }
   const result = validateWizard(input)
   if (!result.ok) {
@@ -460,12 +473,12 @@ function listScreenKey(state: AppState, screen: ListScreen, key: KeyEvent): { st
   if (key.name === 'enter' || key.name === 'space') {
     const action = actions[cursor]
     if (!action || action.header) return { state, effects: [] }
-    if (action.wizard) return openWizard(state)
+    if (action.wizard) return openWizard(state, action.wizard === 'fallback' ? 'fallback' : 'primary')
     if (action.ask) {
       return {
         state: {
           ...state,
-          input: { owner: action.ask.owner, prompt: action.ask.prompt, model: presetModel(action.ask.preset ?? ''), preset: action.ask.preset },
+          input: { owner: action.ask.owner, prompt: action.ask.prompt, model: presetModel(action.ask.preset ?? '', action.ask.masked ?? false), preset: action.ask.preset },
         },
         effects: [],
       }
@@ -491,27 +504,35 @@ function listScreenKey(state: AppState, screen: ListScreen, key: KeyEvent): { st
 function dangerMessage(lang: Lang, actionId: string): string {
   if (actionId === 'clear-all') return t(lang, 'confirmClearAll')
   if (actionId === 'clear-key') return t(lang, 'confirmClearKey')
+  if (actionId === 'clear-fallback-key') return t(lang, 'confirmClearFallbackKey')
   return t(lang, 'confirmRollback')
 }
 
-function presetModel(preset: string): ReturnType<typeof emptyInput> {
-  const model = emptyInput()
+function presetModel(preset: string, masked = false): ReturnType<typeof emptyInput> {
+  const model = emptyInput(masked)
   model.value = preset
   model.cursor = [...preset].length
   return model
 }
 
-function openWizard(state: AppState): { state: AppState; effects: Effect[] } {
+function openWizard(state: AppState, slot: 'primary' | 'fallback' = 'primary'): { state: AppState; effects: Effect[] } {
   const summary = rootSummary(state)
+  const config = summary?.config
+  const presetBase = slot === 'fallback' ? config?.fallbackApiBase ?? '' : config?.apiBase ?? ''
   const wizard = {
+    slot,
     step: 'base' as const,
     base: '',
     model: '',
     key: '',
-    envWarning: summary?.keyEnvName && process.env[summary.keyEnvName] ? t(state.lang, 'wizEnvWarning', { name: summary.keyEnvName }) : undefined,
+    envWarning:
+      slot === 'primary' && summary?.keyEnvName && process.env[summary.keyEnvName]
+        ? t(state.lang, 'wizEnvWarning', { name: summary.keyEnvName })
+        : undefined,
   }
+  const basePrompt = slot === 'fallback' ? t(state.lang, 'wizFbBase', { value: presetBase }) : t(state.lang, 'wizBase', { value: presetBase })
   return {
-    state: { ...state, wizard, input: wizardInput('wizard-base', t(state.lang, 'wizBase', { value: summary?.config?.apiBase ?? '' }), summary?.config?.apiBase ?? '') },
+    state: { ...state, wizard, input: wizardInput('wizard-base', basePrompt, presetBase) },
     effects: [],
   }
 }
@@ -632,6 +653,14 @@ function renderBody(state: AppState, bodyHeight: number): Row[] {
 export function wizardReviewLine(state: AppState): string {
   const wizard = state.wizard!
   const summary = rootSummary(state)
+  const config = summary?.config
+  if (wizard.slot === 'fallback') {
+    return t(state.lang, 'wizFbReview', {
+      base: wizard.base || config?.fallbackApiBase || '',
+      model: wizard.model || config?.fallbackModel || '',
+      masked: maskKey(wizard.key.trim()),
+    })
+  }
   return t(state.lang, 'wizReview', {
     base: wizard.base || summary?.config?.apiBase || '',
     model: wizard.model || summary?.config?.model || '',

@@ -2,7 +2,18 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { clearApiKey, hasStoredApiKey, hydrateApiKey, loadApiKey, saveApiKey } from '../src/key-store.ts'
+import {
+  clearApiKey,
+  clearFallbackApiKey,
+  hasStoredApiKey,
+  hasStoredFallbackApiKey,
+  hydrateApiKey,
+  hydrateFallbackApiKey,
+  loadApiKey,
+  loadFallbackApiKey,
+  saveApiKey,
+  saveFallbackApiKey,
+} from '../src/key-store.ts'
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'ag-key-'))
@@ -46,6 +57,64 @@ describe('key-store', () => {
     saveApiKey(dir, 'sk-test-1234567890')
     writeFileSync(join(dir, 'api-key.json'), '{broken', { encoding: 'utf8' })
     expect(loadApiKey(dir)).toBeUndefined()
+  })
+})
+
+describe('fallback key slot (SPEC 0025)', () => {
+  it('stores and loads the backup key independently of the primary slot', () => {
+    const dir = tempDir()
+    saveApiKey(dir, 'sk-primary-000000')
+    saveFallbackApiKey(dir, 'sk-backup-000000')
+    expect(hasStoredApiKey(dir)).toBe(true)
+    expect(hasStoredFallbackApiKey(dir)).toBe(true)
+    expect(loadApiKey(dir)).toBe('sk-primary-000000')
+    expect(loadFallbackApiKey(dir)).toBe('sk-backup-000000')
+  })
+
+  it('clears only the fallback slot', () => {
+    const dir = tempDir()
+    saveApiKey(dir, 'sk-primary-000000')
+    saveFallbackApiKey(dir, 'sk-backup-000000')
+    clearFallbackApiKey(dir)
+    expect(hasStoredFallbackApiKey(dir)).toBe(false)
+    expect(loadFallbackApiKey(dir)).toBeUndefined()
+    expect(loadApiKey(dir)).toBe('sk-primary-000000')
+  })
+})
+
+describe('hydrateFallbackApiKey: env > encrypted storage (no legacy layer)', () => {
+  const base = (fallbackApiKeyEnv?: string) =>
+    ({
+      enabled: true,
+      ...(fallbackApiKeyEnv ? { fallbackApiKeyEnv } : {}),
+    }) as unknown as Parameters<typeof hydrateFallbackApiKey>[0]
+
+  it('prefers the env var and hydrates nothing from storage', () => {
+    process.env.AG_TEST_FALLBACK_KEY = 'sk-env-wins'
+    try {
+      const config = base('AG_TEST_FALLBACK_KEY')
+      hydrateFallbackApiKey(config, () => 'sk-stored')
+      expect(config.fallbackApiKey).toBeUndefined()
+    } finally {
+      delete process.env.AG_TEST_FALLBACK_KEY
+    }
+  })
+
+  it('hydrates from encrypted storage when no env var', () => {
+    const config = base('AG_TEST_FALLBACK_KEY')
+    hydrateFallbackApiKey(config, () => 'sk-stored')
+    expect(config.fallbackApiKey).toBe('sk-stored')
+  })
+
+  it('skips the env lookup when fallbackApiKeyEnv is unset', () => {
+    process.env.AG_TEST_FALLBACK_KEY = 'sk-env-wins'
+    try {
+      const config = base()
+      hydrateFallbackApiKey(config, () => 'sk-stored')
+      expect(config.fallbackApiKey).toBe('sk-stored')
+    } finally {
+      delete process.env.AG_TEST_FALLBACK_KEY
+    }
   })
 })
 

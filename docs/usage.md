@@ -418,6 +418,20 @@ auto-guard sync-api https://api.deepseek.com deepseek-v4-flash --propagate-key  
 - 仅统一入口 `auto-guard` 提供（能力门控，运行时入口命令面不变）；TUI 密钥屏也有「复制API到其他host」入口（§6），或 `:` 命令模式直通。
 - 已知限制：DSH 设置服务在线时以设置层为主存储，config.json 补丁可能被其下次设置同步覆盖。
 
+### 3.6 删除分级与脚本附审（行为说明，SPEC 0027 / 0028）
+
+**目录删除三级处置**：递归删除仍一律进入删除复核流（不变式不变），流内先对目标做 stat 分级：
+
+- **轻量**——全部目标在 workspace 或系统临时区内，且是可再生缓存名（`__pycache__`、`node_modules`、`.pytest_cache`、`.mypy_cache`、`.ruff_cache`、`*.egg-info`）或小规模（≤200 文件且 ≤50MB）：**免理由协议**，整条命令转一次普通评审；放行写会话短缓存（默认 30 分钟，与 always-review 同 TTL），反复清理不再复审。
+- **标准**——其余目标：现行流程原样（首击要 `[删除理由]` + 单次低推理复审 + 非 allow 转人工）。
+- **严格**——任一目标命中敏感路径、根邻近（盘根或家目录之下 ≤2 级）或超大规模（≥1000 文件或 ≥500MB）：理由协议照走 + **高推理**复审 + **LLM 的 allow 不生效**，结论收口为人工确认——高层大目录永远过一次人的手。
+- **文件回落**——目标全是普通文件（如 `rm -rf 某文件`）：不进理由协议，回归普通评审；`rm -rf .env` 这类敏感文件仍被敏感路径门先拦下送审。
+- 目标不存在或 stat 失败：保守按标准流程。多目标取最严。
+
+阈值全部在 defaults.json 顶层 `directoryDeletePolicy` 可调（`strictMaxDepth` / `largeMinFiles` / `largeMinBytes` / `trivialMaxFiles` / `trivialMaxBytes` / `regenerableNames` / `tempRoots`，tempRoots 留空即系统临时区）；用户 rules.json 可整体覆盖。
+
+**脚本附审**：普通 LLM 审查路径上，命令呈"解释器 + 本地脚本"形态（`node/python/python3/py/deno/bun/tsx` + 可解析到的本地文件，清单在 defaults 顶层 `scriptReviewInterpreters` 可调）且首审结论为 deny/ask 时，守卫自动读取**合限**的脚本全文（整文件 ≤100 行且 ≤16KB 且可解码文本；任一超限维持首审结论，不截断）附给评审员**复审一次**，复审结论即终审，理由前缀「经脚本附审复审」。相对路径按 workspace 或复合命令前导 `cd` 段解析；任何位置均可（含系统 Temp）。**敏感路径降级审查永远不附**——密钥文件内容不经这条路径离开本机（内容永不送 LLM 纪律不变）；写后执行（内容已在）、目录删除复核、评审器故障同样不触发。
+
 ---
 
 ## 4. 首次使用完整流程
@@ -446,6 +460,7 @@ auto-guard remove --host zcode
 ## 5. 相关文档
 
 - [故障排查](troubleshooting.md)：检测不到宿主 / hooks 未生效 / 权限被宿主默认禁用 / claude hooks 被切换器抹掉 / opencode 启动器修复
+- [降噪与删除分级观测口径](observability.md)：SPEC 0027/0028 验收指标的重跑统计与基线（decision-history 聚合）
 - [新宿主接入指南](new-host.md)：一条 profile + 一个适配层包（ADR-0008）
 - [CLI 指南](cli.md)：管理命令速查表（英文）
 - [ADR-0008](adr/0008-installer-profiles-explicit-and-reversible.md)：安装器设计决策

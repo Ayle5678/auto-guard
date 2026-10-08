@@ -48,7 +48,13 @@ export const REVIEW_SYSTEM_PROMPT = [
   'Rules:',
   '  - "allow": safe/typical development command. Reply with the code alone, e.g. A1.',
   '  - "deny": destructive, dangerous, credential-exposing, or clearly malicious command.',
-  '  - "ask": uncertain or context-dependent; prefer ask over allow when unsure about destructive effects.',
+  '  - "ask": ONLY when both allow and deny are clearly wrong — e.g. an',
+  '    irreversible action whose blast radius you cannot bound from the command',
+  '    text alone. Running project scripts, killing processes the agent started,',
+  '    cleaning up temp files it created, curling localhost, and other routine',
+  '    agent dev-loop operations are "allow". Judge multi-line commands and',
+  '    for-loops as a whole; a present loop body is not "incomplete". When merely',
+  '    uncertain between allow and ask, choose allow with the higher risk digit.',
   '  - Risk reflects blast radius.',
   '  - For deny/ask, reply with the code, a colon, and a single Chinese or English sentence reason, e.g. B3: <reason>.',
   '  - Never output anything besides the code (or code + reason). No markdown fences.',
@@ -200,12 +206,17 @@ export class DeepSeekReviewer implements LlmReviewer {
   async review(request: LlmReviewRequest): Promise<LlmReviewResult> {
     // Resolution order matches pi/DSH convention: environment variable wins over the stored key.
     const apiKey = process.env[this.config.apiKeyEnv] || this.config.apiKey || undefined
-    if (!apiKey) {
+    const fallbackApiKey =
+      (this.config.fallbackApiKeyEnv && process.env[this.config.fallbackApiKeyEnv]) || this.config.fallbackApiKey || undefined
+    const backup = this.config.fallbackApiBase?.trim()
+    // A host with no primary key of its own reviews on the backup endpoint (ADR-0026 update).
+    const usableBackup = Boolean(backup && backup !== this.config.apiBase.trim() && fallbackApiKey)
+    if (!apiKey && !usableBackup) {
       this.lastReview = { ok: false, at: Date.now(), error: `missing ${this.config.apiKeyEnv}` }
       throw new Error(`missing ${this.config.apiKeyEnv}`)
     }
     try {
-      const result = await directChatReview(this.config, this.lang, request, apiKey)
+      const result = await directChatReview(this.config, this.lang, request, apiKey ?? '', fallbackApiKey)
       this.lastReview = { ok: true, at: Date.now() }
       return result
     } catch (error) {
@@ -219,7 +230,10 @@ export class DeepSeekReviewer implements LlmReviewer {
 export interface DirectChatTuning {
   apiBase: string
   model: string
+  /** On the backup endpoint when `fallbackApiBase` is set; else the same-endpoint 400-retry model. */
   fallbackModel: string
+  /** Backup OpenAI-compatible endpoint (SPEC 0025); empty/absent means no endpoint fallback. */
+  fallbackApiBase?: string
   timeoutMs: number
 }
 
@@ -264,33 +278,64 @@ export async function directChatPing(tuning: DirectChatTuning, apiKey: string): 
 
 /**
  * One direct review call over the DeepSeek-compatible `/chat/completions`
- * endpoint: prompt assembly, single-shot HTTP, the 400→fallbackModel retry
- * ladder, the timeout budget and the signal-combination fallback all live
- * here — the single owner of the direct review channel (ADR-0024). The
- * DeepSeek reviewer and the DSH direct branch are thin wrappers; failures
- * throw so the guard service can apply its fail-closed policy.
+ * endpoint: prompt assembly, single-shot HTTP, the fallback ladders, the
+ * timeout budget and the signal-combination fallback all live here — the
+ * single owner of the direct review channel (ADR-0024). The DeepSeek reviewer
+ * and the DSH direct branch are thin wrappers; failures throw so the guard
+ * service can apply its fail-closed policy.
+ *
+ * Ladder (ADR-0026): any primary-leg failure (timeout, HTTP error, network
+ * error, unparseable output) retries once on `tuning.fallbackApiBase` with
+ * `tuning.fallbackModel` and its own fresh timeout budget, when a backup
+ * endpoint is configured and its key was resolved. An empty `apiKey` skips
+ * the primary leg entirely — a host with no key of its own reviews straight
+ * on the backup endpoint. Without a backup endpoint the legacy
+ * same-endpoint 400→fallbackModel retry applies unchanged.
  */
 export async function directChatReview(
   tuning: DirectChatTuning,
   lang: Lang,
   request: LlmReviewRequest,
   apiKey: string,
+  fallbackApiKey?: string,
 ): Promise<LlmReviewResult> {
   const scriptText = request.script ? `\n\nScript being executed (shell text):\n${request.script}` : ''
   const deletionReasonText = request.deletionReason ? `\n\nAgent-provided deletion reason:\n${request.deletionReason}` : ''
   // Keep the variable command at the very end so the fixed prefix (system + script/reason context)
   // stays stable and maximizes prompt-cache hits.
   const userMessage = `${scriptText}${deletionReasonText}Command: ${request.command}`
+  const fallbackApiBase = tuning.fallbackApiBase?.trim()
+  const hasBackupEndpoint = Boolean(fallbackApiBase && fallbackApiBase !== tuning.apiBase.trim())
 
-  try {
-    return await callDirectChat(tuning, lang, tuning.model, userMessage, request, apiKey)
-  } catch (primaryError) {
-    const status = (primaryError as HttpError)?.status
-    if (status === 400 && tuning.fallbackModel !== tuning.model) {
-      return await callDirectChat(tuning, lang, tuning.fallbackModel, userMessage, request, apiKey)
+  let primaryError: unknown
+  if (apiKey) {
+    try {
+      return await callDirectChat(tuning, lang, tuning.model, userMessage, request, apiKey)
+    } catch (e) {
+      primaryError = e
     }
-    throw primaryError
+  } else {
+    primaryError = new Error('LLM review missing primary API key')
   }
+
+  if (hasBackupEndpoint) {
+    // No resolved backup key means the backup leg cannot authenticate — fail with the primary error.
+    if (!fallbackApiKey) throw primaryError
+    try {
+      return await callDirectChat({ ...tuning, apiBase: fallbackApiBase! }, lang, tuning.fallbackModel, userMessage, request, fallbackApiKey)
+    } catch (fallbackError) {
+      throw new Error(`LLM review failed (primary: ${errorText(primaryError)}; fallback: ${errorText(fallbackError)})`)
+    }
+  }
+  const status = (primaryError as HttpError)?.status
+  if (status === 400 && tuning.fallbackModel !== tuning.model) {
+    return await callDirectChat(tuning, lang, tuning.fallbackModel, userMessage, request, apiKey)
+  }
+  throw primaryError
+}
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
 }
 
 async function callDirectChat(

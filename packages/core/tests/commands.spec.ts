@@ -114,6 +114,27 @@ describe('commands: set group', () => {
     expect(applySetApi(config, 'bogus', 'x', defaults).ok).toBe(false)
   })
 
+  it('set-api updates and resets the fallback endpoint fields (SPEC 0025)', () => {
+    const config = makeConfig()
+    const defaults = defaultGuardConfig(join(tmpdir(), 'ag-unused'))
+
+    const base = applySetApi(config, 'fallback-base', 'https://api.xiaomimimo.com/v1', defaults)
+    expect(base.ok).toBe(true)
+    expect(config.fallbackApiBase).toBe('https://api.xiaomimimo.com/v1')
+
+    applySetApi(config, 'fallback-model', 'mimo-v2.6-flash', defaults)
+    expect(config.fallbackModel).toBe('mimo-v2.6-flash')
+
+    applySetApi(config, 'reset', undefined, defaults)
+    expect(config.fallbackApiBase).toBe(defaults.fallbackApiBase)
+    expect(config.fallbackModel).toBe(defaults.fallbackModel)
+
+    // Empty value is the documented way to disable the backup endpoint.
+    const cleared = applySetApi(config, 'fallback-base', '', defaults)
+    expect(cleared.ok).toBe(true)
+    expect(config.fallbackApiBase).toBe('')
+  })
+
   it('history toggle warns when the audit source is off', () => {
     const config = makeConfig()
     const on = applyHistoryToggle(config, 'on')

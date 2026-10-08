@@ -1311,8 +1311,13 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       const { service, dir } = setup({ llm })
       try {
         const d = await service.decide(shell(`Remove-Item ${relDirTarget}`, { workspace: ws }))
-        expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
-        expect(llm.calls).toHaveLength(0)
+        // SPEC 0028: a small real workspace directory is light-tier — one
+        // review, no reason protocol; the tier marker proves the delete-flow
+        // disposition ran.
+        expect(d).toMatchObject({ kind: 'allow', source: 'llm' })
+        expect(d.needsReason).toBeUndefined()
+        expect(d.reason).toContain('删除分级·轻量')
+        expect(llm.calls).toHaveLength(1)
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
@@ -1329,8 +1334,10 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       const { service, dir } = setup({ llm })
       try {
         const d = await service.decide(shell(`Remove-Item -Force ${relDirTarget}`, { workspace: ws }))
-        expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
-        expect(llm.calls).toHaveLength(0)
+        expect(d).toMatchObject({ kind: 'allow', source: 'llm' })
+        expect(d.needsReason).toBeUndefined()
+        expect(d.reason).toContain('删除分级·轻量')
+        expect(llm.calls).toHaveLength(1)
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
@@ -1347,8 +1354,10 @@ describe('GuardService: Remove-Item runtime directory detection', () => {
       const { service, dir } = setup({ llm })
       try {
         const d = await service.decide(shell('Remove-Item "My Dir"', { workspace: ws }))
-        expect(d).toMatchObject({ kind: 'deny', source: 'directory-delete' })
-        expect(llm.calls).toHaveLength(0)
+        expect(d).toMatchObject({ kind: 'allow', source: 'llm' })
+        expect(d.needsReason).toBeUndefined()
+        expect(d.reason).toContain('删除分级·轻量')
+        expect(llm.calls).toHaveLength(1)
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

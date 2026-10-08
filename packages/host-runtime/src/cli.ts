@@ -28,6 +28,7 @@ import {
   applySetApi,
   applySetLang,
   clearApiKey,
+  clearFallbackApiKey,
   coreMessage,
   createAuditStore,
   DeepSeekReviewer,
@@ -37,6 +38,7 @@ import {
   envLang,
   examineStatusLines,
   hasStoredApiKey,
+  hasStoredFallbackApiKey,
   hydrateApiKey,
   listPendingAsks,
   loadAnalyzeState,
@@ -56,6 +58,7 @@ import {
   resolveProcessLang,
   rollbackLearnedRules,
   saveApiKey,
+  saveFallbackApiKey,
   saveConfig,
   sessionMemoryEntry,
   setEnabled,
@@ -222,7 +225,7 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
           ? `${colon}${p} guard ask <list | allow <序号> | deny <序号> [--reason <理由>]>`
           : `${colon}${p} guard ask <list | allow <index> | deny <index> [--reason <text>]>`
       case 'setUsage':
-        return `${colon}${p} set <set-key|show-key|clear-key|set-api|lang|history|reload>`
+        return `${colon}${p} set <set-key|set-fallback-key|show-key|clear-key|clear-fallback-key|set-api|lang|history|reload>`
       case 'examineUsage':
         return `${colon}${p} examine <on|off|status|clear-old|clear-all>`
       case 'optimizeUsage':
@@ -607,24 +610,44 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
           return 2
         }
         return setKeyInteractive(config, lang, root)
+      case 'set-fallback-key':
+        if (!parts.capabilities.setKeyWizard) {
+          emit(parts.message(lang, 'setFallbackKeyNeedsTty'))
+          return 2
+        }
+        return setFallbackKeyInteractive(lang, root)
       case 'show-key': {
         const env = parts.root.mode === 'auto' ? (parts.root.env ?? process.env) : process.env
         const envSet = Boolean(env[config.apiKeyEnv])
         // Both placeholder names carry the same root so either catalog wording renders.
-        emit(
-          [
-            parts.message(lang, envSet ? 'showKeyEnvSet' : 'showKeyEnvUnset', { name: config.apiKeyEnv }),
-            hasStoredApiKey(root) ? parts.message(lang, 'showKeyStored', { root, dir: root }) : parts.message(lang, 'showKeyNoStore'),
-            config.apiKey && !config.apiKey.startsWith('v1:')
-              ? parts.message(lang, 'showKeyLegacy', { key: maskKey(config.apiKey) })
-              : parts.message(lang, 'showKeyNoLegacy'),
-          ].join('\n'),
-        )
+        const lines = [
+          parts.message(lang, envSet ? 'showKeyEnvSet' : 'showKeyEnvUnset', { name: config.apiKeyEnv }),
+          hasStoredApiKey(root) ? parts.message(lang, 'showKeyStored', { root, dir: root }) : parts.message(lang, 'showKeyNoStore'),
+          config.apiKey && !config.apiKey.startsWith('v1:')
+            ? parts.message(lang, 'showKeyLegacy', { key: maskKey(config.apiKey) })
+            : parts.message(lang, 'showKeyNoLegacy'),
+        ]
+        // Backup slot lines appear only when a backup endpoint is configured (SPEC 0025).
+        if (config.fallbackApiBase?.trim()) {
+          const fallbackEnvSet = Boolean(config.fallbackApiKeyEnv && env[config.fallbackApiKeyEnv])
+          lines.push(
+            parts.message(lang, fallbackEnvSet ? 'showFallbackKeyEnvSet' : 'showFallbackKeyEnvUnset', {
+              name: config.fallbackApiKeyEnv || '-',
+            }),
+            hasStoredFallbackApiKey(root) ? parts.message(lang, 'showFallbackKeyStored', { dir: root }) : parts.message(lang, 'showFallbackKeyNoStore'),
+          )
+        }
+        emit(lines.join('\n'))
         return 0
       }
       case 'clear-key': {
         clearApiKey(root)
         emit(parts.message(lang, 'clearKeyDone'))
+        return 0
+      }
+      case 'clear-fallback-key': {
+        clearFallbackApiKey(root)
+        emit(parts.message(lang, 'clearFallbackKeyDone'))
         return 0
       }
       case 'set-api': {
@@ -807,6 +830,30 @@ export function createCliMain(parts: CliParts): (argv: readonly string[]) => Pro
     emit('')
     emit(parts.message(lang, 'wizardSaved', { base: config.apiBase, model: config.model, key: maskKey(trimmed) }))
     emit(parts.message(lang, 'wizardSavedHint'))
+    return 0
+  }
+
+  /**
+   * Interactive `set set-fallback-key`: one hidden read into the backup slot
+   * (SPEC 0025). The key never passes through argv or the chat.
+   */
+  async function setFallbackKeyInteractive(lang: Lang, root: string): Promise<number> {
+    if (!process.stdin.isTTY) {
+      emit(parts.message(lang, 'setFallbackKeyNeedsTty'))
+      return 2
+    }
+    const key = await readHidden(parts.message(lang, 'setFallbackKeyPrompt'))
+    if (key === undefined) {
+      emit(parts.message(lang, 'wizardCancelled'))
+      return 2
+    }
+    const trimmed = key.trim()
+    if (trimmed.length < 8 || /\s/.test(trimmed)) {
+      emit(parts.message(lang, 'setFallbackKeyInvalid'))
+      return 2
+    }
+    saveFallbackApiKey(root, trimmed)
+    emit(parts.message(lang, 'setFallbackKeySaved', { key: maskKey(trimmed) }))
     return 0
   }
 

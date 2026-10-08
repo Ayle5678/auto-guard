@@ -8,7 +8,7 @@
  * Terminal restore is idempotent and registered on process 'exit'.
  */
 import { initialState, reduce, render } from './app.ts'
-import { execRun, loadRootSummaries, saveWizard } from './actions.ts'
+import { execRun, loadRootSummaries, saveWizard, saveFallbackWizard } from './actions.ts'
 import { assertInteractive, Terminal } from './term.ts'
 import { t } from './i18n.ts'
 import type { AppEvent, Effect, Receipt } from './types.ts'
@@ -85,6 +85,15 @@ async function main(): Promise<number> {
       // set-key wizard: the unified CLI branch refuses (documented gap), so
       // the save goes through core ops directly (ADR-0014 decision 3).
       if (effect.type === 'wizard') {
+        if (effect.input.slot === 'fallback') {
+          // Backup wizard (ADR-0026 update): writes every host root, never argv.
+          const label = 'set set-fallback-key (wizard)'
+          dispatch({ type: 'busy-start', run: { kind: 'mgmt', argv: ['set', 'set-fallback-key'], label } })
+          const { lines, synced } = saveFallbackWizard(effect.input, state.lang)
+          const receipt: Receipt = { id: receiptSeq++, argv: label, code: synced > 0 ? 0 : 2, output: [t(state.lang, 'wizFbSaved', { count: synced }), ...lines] }
+          dispatch({ type: 'run-done', receipt })
+          continue
+        }
         const label = 'set set-key (wizard)'
         dispatch({ type: 'busy-start', run: { kind: 'mgmt', argv: ['set', 'set-key'], label } })
         saveWizard(state.currentRoot, effect.input, state.lang)

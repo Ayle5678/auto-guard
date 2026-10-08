@@ -67,10 +67,20 @@ export function mergeMissingRuleFields(defaults: RulesFile, user: RulesFile): bo
     'alwaysReview',
     'staticAllowGuards',
     'sensitivePaths',
+    'scriptReviewInterpreters',
   ]
   for (const key of keys) {
     if (!Array.isArray(user[key])) {
       ;(user as unknown as Record<string, unknown>)[key] = defaults[key]
+      changed = true
+    }
+  }
+  // directoryDeletePolicy is the one object-shaped data field (ADR-0027);
+  // delivered whole or not at all — a user-edited partial policy stays
+  // user-owned, and the tiering module conservatively treats it as standard.
+  if (typeof user.directoryDeletePolicy !== 'object' || user.directoryDeletePolicy === null) {
+    if (defaults.directoryDeletePolicy !== undefined) {
+      user.directoryDeletePolicy = defaults.directoryDeletePolicy
       changed = true
     }
   }

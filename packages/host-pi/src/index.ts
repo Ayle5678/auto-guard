@@ -44,7 +44,9 @@ import {
   clearApiKey,
   hasStoredApiKey,
   hydrateApiKey,
+  hydrateFallbackApiKey,
   loadApiKey,
+  loadFallbackApiKey,
   saveApiKey,
   loadAuditPassword,
   saveAuditPassword,
@@ -99,7 +101,9 @@ interface EvaluateOutcome {
 }
 
 function buildGuard(): GuardState {
-  const config = hydrateApiKey(loadConfig(), () => loadApiKey(AUTO_GUARD_DIR))
+  const config = hydrateFallbackApiKey(hydrateApiKey(loadConfig(), () => loadApiKey(AUTO_GUARD_DIR)), () =>
+    loadFallbackApiKey(AUTO_GUARD_DIR),
+  )
   const lang = resolveLang(config)
   const rules = loadRules(config.rulesPath, config.defaultRulesPath)
   const sessionCache = new SessionLruCache(config.sessionCacheSize)

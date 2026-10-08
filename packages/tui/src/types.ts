@@ -62,6 +62,8 @@ export type InputOwner =
   | 'recent-count'
   | 'set-api-base'
   | 'set-api-model'
+  | 'set-api-fallback-base'
+  | 'set-api-fallback-model'
   | 'wizard-base'
   | 'wizard-model'
   | 'wizard-key'
@@ -83,8 +85,10 @@ export interface DialogState extends ConfirmModel {
   pending: PendingRun | null
 }
 
-/** set-key wizard (SPEC 0009: mirrors the three-step TTY wizard semantics). */
+/** set-key wizard (SPEC 0009: mirrors the three-step TTY wizard semantics); the
+ * fallback slot (ADR-0026 update) collects the backup endpoint instead. */
 export interface WizardState {
+  slot: 'primary' | 'fallback'
   step: 'base' | 'model' | 'key' | 'review'
   base: string
   model: string
@@ -152,6 +156,7 @@ export type AppEvent =
 
 /** set-key wizard input (three steps collected; validation in actions). */
 export interface WizardInput {
+  slot: 'primary' | 'fallback'
   base: string
   model: string
   key: string

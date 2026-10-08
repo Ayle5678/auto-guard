@@ -20,9 +20,9 @@ export interface ActionItem {
   /** Group title row: rendered as a heading, never selectable (SPEC 0011). */
   header?: string
   /** Ask for inline input before running; `run` receives the submitted value. */
-  ask?: { prompt: string; owner: InputOwner; preset?: string }
-  /** Open the set-key wizard instead of running a command. */
-  wizard?: boolean
+  ask?: { prompt: string; owner: InputOwner; preset?: string; masked?: boolean }
+  /** Open a set-key wizard (`true` = primary, `'fallback'` = the backup-endpoint wizard, ADR-0026 update). */
+  wizard?: boolean | 'fallback'
   /** Build the pending run; null = cannot run now (reason already rendered). */
   run?: (value: string) => PendingRun | null
 }
@@ -76,6 +76,8 @@ export function listActions(state: AppState, screen: 'guard' | 'examine' | 'opti
         { id: 'show-key', label: tr('actShowKey'), run: () => pending('set show-key', ['set', 'show-key']) },
         { id: 'set-key', label: tr('actSetKey'), wizard: true },
         { id: 'clear-key', label: tr('actClearKey'), danger: true, run: () => pending('set clear-key', ['set', 'clear-key']) },
+        { id: 'set-fallback-key', label: tr('actSetFallbackKey'), wizard: 'fallback' },
+        { id: 'clear-fallback-key', label: tr('actClearFallbackKey'), danger: true, run: () => pending('set clear-fallback-key', ['set', 'clear-fallback-key']) },
         { id: 'group-api', header: tr('groupApi') },
         {
           id: 'set-api-base',
@@ -89,6 +91,20 @@ export function listActions(state: AppState, screen: 'guard' | 'examine' | 'opti
           label: tr('actSetApiModel'),
           hint: config?.model,
           ask: { prompt: tr('inputModel'), owner: 'set-api-model', preset: config?.model },
+          run: () => null,
+        },
+        {
+          id: 'set-api-fallback-base',
+          label: tr('actSetApiFallbackBase'),
+          hint: config?.fallbackApiBase,
+          ask: { prompt: tr('inputFallbackBase'), owner: 'set-api-fallback-base', preset: config?.fallbackApiBase },
+          run: () => null,
+        },
+        {
+          id: 'set-api-fallback-model',
+          label: tr('actSetApiFallbackModel'),
+          hint: config?.fallbackModel,
+          ask: { prompt: tr('inputFallbackModel'), owner: 'set-api-fallback-model', preset: config?.fallbackModel },
           run: () => null,
         },
         { id: 'set-api-reset', label: tr('actSetApiReset'), run: () => pending('set set-api reset', ['set', 'set-api', 'reset']) },
